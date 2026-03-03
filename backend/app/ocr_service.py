@@ -9,6 +9,13 @@ CODE_RE = re.compile(r"\b\d{6}\b")
 # Match amounts like: ¥1,234.56  1,234.56元  1234.56  持有金额 1,234.56
 AMOUNT_RE = re.compile(r"[¥￥]?\s*([\d,]+\.\d{1,2})\s*元?")
 
+# Transaction OCR patterns
+BUY_RE = re.compile(r"买入|申购|定投|认购", re.IGNORECASE)
+SELL_RE = re.compile(r"卖出|赎回|转出", re.IGNORECASE)
+DATE_RE = re.compile(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})")
+NAV_RE = re.compile(r"净值[：:]*\s*([\d.]+)|单位净值[：:]*\s*([\d.]+)|([\d]\.\d{4})")
+SHARES_RE = re.compile(r"份额[：:]*\s*([\d,.]+)|确认份额[：:]*\s*([\d,.]+)|([\d,]+\.\d{2,4})\s*份")
+
 
 def extract_fund_codes_from_image(image_path: Path) -> tuple[str, list[str]]:
     engine = RapidOCR()
@@ -66,3 +73,68 @@ def _find_nearby_amount(lines: list[str], center: int, window: int = 2) -> float
             except ValueError:
                 continue
     return None
+
+
+def extract_transaction_from_image(image_path: Path) -> tuple[str, dict]:
+    """Extract transaction details from a screenshot.
+
+    Returns (raw_text, tx_data) where tx_data has keys:
+    direction, code, trade_date, nav, shares, amount — all may be None.
+    """
+    engine = RapidOCR()
+    result, _ = engine(str(image_path))
+    if not result:
+        return "", {}
+
+    lines = [line[1] for line in result if len(line) >= 2]
+    raw_text = "\n".join(lines)
+    full_text = " ".join(lines)
+
+    tx: dict = {
+        "direction": None,
+        "code": None,
+        "trade_date": None,
+        "nav": None,
+        "shares": None,
+        "amount": None,
+    }
+
+    # Direction
+    if BUY_RE.search(full_text):
+        tx["direction"] = "buy"
+    elif SELL_RE.search(full_text):
+        tx["direction"] = "sell"
+
+    # Fund code
+    codes = CODE_RE.findall(full_text)
+    if codes:
+        tx["code"] = codes[0]
+
+    # Date
+    dm = DATE_RE.search(full_text)
+    if dm:
+        tx["trade_date"] = dm.group(1).replace("/", "-")
+
+    # NAV — search each line
+    for line in lines:
+        nm = NAV_RE.search(line)
+        if nm:
+            tx["nav"] = next(g for g in nm.groups() if g)
+            break
+
+    # Shares
+    for line in lines:
+        sm = SHARES_RE.search(line)
+        if sm:
+            tx["shares"] = next(g for g in sm.groups() if g).replace(",", "")
+            break
+
+    # Amount
+    for line in lines:
+        if any(kw in line for kw in ("金额", "扣款", "确认金额", "交易金额")):
+            am = AMOUNT_RE.search(line)
+            if am:
+                tx["amount"] = am.group(1).replace(",", "")
+                break
+
+    return raw_text, tx

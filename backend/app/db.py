@@ -25,11 +25,38 @@ def init_db() -> None:
             """
         )
         # Migration: add sector, amount columns to funds
-        for col, coltype in [("sector", "TEXT"), ("amount", "REAL"), ("percentage", "REAL")]:
+        for col, coltype in [
+            ("sector", "TEXT"),
+            ("amount", "REAL"),
+            ("percentage", "REAL"),
+            ("amount_mode", "TEXT DEFAULT 'manual'"),
+            ("holding_shares", "TEXT"),
+        ]:
             try:
                 conn.execute(f"ALTER TABLE funds ADD COLUMN {col} {coltype}")
             except sqlite3.OperationalError:
                 pass  # column already exists
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS transactions (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                code        TEXT NOT NULL,
+                direction   TEXT NOT NULL CHECK(direction IN ('buy','sell')),
+                trade_date  TEXT NOT NULL,
+                nav         TEXT NOT NULL,
+                shares      TEXT NOT NULL,
+                amount      TEXT NOT NULL,
+                fee         TEXT NOT NULL DEFAULT '0',
+                note        TEXT,
+                source      TEXT DEFAULT 'manual',
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(code)"
+        )
 
         conn.execute(
             """
