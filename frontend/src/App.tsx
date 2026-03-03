@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
+  PieChart, Pie, Cell,
 } from 'recharts'
 
 type FundOverview = {
@@ -42,6 +43,7 @@ type Snapshot = {
 }
 
 const API = 'http://127.0.0.1:8010'
+const PIE_COLORS = ['#2563eb', '#15803d', '#dc2626', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#4f46e5']
 
 export function App() {
   const [funds, setFunds] = useState<FundOverview[]>([])
@@ -57,6 +59,17 @@ export function App() {
   const [editAmountVal, setEditAmountVal] = useState('')
 
   const dedupedCodes = useMemo(() => Array.from(new Set(ocrCodes)), [ocrCodes])
+
+  const pieData = useMemo(() => {
+    return funds
+      .filter((f) => f.fund.amount != null && f.fund.amount > 0)
+      .map((f) => ({
+        name: f.fund.sector
+          ? `${f.latest?.name || f.fund.name || f.fund.code}(${f.fund.sector})`
+          : (f.latest?.name || f.fund.name || f.fund.code),
+        value: f.fund.amount!,
+      }))
+  }, [funds])
 
   async function loadFunds() {
     const res = await fetch(`${API}/api/funds/overview`)
@@ -271,6 +284,30 @@ export function App() {
           </table>
         )}
       </section>
+
+      {pieData.length > 0 && (
+        <section className="card">
+          <h2>持仓分布</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={pieData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={100}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
+              >
+                {pieData.map((_, i) => (
+                  <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(value: number) => `¥${fmtAmount(value)}`} />
+            </PieChart>
+          </ResponsiveContainer>
+        </section>
+      )}
 
       {selectedCode && (
         <section className="card">
