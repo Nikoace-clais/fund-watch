@@ -8,6 +8,9 @@ type FundOverview = {
   fund: {
     code: string
     name?: string | null
+    sector?: string | null
+    amount?: number | null
+    percentage?: number | null
     created_at: string
   }
   latest?: {
@@ -20,8 +23,14 @@ type FundOverview = {
   } | null
 }
 
+type OcrMatchedFund = {
+  code: string
+  amount?: number | null
+}
+
 type OcrResp = {
   matched_codes: string[]
+  matched_funds: OcrMatchedFund[]
   raw_text: string
 }
 
@@ -37,11 +46,15 @@ const API = 'http://127.0.0.1:8010'
 export function App() {
   const [funds, setFunds] = useState<FundOverview[]>([])
   const [ocrCodes, setOcrCodes] = useState<string[]>([])
+  const [ocrFunds, setOcrFunds] = useState<OcrMatchedFund[]>([])
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
   const [manualCode, setManualCode] = useState('')
+  const [manualAmount, setManualAmount] = useState('')
   const [selectedCode, setSelectedCode] = useState<string | null>(null)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
+  const [editingAmount, setEditingAmount] = useState<string | null>(null)
+  const [editAmountVal, setEditAmountVal] = useState('')
 
   const dedupedCodes = useMemo(() => Array.from(new Set(ocrCodes)), [ocrCodes])
 
@@ -77,10 +90,12 @@ export function App() {
       const res = await fetch(`${API}/api/ocr/fund-code`, { method: 'POST', body: form })
       if (!res.ok) throw new Error('OCR 请求失败')
       const data: OcrResp = await res.json()
-      const filtered = (data.matched_codes || []).filter((c) => /^\d{6}$/.test(c))
-      const invalidCount = (data.matched_codes || []).length - filtered.length
-      setOcrCodes(filtered)
-      setMsg(`识别完成：${filtered.join(', ') || '未识别到基金代码'}${invalidCount > 0 ? `（过滤无效 ${invalidCount} 条）` : ''}`)
+      const funds = (data.matched_funds || []).filter((f) => /^\d{6}$/.test(f.code))
+      const codes = funds.map((f) => f.code)
+      setOcrCodes(codes)
+      setOcrFunds(funds)
+      const summary = funds.map((f) => f.amount ? `${f.code}(¥${f.amount})` : f.code).join(', ')
+      setMsg(`识别完成：${summary || '未识别到基金代码'}`)
     } catch (e) {
       setMsg(e instanceof Error ? e.message : '上传失败')
     } finally {
@@ -88,13 +103,19 @@ export function App() {
     }
   }
 
-  async function addFund(code: string) {
+  async function addFund(code: string, amount?: number | null) {
     setMsg('')
-    const res = await fetch(`${API}/api/funds/${code}`, { method: 'POST' })
+    const opts: RequestInit = { method: 'POST' }
+    if (amount != null) {
+      opts.headers = { 'Content-Type': 'application/json' }
+      opts.body = JSON.stringify({ amount })
+    }
+    const res = await fetch(`${API}/api/funds/${code}`, opts)
     if (!res.ok) {
       setMsg(`添加 ${code} 失败`)
       return
     }
+    await fetch(`${API}/api/funds/recalc-percentage`, { method: 'POST' })
     await loadFunds()
     setMsg(`已加入基金池：${code}`)
   }
@@ -105,24 +126,42 @@ export function App() {
       setMsg('请输入 6 位基金代码')
       return
     }
-    await addFund(code)
+    const amt = manualAmount.trim() ? parseFloat(manualAmount) : undefined
+    await addFund(code, amt)
     setManualCode('')
+    setManualAmount('')
   }
 
   async function addAllOcrCodes() {
     if (dedupedCodes.length === 0) return
+    const amounts: Record<string, number> = {}
+    for (const f of ocrFunds) {
+      if (f.amount != null) amounts[f.code] = f.amount
+    }
     const res = await fetch(`${API}/api/funds/batch`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codes: dedupedCodes }),
+      body: JSON.stringify({ codes: dedupedCodes, amounts: Object.keys(amounts).length > 0 ? amounts : undefined }),
     })
     if (!res.ok) {
       setMsg('批量加入失败')
       return
     }
     const data = await res.json()
+    await fetch(`${API}/api/funds/recalc-percentage`, { method: 'POST' })
     await loadFunds()
     setMsg(`批量加入完成：${(data.added || []).join(', ') || '无新增'}${(data.invalid || []).length ? `；无效：${data.invalid.join(',')}` : ''}`)
+  }
+
+  async function saveAmount(code: string, amount: number) {
+    await fetch(`${API}/api/funds/${code}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount }),
+    })
+    await fetch(`${API}/api/funds/recalc-percentage`, { method: 'POST' })
+    await loadFunds()
+    setEditingAmount(null)
   }
 
   return (
@@ -133,7 +172,8 @@ export function App() {
       <section className="card">
         <h2>手动添加基金</h2>
         <div className="row">
-          <input value={manualCode} placeholder="输入 6 位代码，如 161725" onChange={(e) => setManualCode(e.target.value)} />
+          <input value={manualCode} placeholder="6 位代码" onChange={(e) => setManualCode(e.target.value)} style={{ flex: 2 }} />
+          <input value={manualAmount} placeholder="持仓金额(可选)" onChange={(e) => setManualAmount(e.target.value)} style={{ flex: 1 }} />
           <button onClick={addFundManual}>添加</button>
         </div>
       </section>
@@ -149,12 +189,12 @@ export function App() {
           }}
         />
         {loading && <p>识别中...</p>}
-        {dedupedCodes.length > 0 && (
+        {ocrFunds.length > 0 && (
           <>
             <div className="chips">
-              {dedupedCodes.map((c) => (
-                <button key={c} onClick={() => addFund(c)}>
-                  加入 {c}
+              {ocrFunds.map((f) => (
+                <button key={f.code} onClick={() => addFund(f.code, f.amount)}>
+                  加入 {f.code}{f.amount != null ? ` (¥${f.amount})` : ''}
                 </button>
               ))}
             </div>
@@ -175,6 +215,9 @@ export function App() {
               <tr>
                 <th>代码</th>
                 <th>名称</th>
+                <th>板块</th>
+                <th>持仓(元)</th>
+                <th>占比%</th>
                 <th>估算净值</th>
                 <th>估算涨跌%</th>
                 <th>时间</th>
@@ -185,7 +228,37 @@ export function App() {
               {funds.map((f) => (
                 <tr key={f.fund.code}>
                   <td>{f.fund.code}</td>
-                  <td>{f.latest?.name || '-'}</td>
+                  <td>{f.latest?.name || f.fund.name || '-'}</td>
+                  <td>{f.fund.sector || '-'}</td>
+                  <td
+                    className="editable"
+                    onClick={() => { setEditingAmount(f.fund.code); setEditAmountVal(f.fund.amount?.toString() ?? '') }}
+                  >
+                    {editingAmount === f.fund.code ? (
+                      <input
+                        className="inline-input"
+                        value={editAmountVal}
+                        autoFocus
+                        onChange={(e) => setEditAmountVal(e.target.value)}
+                        onBlur={() => {
+                          const v = parseFloat(editAmountVal)
+                          if (!isNaN(v)) saveAmount(f.fund.code, v)
+                          else setEditingAmount(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const v = parseFloat(editAmountVal)
+                            if (!isNaN(v)) saveAmount(f.fund.code, v)
+                          } else if (e.key === 'Escape') {
+                            setEditingAmount(null)
+                          }
+                        }}
+                      />
+                    ) : (
+                      f.fund.amount != null ? fmtAmount(f.fund.amount) : '点击输入'
+                    )}
+                  </td>
+                  <td>{f.fund.percentage != null ? `${f.fund.percentage}%` : '-'}</td>
                   <td>{fmtNum(f.latest?.gsz)}</td>
                   <td className={Number(f.latest?.gszzl || 0) >= 0 ? 'up' : 'down'}>{fmtNum(f.latest?.gszzl)}</td>
                   <td>{f.latest?.gztime || '-'}</td>
@@ -252,4 +325,8 @@ export function App() {
 function fmtNum(v?: number | null) {
   if (v == null) return '-'
   return Number(v).toFixed(4)
+}
+
+function fmtAmount(v: number) {
+  return v >= 10000 ? `${(v / 10000).toFixed(2)}万` : v.toFixed(2)
 }

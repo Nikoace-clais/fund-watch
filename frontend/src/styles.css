@@ -83,6 +83,23 @@ td.down {
   text-align: center;
 }
 
+td.editable {
+  cursor: pointer;
+  color: #2563eb;
+}
+
+td.editable:hover {
+  background: #f1f5f9;
+}
+
+.inline-input {
+  width: 80px;
+  padding: 2px 4px;
+  font-size: 13px;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+}
+
 .msg {
   color: #334155;
 }
