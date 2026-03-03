@@ -76,3 +76,44 @@ async def fetch_fund_info(code: str) -> dict[str, Any]:
     sector = _extract_sector(name) if name else None
 
     return {"name": name, "sector": sector}
+
+
+HOLDINGS_URL = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10"
+
+# Parse: <td>序号</td><td>股票代码</td><td>股票名称</td>...<td>占净值比例</td>...<td>持仓市值(万元)</td>
+_HOLDING_ROW_RE = re.compile(
+    r"<tr><td>\d+</td>"                         # 序号
+    r"<td>.*?>([\d]{6})</a></td>"                # 股票代码
+    r"<td class='tol'>.*?>([^<]+)</a></td>"      # 股票名称
+    r".*?"
+    r"<td class='tor'>([\d.]+)%</td>"            # 占净值比例
+    r"<td class='tor'>([\d,.]+)</td>"             # 持股数(万股)
+    r"<td class='tor'>([\d,.]+)</td></tr>",       # 持仓市值(万元)
+    re.DOTALL,
+)
+
+
+async def fetch_fund_holdings(code: str) -> list[dict[str, Any]]:
+    """Fetch top-10 stock holdings for a fund from eastmoney."""
+    url = HOLDINGS_URL.format(code=code)
+    async with httpx.AsyncClient(timeout=12) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        text = resp.text
+
+    holdings: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for m in _HOLDING_ROW_RE.finditer(text):
+        stock_code, stock_name, pct_str, shares_str, value_str = m.groups()
+        # Only take the first occurrence of each stock (latest quarter)
+        if stock_code in seen:
+            break  # Hit second quarter data, stop
+        seen.add(stock_code)
+        holdings.append({
+            "stock_code": stock_code,
+            "stock_name": stock_name,
+            "percentage": _to_float(pct_str),
+            "shares_wan": _to_float(shares_str.replace(",", "")),
+            "value_wan": _to_float(value_str.replace(",", "")),
+        })
+    return holdings

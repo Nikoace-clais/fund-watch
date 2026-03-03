@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .db import get_conn, init_db
-from .fund_source import fetch_fund_info, fetch_realtime_estimate
+from .fund_source import fetch_fund_holdings, fetch_fund_info, fetch_realtime_estimate
 from .ocr_service import extract_fund_codes_from_image, extract_funds_with_amounts
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
@@ -265,6 +265,16 @@ def get_snapshots(code: str, limit: int = 50) -> dict:
     items = [dict(r) for r in rows]
     items.reverse()
     return {"code": code, "count": len(items), "items": items}
+
+
+@app.get("/api/funds/{code}/holdings")
+async def get_fund_holdings(code: str) -> dict:
+    code = _validate_code(code)
+    try:
+        holdings = await fetch_fund_holdings(code)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"code": code, "count": len(holdings), "holdings": holdings}
 
 
 @app.patch("/api/funds/{code}")

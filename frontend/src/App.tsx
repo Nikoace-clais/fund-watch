@@ -42,6 +42,14 @@ type Snapshot = {
   gztime?: string | null
 }
 
+type Holding = {
+  stock_code: string
+  stock_name: string
+  percentage: number | null
+  shares_wan: number | null
+  value_wan: number | null
+}
+
 const API = 'http://127.0.0.1:8010'
 const PIE_COLORS = ['#2563eb', '#15803d', '#dc2626', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#4f46e5']
 
@@ -57,6 +65,8 @@ export function App() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [editingAmount, setEditingAmount] = useState<string | null>(null)
   const [editAmountVal, setEditAmountVal] = useState('')
+  const [holdingsCode, setHoldingsCode] = useState<string | null>(null)
+  const [holdings, setHoldings] = useState<Holding[]>([])
 
   const dedupedCodes = useMemo(() => Array.from(new Set(ocrCodes)), [ocrCodes])
 
@@ -164,6 +174,22 @@ export function App() {
     await fetch(`${API}/api/funds/recalc-percentage`, { method: 'POST' })
     await loadFunds()
     setMsg(`批量加入完成：${(data.added || []).join(', ') || '无新增'}${(data.invalid || []).length ? `；无效：${data.invalid.join(',')}` : ''}`)
+  }
+
+  async function loadHoldings(code: string) {
+    if (holdingsCode === code) {
+      setHoldingsCode(null)
+      setHoldings([])
+      return
+    }
+    setHoldingsCode(code)
+    try {
+      const res = await fetch(`${API}/api/funds/${code}/holdings`)
+      const data = await res.json()
+      setHoldings(data.holdings ?? [])
+    } catch {
+      setHoldings([])
+    }
   }
 
   async function saveAmount(code: string, amount: number) {
@@ -275,8 +301,9 @@ export function App() {
                   <td>{fmtNum(f.latest?.gsz)}</td>
                   <td className={Number(f.latest?.gszzl || 0) >= 0 ? 'up' : 'down'}>{fmtNum(f.latest?.gszzl)}</td>
                   <td>{f.latest?.gztime || '-'}</td>
-                  <td>
+                  <td className="actions">
                     <button onClick={() => loadSnapshots(f.fund.code)}>看趋势</button>
+                    <button onClick={() => loadHoldings(f.fund.code)}>重仓股</button>
                   </td>
                 </tr>
               ))}
@@ -284,6 +311,54 @@ export function App() {
           </table>
         )}
       </section>
+
+      {holdingsCode && (
+        <section className="card">
+          <h2>重仓股（前10） · {holdingsCode}</h2>
+          {holdings.length === 0 ? (
+            <p>暂无持仓数据</p>
+          ) : (
+            <div className="holdings-layout">
+              <table className="holdings-table">
+                <thead>
+                  <tr>
+                    <th>股票</th>
+                    <th>占净值%</th>
+                    <th>持仓市值(万)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {holdings.map((h) => (
+                    <tr key={h.stock_code}>
+                      <td>{h.stock_name}({h.stock_code})</td>
+                      <td>{h.percentage != null ? `${h.percentage}%` : '-'}</td>
+                      <td>{h.value_wan != null ? h.value_wan.toLocaleString() : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={holdings.map((h) => ({ name: h.stock_name, value: h.percentage ?? 0 }))}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={90}
+                    label={({ name, value }) => `${name} ${value}%`}
+                  >
+                    {holdings.map((_, i) => (
+                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => `${value}%`} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+      )}
 
       {pieData.length > 0 && (
         <section className="card">
