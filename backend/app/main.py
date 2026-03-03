@@ -5,19 +5,37 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .db import get_conn, init_db
-from .fund_source import fetch_realtime_estimate
-from .ocr_service import extract_fund_codes_from_image
+from .fund_source import fetch_fund_info, fetch_realtime_estimate
+from .ocr_service import extract_fund_codes_from_image, extract_funds_with_amounts
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
 
 app = FastAPI(title="Fund Watch API", version="0.2.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class AddFundPayload(BaseModel):
+    amount: float | None = None
+
 
 class BatchFundsPayload(BaseModel):
     codes: list[str]
+    amounts: dict[str, float] | None = None
+
+
+class UpdateFundPayload(BaseModel):
+    amount: float | None = None
+    sector: str | None = None
 
 
 @app.on_event("startup")
@@ -34,7 +52,7 @@ def health() -> dict:
 @app.get("/api/funds")
 def list_funds() -> dict:
     with get_conn() as conn:
-        rows = conn.execute("SELECT code,name,created_at FROM funds ORDER BY created_at DESC").fetchall()
+        rows = conn.execute("SELECT code,name,sector,amount,percentage,created_at FROM funds ORDER BY created_at DESC").fetchall()
     return {"items": [dict(r) for r in rows]}
 
 
@@ -46,20 +64,40 @@ def _validate_code(code: str) -> str:
 
 
 @app.post("/api/funds/{code}")
-def add_fund(code: str) -> dict:
+async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     code = _validate_code(code)
     now = datetime.now(timezone.utc).isoformat()
+
+    # Fetch fund info (name + sector) from data source
+    name = None
+    sector = None
+    try:
+        info = await fetch_fund_info(code)
+        name = info.get("name")
+        sector = info.get("sector")
+    except Exception:
+        pass
+
+    amount = payload.amount if payload else None
+
     with get_conn() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO funds(code,name,created_at) VALUES(?,?,?)",
-            (code, None, now),
-        )
+        existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+        if existing:
+            if amount is not None:
+                conn.execute("UPDATE funds SET amount=? WHERE code=?", (amount, code))
+            if sector and not conn.execute("SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL", (code,)).fetchone():
+                conn.execute("UPDATE funds SET sector=?, name=? WHERE code=?", (sector, name, code))
+        else:
+            conn.execute(
+                "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
+                (code, name, sector, amount, now),
+            )
         conn.commit()
-    return {"ok": True, "code": code}
+    return {"ok": True, "code": code, "name": name, "sector": sector}
 
 
 @app.post("/api/funds/batch")
-def add_funds_batch(payload: BatchFundsPayload) -> dict:
+async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     valid: list[str] = []
     invalid: list[str] = []
@@ -72,13 +110,41 @@ def add_funds_batch(payload: BatchFundsPayload) -> dict:
             invalid.append(c)
 
     valid = sorted(set(valid))
+    amounts = payload.amounts or {}
 
     with get_conn() as conn:
         for code in valid:
-            conn.execute(
-                "INSERT OR IGNORE INTO funds(code,name,created_at) VALUES(?,?,?)",
-                (code, None, now),
-            )
+            name = None
+            sector = None
+            try:
+                info = await fetch_fund_info(code)
+                name = info.get("name")
+                sector = info.get("sector")
+            except Exception:
+                pass
+
+            existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+            if existing:
+                updates = []
+                params: list = []
+                if name:
+                    updates.append("name=?")
+                    params.append(name)
+                if sector:
+                    updates.append("sector=?")
+                    params.append(sector)
+                amt = amounts.get(code)
+                if amt is not None:
+                    updates.append("amount=?")
+                    params.append(amt)
+                if updates:
+                    params.append(code)
+                    conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
+            else:
+                conn.execute(
+                    "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
+                    (code, name, sector, amounts.get(code), now),
+                )
         conn.commit()
 
     return {"ok": True, "added": valid, "invalid": invalid}
@@ -97,7 +163,7 @@ async def quote(code: str) -> dict:
 @app.get("/api/funds/overview")
 async def funds_overview() -> dict:
     with get_conn() as conn:
-        funds = [dict(r) for r in conn.execute("SELECT code,name,created_at FROM funds ORDER BY created_at DESC").fetchall()]
+        funds = [dict(r) for r in conn.execute("SELECT code,name,sector,amount,percentage,created_at FROM funds ORDER BY created_at DESC").fetchall()]
 
     items: list[dict] = []
     for f in funds:
@@ -188,6 +254,39 @@ def get_snapshots(code: str, limit: int = 50) -> dict:
     return {"code": code, "count": len(items), "items": items}
 
 
+@app.patch("/api/funds/{code}")
+def update_fund(code: str, payload: UpdateFundPayload) -> dict:
+    code = _validate_code(code)
+    updates = []
+    params: list = []
+    if payload.amount is not None:
+        updates.append("amount=?")
+        params.append(payload.amount)
+    if payload.sector is not None:
+        updates.append("sector=?")
+        params.append(payload.sector)
+    if not updates:
+        raise HTTPException(status_code=400, detail="nothing to update")
+    params.append(code)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
+        conn.commit()
+    return {"ok": True, "code": code}
+
+
+@app.post("/api/funds/recalc-percentage")
+def recalc_percentage() -> dict:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT code, amount FROM funds").fetchall()
+        total = sum(r["amount"] for r in rows if r["amount"])
+        if total > 0:
+            for r in rows:
+                pct = round((r["amount"] / total) * 100, 2) if r["amount"] else None
+                conn.execute("UPDATE funds SET percentage=? WHERE code=?", (pct, r["code"]))
+        conn.commit()
+    return {"ok": True, "total": total}
+
+
 @app.post("/api/ocr/fund-code")
 async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
     suffix = Path(file.filename or "upload.png").suffix or ".png"
@@ -196,6 +295,8 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
     path.write_bytes(await file.read())
 
     raw_text, codes = extract_fund_codes_from_image(path)
+    _, matched_funds = extract_funds_with_amounts(path)
+
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         conn.execute(
@@ -208,6 +309,7 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
         "ok": True,
         "image": path.name,
         "matched_codes": codes,
+        "matched_funds": matched_funds,
         "raw_text": raw_text,
         "saved_at": now,
     }
