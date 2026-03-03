@@ -63,6 +63,19 @@ def _validate_code(code: str) -> str:
     return code
 
 
+@app.post("/api/funds/recalc-percentage")
+def recalc_percentage() -> dict:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT code, amount FROM funds").fetchall()
+        total = sum(r["amount"] for r in rows if r["amount"])
+        if total > 0:
+            for r in rows:
+                pct = round((r["amount"] / total) * 100, 2) if r["amount"] else None
+                conn.execute("UPDATE funds SET percentage=? WHERE code=?", (pct, r["code"]))
+        conn.commit()
+    return {"ok": True, "total": total}
+
+
 @app.post("/api/funds/{code}")
 async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     code = _validate_code(code)
@@ -272,19 +285,6 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
         conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
         conn.commit()
     return {"ok": True, "code": code}
-
-
-@app.post("/api/funds/recalc-percentage")
-def recalc_percentage() -> dict:
-    with get_conn() as conn:
-        rows = conn.execute("SELECT code, amount FROM funds").fetchall()
-        total = sum(r["amount"] for r in rows if r["amount"])
-        if total > 0:
-            for r in rows:
-                pct = round((r["amount"] / total) * 100, 2) if r["amount"] else None
-                conn.execute("UPDATE funds SET percentage=? WHERE code=?", (pct, r["code"]))
-        conn.commit()
-    return {"ok": True, "total": total}
 
 
 @app.post("/api/ocr/fund-code")
