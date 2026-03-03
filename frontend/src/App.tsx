@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
 
 type FundOverview = {
   fund: {
@@ -24,6 +28,8 @@ type OcrResp = {
 type Snapshot = {
   captured_at: string
   gsz?: number | null
+  gszzl?: number | null
+  gztime?: string | null
 }
 
 const API = 'http://127.0.0.1:8010'
@@ -50,10 +56,16 @@ export function App() {
   }, [])
 
   async function loadSnapshots(code: string) {
+    if (selectedCode === code) {
+      setSelectedCode(null)
+      setSnapshots([])
+      return
+    }
     setSelectedCode(code)
     const res = await fetch(`${API}/api/snapshots/${code}?limit=30`)
     const data = await res.json()
-    setSnapshots(data.items ?? [])
+    const items: Snapshot[] = data.items ?? []
+    setSnapshots(items.reverse())
   }
 
   async function onUpload(file: File) {
@@ -187,18 +199,50 @@ export function App() {
         )}
       </section>
 
-      <section className="card">
-        <h2>趋势（最近 30 条）{selectedCode ? ` · ${selectedCode}` : ''}</h2>
-        {snapshots.length === 0 ? (
-          <p>请选择基金查看</p>
-        ) : (
-          <div className="trend">
-            {snapshots.map((s, i) => (
-              <div key={`${s.captured_at}-${i}`} className="dot" title={`${s.captured_at} | ${s.gsz ?? '-'}`} />
-            ))}
-          </div>
-        )}
-      </section>
+      {selectedCode && (
+        <section className="card">
+          <h2>趋势（最近 30 条） · {selectedCode}</h2>
+          {snapshots.length === 0 ? (
+            <p>暂无快照数据</p>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={snapshots} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis
+                    dataKey="gztime"
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v: string) => v?.slice(11, 16) ?? ''}
+                  />
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fontSize: 11 }}
+                    domain={['auto', 'auto']}
+                    label={{ value: '估算净值', angle: -90, position: 'insideLeft', style: { fontSize: 11 } }}
+                  />
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fontSize: 11 }}
+                    domain={['auto', 'auto']}
+                    label={{ value: '涨跌幅%', angle: 90, position: 'insideRight', style: { fontSize: 11 } }}
+                  />
+                  <Tooltip
+                    formatter={(value: number, name: string) =>
+                      [name === '估算净值' ? value?.toFixed(4) : `${value?.toFixed(2)}%`, name]
+                    }
+                    labelFormatter={(label: string) => `时间: ${label}`}
+                  />
+                  <Legend />
+                  <Line yAxisId="left" type="monotone" dataKey="gsz" name="估算净值" stroke="#2563eb" dot={false} strokeWidth={2} />
+                  <Line yAxisId="right" type="monotone" dataKey="gszzl" name="涨跌幅%" stroke="#15803d" dot={false} strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+              <p className="disclaimer">以上为盘中估算数据，非最终成交净值</p>
+            </>
+          )}
+        </section>
+      )}
 
       {msg && <p className="msg">{msg}</p>}
     </div>
