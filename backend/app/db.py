@@ -24,6 +24,13 @@ def init_db() -> None:
             )
             """
         )
+        # Migration: add sector, amount columns to funds
+        for col, coltype in [("sector", "TEXT"), ("amount", "REAL"), ("percentage", "REAL")]:
+            try:
+                conn.execute(f"ALTER TABLE funds ADD COLUMN {col} {coltype}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS fund_snapshots (
