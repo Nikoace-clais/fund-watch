@@ -4,6 +4,7 @@ import { Dashboard } from './pages/Dashboard'
 import { FundExplorer } from './pages/FundExplorer'
 import { FundDetail } from './pages/FundDetail'
 import { Portfolio } from './pages/Portfolio'
+import { OcrImport } from './pages/OcrImport'
 
 export const router = createBrowserRouter([
   {
@@ -14,6 +15,7 @@ export const router = createBrowserRouter([
       { path: 'funds', Component: FundExplorer },
       { path: 'funds/:code', Component: FundDetail },
       { path: 'portfolio', Component: Portfolio },
+      { path: 'ocr', Component: OcrImport },
       {
         path: 'market',
         element: (

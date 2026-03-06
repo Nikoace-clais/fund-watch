@@ -95,6 +95,34 @@ export function pullSnapshots() {
   return request<{ ok: boolean }>('/api/snapshots/pull', { method: 'POST' })
 }
 
+// OCR: extract fund codes from image
+export async function ocrFundCode(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${API}/api/ocr/fund-code`, { method: 'POST', body: form })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail || `HTTP ${res.status}`)
+  }
+  return res.json() as Promise<{
+    ok: boolean
+    image: string
+    matched_codes: string[]
+    matched_funds: Array<{ code: string; name?: string; amount?: number; percentage?: number }>
+    raw_text: string
+    saved_at: string
+  }>
+}
+
+// Batch add funds
+export function batchAddFunds(codes: string[]) {
+  return request<{ ok: boolean; added: string[]; skipped: string[] }>('/api/funds/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codes }),
+  })
+}
+
 // Snapshots history (intraday)
 export function fetchSnapshots(code: string, limit = 200) {
   return request<{
