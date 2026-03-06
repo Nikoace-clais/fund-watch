@@ -41,6 +41,7 @@ def _to_float(v: Any) -> float | None:
 
 
 PINGZHONG_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
+FUND_DETAIL_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
 
 # Common fund sector keywords to extract from fund name
 _SECTOR_KEYWORDS = [
@@ -117,3 +118,170 @@ async def fetch_fund_holdings(code: str) -> list[dict[str, Any]]:
             "value_wan": _to_float(value_str.replace(",", "")),
         })
     return holdings
+
+
+async def fetch_fund_detail(code: str) -> dict[str, Any]:
+    """Fetch comprehensive fund detail from eastmoney pingzhongdata.
+
+    Returns: name, manager, size, established_date, period returns,
+    asset allocation, etc.
+    """
+    url = PINGZHONG_URL.format(code=code)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        text = resp.text
+
+    result: dict[str, Any] = {"code": code}
+
+    # Fund name
+    m = re.search(r'var fS_name\s*=\s*"([^"]*)"', text)
+    result["name"] = m.group(1) if m else None
+
+    # Fund code (verify)
+    m = re.search(r'var fS_code\s*=\s*"([^"]*)"', text)
+    result["fund_code"] = m.group(1) if m else code
+
+    # Fund type
+    m = re.search(r'var fS_type\s*=\s*"([^"]*)"', text)
+    result["fund_type"] = m.group(1) if m else None
+
+    # Manager — extract name from the first manager entry
+    m = re.search(r'"name":"([^"]*)"', text[text.find("Data_currentFundManager"):] if "Data_currentFundManager" in text else "")
+    result["manager"] = m.group(1) if m else None
+
+    # Fund size (亿) from fluctuation scale: series is [{y:374.98, mom:"..."}, ...]
+    m = re.search(r'var Data_fluctuationScale\s*=\s*(\{.*?\});\s*var', text, re.DOTALL)
+    if not m:
+        m = re.search(r'var Data_fluctuationScale\s*=\s*(\{.*?\});', text, re.DOTALL)
+    if m:
+        try:
+            scale_data = json.loads(m.group(1))
+            series = scale_data.get("series", [])
+            if series:
+                result["size"] = series[-1].get("y")
+            else:
+                result["size"] = None
+        except (json.JSONDecodeError, KeyError):
+            result["size"] = None
+    else:
+        result["size"] = None
+
+    # Established date — not always a separate var, extract from fund page if needed
+    # Try fS_nkfr first, then look for 成立日期 pattern
+    m = re.search(r'var fS_nkfr\s*=\s*"([^"]*)"', text)
+    result["established_date"] = m.group(1) if m else None
+
+    # Period returns: syl_1y=近1月, syl_3y=近3月, syl_6y=近6月, syl_1n=近1年
+    for var_name, key in [
+        ("syl_1y", "one_month_return"),
+        ("syl_3y", "three_month_return"),
+        ("syl_6y", "six_month_return"),
+        ("syl_1n", "one_year_return"),
+    ]:
+        m = re.search(rf'var {var_name}\s*=\s*"([^"]*)"', text)
+        if not m:
+            m = re.search(rf'var {var_name}\s*=\s*([^;]*);', text)
+        result[key] = _to_float(m.group(1).strip('"')) if m else None
+
+    # Asset allocation: Data_assetAllocation
+    m = re.search(r'var Data_assetAllocation\s*=\s*(\{.*?\});', text, re.DOTALL)
+    if m:
+        try:
+            alloc_data = json.loads(m.group(1))
+            categories = alloc_data.get("categories", [])
+            series = alloc_data.get("series", [])
+            # Build allocation: each series item is {name, data: [...]}
+            # data aligns with categories (dates), take latest value
+            allocation = []
+            for s in series:
+                name = s.get("name", "")
+                if "净资产" in name:
+                    continue  # Skip net asset value, not an allocation category
+                data = s.get("data", [])
+                if data:
+                    allocation.append({"name": name, "value": data[-1]})
+            result["asset_allocation"] = allocation
+        except (json.JSONDecodeError, KeyError):
+            result["asset_allocation"] = []
+    else:
+        result["asset_allocation"] = []
+
+    result["sector"] = _extract_sector(result["name"]) if result["name"] else None
+
+    return result
+
+
+def _extract_js_array(text: str, var_name: str) -> list | None:
+    """Extract a JS array variable from text using bracket matching."""
+    idx = text.find(f"var {var_name}")
+    if idx < 0:
+        return None
+    sub = text[idx:]
+    eq_idx = sub.find("=")
+    if eq_idx < 0:
+        return None
+    rest = sub[eq_idx + 1:].strip()
+    if not rest.startswith("["):
+        return None
+    depth = 0
+    end = 0
+    for i, c in enumerate(rest):
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+        if depth == 0:
+            end = i + 1
+            break
+    if end == 0:
+        return None
+    try:
+        return json.loads(rest[:end])
+    except json.JSONDecodeError:
+        return None
+
+
+async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]:
+    """Fetch historical NAV data from eastmoney pingzhongdata.
+
+    Returns list of {date, nav, accNav, dailyReturn}.
+    """
+    url = PINGZHONG_URL.format(code=code)
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        text = resp.text
+
+    from datetime import datetime as dt
+
+    history: list[dict[str, Any]] = []
+
+    raw = _extract_js_array(text, "Data_netWorthTrend")
+    if raw:
+        for item in raw[-limit:]:
+            ts = item.get("x", 0)
+            date_str = dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
+            history.append({
+                "date": date_str,
+                "nav": item.get("y"),
+                "dailyReturn": item.get("equityReturn"),
+            })
+
+    # Data_ACWorthTrend = [[timestamp, accNav], ...]
+    acc_map: dict[str, float] = {}
+    raw_acc = _extract_js_array(text, "Data_ACWorthTrend")
+    if raw_acc:
+        for item in raw_acc[-limit:]:
+            try:
+                ts, acc = item[0], item[1]
+                date_str = dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
+                if date_str:
+                    acc_map[date_str] = acc
+            except (IndexError, TypeError):
+                continue
+
+    for h in history:
+        h["accNav"] = acc_map.get(h["date"])
+
+    return history

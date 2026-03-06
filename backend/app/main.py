@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .db import get_conn, init_db
-from .fund_source import fetch_fund_holdings, fetch_fund_info, fetch_realtime_estimate
+from .fund_source import fetch_fund_detail, fetch_fund_holdings, fetch_fund_info, fetch_nav_history, fetch_realtime_estimate
 from .ocr_service import extract_fund_codes_from_image, extract_funds_with_amounts, extract_transaction_from_image
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
@@ -378,6 +378,116 @@ async def get_fund_holdings(code: str) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"code": code, "count": len(holdings), "holdings": holdings}
+
+
+@app.get("/api/funds/{code}/detail")
+async def get_fund_detail(code: str) -> dict:
+    """Comprehensive fund detail: manager, size, period returns, asset allocation."""
+    code = _validate_code(code)
+    try:
+        detail = await fetch_fund_detail(code)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return detail
+
+
+@app.get("/api/funds/{code}/nav-history")
+async def get_nav_history(code: str, limit: int = 365) -> dict:
+    """Historical NAV data for charting."""
+    code = _validate_code(code)
+    limit = max(1, min(limit, 1000))
+    try:
+        history = await fetch_nav_history(code, limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"code": code, "count": len(history), "history": history}
+
+
+@app.delete("/api/funds/{code}")
+def delete_fund(code: str) -> dict:
+    """Remove a fund from the watchlist."""
+    code = _validate_code(code)
+    with get_conn() as conn:
+        existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="fund not found")
+        conn.execute("DELETE FROM fund_snapshots WHERE code=?", (code,))
+        conn.execute("DELETE FROM transactions WHERE code=?", (code,))
+        conn.execute("DELETE FROM funds WHERE code=?", (code,))
+        conn.commit()
+    return {"ok": True, "code": code}
+
+
+@app.get("/api/portfolio/summary")
+async def portfolio_summary() -> dict:
+    """Aggregated portfolio stats: total value, daily return, cumulative return."""
+    with get_conn() as conn:
+        funds = [dict(r) for r in conn.execute(
+            "SELECT code, name, holding_shares FROM funds WHERE holding_shares IS NOT NULL ORDER BY created_at DESC"
+        ).fetchall()]
+
+    items: list[dict] = []
+    total_current = Decimal("0")
+    total_cost = Decimal("0")
+    total_daily_return = Decimal("0")
+
+    for f in funds:
+        code = f["code"]
+        shares = Decimal(f["holding_shares"]) if f["holding_shares"] else Decimal("0")
+        if shares <= 0:
+            continue
+
+        # Get realtime estimate
+        try:
+            q = await fetch_realtime_estimate(code)
+        except Exception:
+            continue
+
+        nav = Decimal(str(q.get("gsz", 0))) if q.get("gsz") else None
+        daily_change = float(q.get("gszzl", 0)) if q.get("gszzl") else 0.0
+
+        if nav is None:
+            continue
+
+        current_value = (shares * nav).quantize(Decimal("0.01"))
+        daily_return_val = (current_value * Decimal(str(daily_change)) / 100).quantize(Decimal("0.01"))
+
+        # Get cost from transactions
+        with get_conn() as conn:
+            pnl = _compute_pnl(conn, code, str(nav))
+
+        cost = Decimal(pnl.get("total_cost", "0"))
+        total_return = current_value - cost
+        return_rate = (total_return / cost * 100).quantize(Decimal("0.01")) if cost > 0 else Decimal("0")
+
+        total_current += current_value
+        total_cost += cost
+        total_daily_return += daily_return_val
+
+        items.append({
+            "code": code,
+            "name": f["name"] or q.get("name"),
+            "shares": str(shares),
+            "nav": str(nav),
+            "daily_change": daily_change,
+            "current_value": str(current_value),
+            "daily_return": str(daily_return_val),
+            "total_cost": str(cost),
+            "total_return": str(total_return.quantize(Decimal("0.01"))),
+            "return_rate": str(return_rate),
+        })
+
+    total_return_rate = ((total_current - total_cost) / total_cost * 100).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
+
+    return {
+        "total_current": str(total_current),
+        "total_cost": str(total_cost),
+        "total_daily_return": str(total_daily_return),
+        "total_return": str((total_current - total_cost).quantize(Decimal("0.01"))),
+        "total_return_rate": str(total_return_rate),
+        "fund_count": len(items),
+        "items": items,
+    }
 
 
 @app.patch("/api/funds/{code}")
