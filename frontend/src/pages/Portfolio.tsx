@@ -3,11 +3,10 @@ import { Link } from 'react-router'
 import {
   PieChart as PieChartIcon,
   TrendingUp,
-  Search,
   Plus,
   Trash2,
-  ArrowRight,
 } from 'lucide-react'
+import { AddFundModal } from '@/components/AddFundModal'
 import {
   AreaChart,
   Area,
@@ -54,6 +53,7 @@ export function Portfolio() {
   const [summary, setSummary] = useState<PortfolioSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -128,8 +128,8 @@ export function Portfolio() {
           <h1 className="text-2xl font-bold text-slate-900">自选基金与持仓</h1>
           <p className="text-sm text-slate-500 mt-1">管理你的基金组合与持仓情况</p>
         </div>
-        <Link
-          to="/funds"
+        <button
+          onClick={() => setShowAddModal(true)}
           className={cn(
             'inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium',
             'bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm',
@@ -137,25 +137,32 @@ export function Portfolio() {
         >
           <Plus className="h-4 w-4" />
           添加基金
-        </Link>
+        </button>
       </div>
+
+      {/* ---- Add fund modal ---- */}
+      <AddFundModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdded={() => loadData()}
+      />
 
       {/* ---- Empty state ---- */}
       {!hasItems && (
         <div className="flex flex-col items-center justify-center py-32 text-center">
           <div className="rounded-full bg-slate-100 p-6 mb-6">
-            <Search className="h-10 w-10 text-slate-400" />
+            <PieChartIcon className="h-10 w-10 text-slate-400" />
           </div>
           <h2 className="text-xl font-semibold text-slate-700 mb-2">暂无自选基金</h2>
           <p className="text-sm text-slate-400 mb-6">
-            你还没有添加任何基金，前往基金市场挑选心仪的基金吧
+            点击上方"添加基金"按钮，通过搜索、输入代码或批量导入添加基金
           </p>
-          <Link
-            to="/funds"
+          <button
+            onClick={() => setShowAddModal(true)}
             className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 font-medium text-sm"
           >
-            前往基金市场 <ArrowRight className="h-4 w-4" />
-          </Link>
+            <Plus className="h-4 w-4" /> 立即添加
+          </button>
         </div>
       )}
 

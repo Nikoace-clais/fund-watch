@@ -95,24 +95,9 @@ export function pullSnapshots() {
   return request<{ ok: boolean }>('/api/snapshots/pull', { method: 'POST' })
 }
 
-// OCR: extract fund codes from image
-export async function ocrFundCode(file: File) {
-  const form = new FormData()
-  form.append('file', file)
-  const res = await fetch(`${API}/api/ocr/fund-code`, { method: 'POST', body: form })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.detail || `HTTP ${res.status}`)
-  }
-  return res.json() as Promise<{
-    ok: boolean
-    image: string
-    matched_codes: string[]
-    matched_funds: Array<{ code: string; name?: string; amount?: number; percentage?: number }>
-    name_matches: Array<{ code: string; name: string; matched_keyword: string; type?: string }>
-    raw_text: string
-    saved_at: string
-  }>
+// Search funds by name/code
+export function searchFunds(q: string) {
+  return request<{ results: Array<{ code: string; name: string; type?: string }> }>(`/api/funds/search?q=${encodeURIComponent(q)}`)
 }
 
 // Batch add funds

@@ -1,13 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router'
-import { LineChart, Search, PieChart, TrendingUp, Home, Menu, X, Camera } from 'lucide-react'
+import { LineChart, PieChart, TrendingUp, Home, Menu, X } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
 const navigation = [
   { name: '概览', href: '/', icon: Home },
-  { name: '基金市场', href: '/funds', icon: Search },
   { name: '自选基金', href: '/portfolio', icon: PieChart },
-  { name: 'OCR 识别', href: '/ocr', icon: Camera },
   { name: '行情数据', href: '/market', icon: TrendingUp },
 ]
 

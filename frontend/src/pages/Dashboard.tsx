@@ -130,10 +130,10 @@ export function Dashboard() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5 text-slate-700" />
-            <h2 className="text-lg font-semibold text-slate-800">热门基金推荐</h2>
+            <h2 className="text-lg font-semibold text-slate-800">自选基金概览</h2>
           </div>
           <Link
-            to="/funds"
+            to="/portfolio"
             className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
           >
             查看全部 <ArrowRight className="h-4 w-4" />
@@ -145,7 +145,7 @@ export function Dashboard() {
         ) : topFunds.length === 0 ? (
           <div className="text-center py-16 text-slate-400">
             暂无自选基金，
-            <Link to="/funds" className="text-blue-600 hover:underline">
+            <Link to="/portfolio" className="text-blue-600 hover:underline">
               去添加
             </Link>
           </div>
