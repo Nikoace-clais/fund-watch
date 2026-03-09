@@ -23,9 +23,17 @@ type MatchedFund = {
   percentage?: number
 }
 
+type NameMatch = {
+  code: string
+  name: string
+  matched_keyword: string
+  type?: string
+}
+
 type OcrResult = {
   matched_codes: string[]
   matched_funds: MatchedFund[]
+  name_matches: NameMatch[]
   raw_text: string
 }
 
@@ -69,6 +77,7 @@ export function OcrImport() {
       setResult({
         matched_codes: data.matched_codes,
         matched_funds: data.matched_funds,
+        name_matches: data.name_matches ?? [],
         raw_text: data.raw_text,
       })
       // auto-select all matched codes
@@ -137,6 +146,10 @@ export function OcrImport() {
   const fundMap = new Map(
     (result?.matched_funds ?? []).map((f) => [f.code, f]),
   )
+  const nameMatchMap = new Map(
+    (result?.name_matches ?? []).map((n) => [n.code, n]),
+  )
+  const hasNameMatches = (result?.name_matches ?? []).length > 0
 
   return (
     <div className="space-y-6">
@@ -172,8 +185,9 @@ export function OcrImport() {
                 <span className="font-medium text-slate-800">准备截图</span>
               </div>
               <p className="text-sm text-slate-600">
-                在支付宝、天天基金、蛋卷基金等 App 中，截取你的基金持仓页面或基金详情页面。确保截图中包含
-                <strong className="text-slate-800"> 6 位基金代码</strong>（如 110011、161725）。
+                在支付宝、天天基金、蛋卷基金等 App 中，截取你的基金持仓页面或基金详情页面。截图中包含
+                <strong className="text-slate-800"> 6 位基金代码</strong>或
+                <strong className="text-slate-800">基金名称</strong>均可识别。
               </p>
             </div>
 
@@ -223,11 +237,15 @@ export function OcrImport() {
                 <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
                 任意包含 6 位基金代码的图片
               </li>
+              <li className="flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
+                仅含基金名称的截图（自动反查基金代码）
+              </li>
             </ul>
           </div>
 
           <p className="text-xs text-blue-700">
-            提示：图片越清晰、基金代码越完整，识别准确率越高。建议使用原图而非压缩后的图片。
+            提示：图片越清晰，识别准确率越高。建议使用原图而非压缩后的图片。即使截图中没有基金代码，只要包含基金名称，系统也会尝试自动反查对应代码。
           </p>
         </div>
       )}
@@ -348,7 +366,8 @@ export function OcrImport() {
                 <h3 className="text-sm font-semibold text-slate-800">
                   识别结果
                   <span className="ml-2 text-xs font-normal text-slate-400">
-                    共识别到 {allCodes.length} 个基金代码
+                    共识别到 {allCodes.length} 个基金
+                    {hasNameMatches && '（通过名称匹配）'}
                   </span>
                 </h3>
                 {allCodes.length > 0 && (
@@ -364,13 +383,15 @@ export function OcrImport() {
               {allCodes.length === 0 ? (
                 <div className="px-4 py-8 text-center text-slate-400 text-sm">
                   <Camera className="h-8 w-8 mx-auto mb-2 text-slate-300" />
-                  未识别到基金代码，请确认图片中包含 6 位基金代码
+                  未识别到基金代码或基金名称，请确认图片中包含基金相关信息
                 </div>
               ) : (
                 <>
                   <div className="divide-y divide-slate-100">
                     {allCodes.map((code) => {
                       const fund = fundMap.get(code)
+                      const nameMatch = nameMatchMap.get(code)
+                      const displayName = fund?.name || nameMatch?.name || ''
                       return (
                         <label
                           key={code}
@@ -386,26 +407,35 @@ export function OcrImport() {
                             className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-sm font-mono font-medium text-blue-600">
                                 {code}
                               </span>
-                              {fund?.name && (
+                              {displayName && (
                                 <span className="text-sm text-slate-700 truncate">
-                                  {fund.name}
+                                  {displayName}
+                                </span>
+                              )}
+                              {nameMatch && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                  名称匹配
                                 </span>
                               )}
                             </div>
-                            {(fund?.amount != null || fund?.percentage != null) && (
-                              <div className="flex gap-3 text-xs text-slate-400 mt-0.5">
-                                {fund.amount != null && (
-                                  <span>金额: ¥{fund.amount.toLocaleString()}</span>
-                                )}
-                                {fund.percentage != null && (
-                                  <span>占比: {fund.percentage}%</span>
-                                )}
-                              </div>
-                            )}
+                            <div className="flex gap-3 text-xs text-slate-400 mt-0.5 flex-wrap">
+                              {fund?.amount != null && (
+                                <span>金额: ¥{fund.amount.toLocaleString()}</span>
+                              )}
+                              {fund?.percentage != null && (
+                                <span>占比: {fund.percentage}%</span>
+                              )}
+                              {nameMatch && (
+                                <span>匹配关键词: {nameMatch.matched_keyword}</span>
+                              )}
+                              {nameMatch?.type && (
+                                <span>类型: {nameMatch.type}</span>
+                              )}
+                            </div>
                           </div>
                           <Link
                             to={`/funds/${code}`}

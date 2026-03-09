@@ -285,3 +285,35 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
         h["accNav"] = acc_map.get(h["date"])
 
     return history
+
+
+FUND_SEARCH_URL = "https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx"
+
+
+async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Search funds by name/keyword via eastmoney suggest API.
+
+    Returns list of {"code": "110011", "name": "易方达优质精选混合(QDII)", "type": "QDII-混合偏股"}.
+    """
+    params = {"callback": "cb", "m": "1", "key": keyword}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(FUND_SEARCH_URL, params=params)
+        resp.raise_for_status()
+        text = resp.text.strip()
+
+    # Strip JSONP wrapper: cb({...})
+    if text.startswith("cb(") and text.endswith(")"):
+        text = text[3:-1]
+    data = json.loads(text)
+
+    results: list[dict[str, Any]] = []
+    for item in (data.get("Datas") or [])[:limit]:
+        code = item.get("CODE", "")
+        if not re.match(r"^\d{6}$", code):
+            continue
+        entry: dict[str, Any] = {"code": code, "name": item.get("NAME", "")}
+        base = item.get("FundBaseInfo") or {}
+        if base.get("FTYPE"):
+            entry["type"] = base["FTYPE"]
+        results.append(entry)
+    return results

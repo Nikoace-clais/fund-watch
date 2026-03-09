@@ -109,6 +109,7 @@ export async function ocrFundCode(file: File) {
     image: string
     matched_codes: string[]
     matched_funds: Array<{ code: string; name?: string; amount?: number; percentage?: number }>
+    name_matches: Array<{ code: string; name: string; matched_keyword: string; type?: string }>
     raw_text: string
     saved_at: string
   }>

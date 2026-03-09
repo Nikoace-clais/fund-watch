@@ -12,8 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .db import get_conn, init_db
-from .fund_source import fetch_fund_detail, fetch_fund_holdings, fetch_fund_info, fetch_nav_history, fetch_realtime_estimate
-from .ocr_service import extract_fund_codes_from_image, extract_funds_with_amounts, extract_transaction_from_image
+from .fund_source import fetch_fund_detail, fetch_fund_holdings, fetch_fund_info, fetch_nav_history, fetch_realtime_estimate, search_fund_by_name
+from .ocr_service import extract_fund_codes_from_image, extract_fund_names_from_text, extract_funds_with_amounts, extract_transaction_from_image
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
 
@@ -520,6 +520,16 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
     return {"ok": True, "code": code}
 
 
+@app.get("/api/funds/search")
+async def search_funds(q: str = "") -> dict:
+    """Search funds by name or code keyword via eastmoney."""
+    q = q.strip()
+    if not q:
+        return {"results": []}
+    results = await search_fund_by_name(q, limit=10)
+    return {"results": results}
+
+
 @app.post("/api/ocr/fund-code")
 async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
     suffix = Path(file.filename or "upload.png").suffix or ".png"
@@ -529,6 +539,28 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
 
     raw_text, codes = extract_fund_codes_from_image(path)
     _, matched_funds = extract_funds_with_amounts(path)
+
+    # If no codes found, try to extract fund names and search for codes
+    name_matches: list[dict] = []
+    if not codes:
+        fund_names = extract_fund_names_from_text(raw_text)
+        seen_codes: set[str] = set()
+        for name in fund_names[:5]:  # limit to avoid too many API calls
+            try:
+                results = await search_fund_by_name(name, limit=1)
+                for r in results:
+                    if r["code"] not in seen_codes:
+                        seen_codes.add(r["code"])
+                        name_matches.append({
+                            "code": r["code"],
+                            "name": r.get("name", ""),
+                            "matched_keyword": name,
+                            "type": r.get("type"),
+                        })
+            except Exception:
+                continue
+        # Add name-matched codes to the codes list
+        codes = list(seen_codes)
 
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
@@ -542,7 +574,8 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
         "ok": True,
         "image": path.name,
         "matched_codes": codes,
-        "matched_funds": matched_funds,
+        "matched_funds": matched_funds if matched_funds else name_matches,
+        "name_matches": name_matches,
         "raw_text": raw_text,
         "saved_at": now,
     }

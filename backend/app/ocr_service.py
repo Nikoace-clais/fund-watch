@@ -9,6 +9,13 @@ CODE_RE = re.compile(r"\b\d{6}\b")
 # Match amounts like: ¥1,234.56  1,234.56元  1234.56  持有金额 1,234.56
 AMOUNT_RE = re.compile(r"[¥￥]?\s*([\d,]+\.\d{1,2})\s*元?")
 
+# Common fund name patterns — match Chinese fund names in OCR text
+# e.g. "易方达优质精选混合(QDII)", "招商中证白酒指数A", "广发科技先锋混合"
+FUND_NAME_RE = re.compile(
+    r"([\u4e00-\u9fff]{2,}(?:[\u4e00-\u9fff]+)+"   # 2+ groups of Chinese chars
+    r"(?:\([A-Za-z]+\)|[A-Za-z])?)"                   # optional (QDII) or trailing A/C
+)
+
 # Transaction OCR patterns
 BUY_RE = re.compile(r"买入|申购|定投|认购", re.IGNORECASE)
 SELL_RE = re.compile(r"卖出|赎回|转出", re.IGNORECASE)
@@ -73,6 +80,49 @@ def _find_nearby_amount(lines: list[str], center: int, window: int = 2) -> float
             except ValueError:
                 continue
     return None
+
+
+def extract_fund_names_from_text(raw_text: str) -> list[str]:
+    """Extract potential fund names from OCR text.
+
+    Looks for patterns like "XX基金", "XX混合", "XX指数", "XX债券" etc.
+    Returns deduplicated list of candidate fund name strings.
+    """
+    # Keywords that indicate a fund name
+    fund_keywords = ("混合", "指数", "债券", "货币", "股票", "增长", "价值", "优选",
+                     "精选", "成长", "稳健", "增强", "量化", "ETF", "LOF", "FOF",
+                     "QDII", "联接", "定开", "定期", "灵活", "配置", "收益", "回报",
+                     "先锋", "科技", "医疗", "消费", "新能源", "半导体", "白酒",
+                     "红利", "养老", "平衡", "主题", "行业", "策略")
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    for line in raw_text.split("\n"):
+        # Skip very short or very long lines
+        if len(line) < 4 or len(line) > 50:
+            continue
+        # Check if line contains fund-related keywords
+        has_keyword = any(kw in line for kw in fund_keywords)
+        if not has_keyword:
+            continue
+        # Extract the name part — take the whole line as candidate if it looks like a fund name
+        # Clean up common prefixes/suffixes
+        name = line.strip()
+        # Remove leading numbers, dots, punctuation
+        name = re.sub(r"^[\d.\s、]+", "", name)
+        # Remove trailing amounts
+        name = re.sub(r"[\d,]+\.\d{2}.*$", "", name)
+        name = name.strip()
+        if len(name) < 4 or name in seen:
+            continue
+        # Must contain at least 2 Chinese characters
+        if len(re.findall(r"[\u4e00-\u9fff]", name)) < 2:
+            continue
+        seen.add(name)
+        candidates.append(name)
+
+    return candidates
 
 
 def extract_transaction_from_image(image_path: Path) -> tuple[str, dict]:
