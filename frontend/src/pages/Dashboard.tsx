@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { TrendingUp, ArrowRight, BarChart3, Activity, Briefcase } from 'lucide-react'
 import { fetchFundsOverview, fetchPortfolioSummary } from '@/lib/api'
-import { cn, formatCNY, getColorForReturn, formatPercent } from '@/lib/utils'
+import { cn, formatCNY, formatPercent } from '@/lib/utils'
+import { useColor } from '@/lib/color-context'
 
 /* ---------- types ---------- */
 type OverviewItem = {
@@ -25,6 +26,7 @@ const INDICES = [
 
 /* ---------- component ---------- */
 export function Dashboard() {
+  const { colorFor } = useColor()
   const [overview, setOverview] = useState<OverviewItem[]>([])
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -66,9 +68,11 @@ export function Dashboard() {
               key={idx.label}
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border',
-                idx.change >= 0
+                colorFor(idx.change).includes('red')
                   ? 'bg-red-50 text-red-600 border-red-200'
-                  : 'bg-green-50 text-green-600 border-green-200',
+                  : colorFor(idx.change).includes('green')
+                    ? 'bg-green-50 text-green-600 border-green-200'
+                    : 'bg-gray-50 text-gray-600 border-gray-200',
               )}
             >
               {idx.label}
@@ -104,7 +108,7 @@ export function Dashboard() {
             <p
               className={cn(
                 'text-2xl font-bold',
-                getColorForReturn(parseFloat(portfolio.total_daily_return)),
+                colorFor(parseFloat(portfolio.total_daily_return)),
               )}
             >
               {formatCNY(parseFloat(portfolio.total_daily_return))}
@@ -184,7 +188,7 @@ export function Dashboard() {
                     <div className="text-right">
                       <p className="text-xs text-slate-400">日涨跌幅</p>
                       {gszzl != null ? (
-                        <p className={cn('text-lg font-bold', getColorForReturn(gszzl))}>
+                        <p className={cn('text-lg font-bold', colorFor(gszzl))}>
                           {formatPercent(gszzl)}
                         </p>
                       ) : (

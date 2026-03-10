@@ -6,7 +6,8 @@ import {
 } from 'recharts'
 import { ArrowLeft, Plus, Share2, Info, TrendingUp, PieChart, Activity } from 'lucide-react'
 import { fetchFundDetail, fetchNavHistory, fetchFundHoldings, fetchQuote, addFund } from '@/lib/api'
-import { cn, getColorForReturn, formatPercent } from '@/lib/utils'
+import { cn, formatPercent } from '@/lib/utils'
+import { useColor } from '@/lib/color-context'
 
 /* ---------- types ---------- */
 type FundDetailData = {
@@ -104,6 +105,7 @@ export function FundDetail() {
       .map((a) => ({ name: simplifyAssetName(a.name), value: a.value }))
   }, [detail])
 
+  const { colorFor } = useColor()
   const navValue = quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : null)
   const changeValue = quote?.gszzl ?? null
 
@@ -214,7 +216,7 @@ export function FundDetail() {
               {navValue != null ? navValue.toFixed(4) : '--'}
             </p>
             {changeValue != null && (
-              <p className={cn('text-lg font-semibold mt-1', getColorForReturn(changeValue))}>
+              <p className={cn('text-lg font-semibold mt-1', colorFor(changeValue))}>
                 {formatPercent(changeValue)}
               </p>
             )}
@@ -318,7 +320,7 @@ export function FundDetail() {
                 <div key={item.label} className="text-center p-3 bg-slate-50 rounded-lg">
                   <p className="text-xs text-slate-400 mb-1">{item.label}</p>
                   {item.value != null ? (
-                    <p className={cn('text-lg font-bold', getColorForReturn(item.value))}>
+                    <p className={cn('text-lg font-bold', colorFor(item.value))}>
                       {formatPercent(item.value)}
                     </p>
                   ) : (

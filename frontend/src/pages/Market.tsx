@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
-import { BarChart3, Globe, Info } from 'lucide-react'
-import { cn, getColorForReturn } from '@/lib/utils'
+import { BarChart3, Globe } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useColor } from '@/lib/color-context'
 
 /* ==========================================================================
    Market Index Page — 行情数据
@@ -30,11 +31,10 @@ type IndexData = {
 
 /* ---------- sparkline data generator ---------- */
 function generateSparkline(current: number, changePercent: number, points = 20): { v: number }[] {
-  // Work backward from current value, generating a plausible intraday trend
   const direction = changePercent >= 0 ? 1 : -1
-  const range = current * Math.abs(changePercent) * 0.015 // small volatility
+  const range = current * Math.abs(changePercent) * 0.015
   const data: { v: number }[] = []
-  let v = current - current * (changePercent / 100) // approximate open
+  let v = current - current * (changePercent / 100)
 
   for (let i = 0; i < points; i++) {
     const progress = i / (points - 1)
@@ -43,15 +43,11 @@ function generateSparkline(current: number, changePercent: number, points = 20):
     v = current - current * (changePercent / 100) + trend + noise
     data.push({ v: parseFloat(v.toFixed(2)) })
   }
-  // Ensure last point is close to current
   data[points - 1] = { v: current }
   return data
 }
 
 /* ---------- mock data ---------- */
-// Static mock data with realistic values as of early 2026.
-// Structured so the data source can be swapped to a backend proxy later.
-
 const DOMESTIC_INDICES: IndexData[] = [
   { code: '000001', name: '上证指数', value: 3286.53, change: 20.12, changePercent: 0.42, sparkline: [] },
   { code: '399001', name: '深证成指', value: 10512.78, change: -18.94, changePercent: -0.18, sparkline: [] },
@@ -70,43 +66,10 @@ const INTERNATIONAL_INDICES: IndexData[] = [
   { code: 'FTSE', name: '富时100', value: 8234.56, change: -12.34, changePercent: -0.15, sparkline: [] },
 ].map((d) => ({ ...d, sparkline: generateSparkline(d.value, d.changePercent) }))
 
-/* ---------- color helpers ---------- */
-
-/** A-share convention: red = up, green = down */
-function getDomesticColor(changePercent: number) {
-  return getColorForReturn(changePercent)
-}
-
-/** International convention: green = up, red = down */
-function getInternationalColor(changePercent: number) {
-  if (changePercent > 0) return 'text-green-500'
-  if (changePercent < 0) return 'text-red-500'
-  return 'text-gray-500'
-}
-
-function getDomesticChartColor(changePercent: number) {
-  if (changePercent > 0) return { stroke: '#ef4444', fill: '#fecaca' }  // red
-  if (changePercent < 0) return { stroke: '#22c55e', fill: '#bbf7d0' }  // green
-  return { stroke: '#94a3b8', fill: '#e2e8f0' }
-}
-
-function getInternationalChartColor(changePercent: number) {
-  if (changePercent > 0) return { stroke: '#22c55e', fill: '#bbf7d0' }  // green
-  if (changePercent < 0) return { stroke: '#ef4444', fill: '#fecaca' }  // red
-  return { stroke: '#94a3b8', fill: '#e2e8f0' }
-}
-
 /* ---------- index card component ---------- */
-function IndexCard({
-  data,
-  colorFn,
-  chartColorFn,
-}: {
-  data: IndexData
-  colorFn: (cp: number) => string
-  chartColorFn: (cp: number) => { stroke: string; fill: string }
-}) {
-  const colors = chartColorFn(data.changePercent)
+function IndexCard({ data }: { data: IndexData }) {
+  const { colorFor, chartColorFor } = useColor()
+  const colors = chartColorFor(data.changePercent)
   const sign = data.change >= 0 ? '+' : ''
 
   return (
@@ -123,7 +86,7 @@ function IndexCard({
       </div>
 
       {/* Change row */}
-      <div className={cn('flex items-center gap-3 text-sm font-medium tabular-nums', colorFn(data.changePercent))}>
+      <div className={cn('flex items-center gap-3 text-sm font-medium tabular-nums', colorFor(data.changePercent))}>
         <span>{sign}{data.change.toFixed(2)}</span>
         <span>{sign}{data.changePercent.toFixed(2)}%</span>
       </div>
@@ -155,7 +118,6 @@ function IndexCard({
 
 /* ---------- main page component ---------- */
 export function Market() {
-  // Memoize to keep sparkline data stable across renders
   const domestic = useMemo(() => DOMESTIC_INDICES, [])
   const international = useMemo(() => INTERNATIONAL_INDICES, [])
 
@@ -178,36 +140,20 @@ export function Market() {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {domestic.map((idx) => (
-            <IndexCard
-              key={idx.code}
-              data={idx}
-              colorFn={getDomesticColor}
-              chartColorFn={getDomesticChartColor}
-            />
+            <IndexCard key={idx.code} data={idx} />
           ))}
         </div>
       </section>
 
       {/* International indices */}
       <section className="space-y-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-            <Globe className="h-5 w-5 text-blue-600" />
-            海外指数
-          </h2>
-          <span className="inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full">
-            <Info className="h-3 w-3" />
-            海外市场使用国际惯例配色：绿涨红跌
-          </span>
-        </div>
+        <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+          <Globe className="h-5 w-5 text-blue-600" />
+          海外指数
+        </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {international.map((idx) => (
-            <IndexCard
-              key={idx.code}
-              data={idx}
-              colorFn={getInternationalColor}
-              chartColorFn={getInternationalChartColor}
-            />
+            <IndexCard key={idx.code} data={idx} />
           ))}
         </div>
       </section>
