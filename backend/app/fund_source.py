@@ -209,6 +209,13 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
 
     result["sector"] = _extract_sector(result["name"]) if result["name"] else None
 
+    # Subscription fee rates
+    m = re.search(r'var fund_sourceRate\s*=\s*"([^"]*)"', text)
+    result["subscription_rate"] = _to_float(m.group(1)) if m else None
+
+    m = re.search(r'var fund_Rate\s*=\s*"([^"]*)"', text)
+    result["subscription_rate_discounted"] = _to_float(m.group(1)) if m else None
+
     return result
 
 
@@ -287,7 +294,42 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
     return history
 
 
+LSJZ_URL = "https://api.fund.eastmoney.com/f10/lsjz"
 FUND_SEARCH_URL = "https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx"
+
+
+async def fetch_latest_nav(code: str) -> dict[str, Any] | None:
+    """Fetch the most recent NAV record. Returns {date, nav} or None."""
+    params = {"fundCode": code, "pageIndex": 1, "pageSize": 1}
+    headers = {"Referer": "https://fund.eastmoney.com/"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(LSJZ_URL, params=params, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+    items = (data.get("Data") or {}).get("LSJZList") or []
+    if items:
+        return {"date": items[0].get("FSRQ"), "nav": _to_float(items[0].get("DWJZ"))}
+    return None
+
+
+async def fetch_nav_on_date(code: str, date: str) -> float | None:
+    """Fetch the NAV for a specific date (YYYY-MM-DD). Returns None if not found."""
+    params = {
+        "fundCode": code,
+        "pageIndex": 1,
+        "pageSize": 1,
+        "startDate": date,
+        "endDate": date,
+    }
+    headers = {"Referer": "https://fund.eastmoney.com/"}
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(LSJZ_URL, params=params, headers=headers)
+        resp.raise_for_status()
+        data = resp.json()
+    items = (data.get("Data") or {}).get("LSJZList") or []
+    if items:
+        return _to_float(items[0].get("DWJZ"))
+    return None
 
 
 async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, Any]]:

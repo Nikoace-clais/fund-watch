@@ -31,6 +31,9 @@ def init_db() -> None:
             ("percentage", "REAL"),
             ("amount_mode", "TEXT DEFAULT 'manual'"),
             ("holding_shares", "TEXT"),
+            ("imported_holding_amount", "REAL"),
+            ("imported_cumulative_return", "REAL"),
+            ("imported_holding_return", "REAL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE funds ADD COLUMN {col} {coltype}")
