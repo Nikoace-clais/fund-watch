@@ -1,10 +1,37 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
+
+# ── Shared async HTTP client (connection pooling + keep-alive) ──────────────
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=15.0, write=5.0, pool=5.0),
+            limits=httpx.Limits(max_connections=30, max_keepalive_connections=10),
+        )
+        logger.info("httpx shared client initialized")
+    return _client
+
+
+async def close_shared_client() -> None:
+    global _client
+    if _client and not _client.is_closed:
+        await _client.aclose()
+        _client = None
+        logger.info("httpx shared client closed")
+
 
 FUND_GZ_URL = "https://fundgz.1234567.com.cn/js/{code}.js"
 JSONP_RE = re.compile(r"jsonpgz\((.*)\)")
@@ -12,10 +39,13 @@ JSONP_RE = re.compile(r"jsonpgz\((.*)\)")
 
 async def fetch_realtime_estimate(code: str) -> dict[str, Any]:
     url = FUND_GZ_URL.format(code=code)
-    async with httpx.AsyncClient(timeout=12) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        text = resp.text.strip()
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(url)
+    resp.raise_for_status()
+    text = resp.text.strip()
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_realtime_estimate [%s] %.3fs", code, elapsed)
 
     m = JSONP_RE.search(text)
     if not m:
@@ -41,7 +71,6 @@ def _to_float(v: Any) -> float | None:
 
 
 PINGZHONG_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
-FUND_DETAIL_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
 
 # Common fund sector keywords to extract from fund name
 _SECTOR_KEYWORDS = [
@@ -65,10 +94,13 @@ def _extract_sector(name: str) -> str | None:
 async def fetch_fund_info(code: str) -> dict[str, Any]:
     """Fetch fund basic info (name, sector) from eastmoney pingzhongdata."""
     url = PINGZHONG_URL.format(code=code)
-    async with httpx.AsyncClient(timeout=12) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        text = resp.text
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(url)
+    resp.raise_for_status()
+    text = resp.text
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_fund_info [%s] %.3fs", code, elapsed)
 
     # Parse: var fS_name = "招商中证白酒指数(LOF)A";
     name_m = re.search(r'var fS_name\s*=\s*"([^"]*)"', text)
@@ -97,10 +129,13 @@ _HOLDING_ROW_RE = re.compile(
 async def fetch_fund_holdings(code: str) -> list[dict[str, Any]]:
     """Fetch top-10 stock holdings for a fund from eastmoney."""
     url = HOLDINGS_URL.format(code=code)
-    async with httpx.AsyncClient(timeout=12) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        text = resp.text
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(url)
+    resp.raise_for_status()
+    text = resp.text
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_fund_holdings [%s] %.3fs", code, elapsed)
 
     holdings: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -127,10 +162,13 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
     asset allocation, etc.
     """
     url = PINGZHONG_URL.format(code=code)
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        text = resp.text
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(url)
+    resp.raise_for_status()
+    text = resp.text
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_fund_detail [%s] %.3fs", code, elapsed)
 
     result: dict[str, Any] = {"code": code}
 
@@ -255,10 +293,13 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
     Returns list of {date, nav, accNav, dailyReturn}.
     """
     url = PINGZHONG_URL.format(code=code)
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        text = resp.text
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(url)
+    resp.raise_for_status()
+    text = resp.text
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_nav_history [%s] %.3fs", code, elapsed)
 
     from datetime import datetime as dt
 
@@ -297,15 +338,67 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
 LSJZ_URL = "https://api.fund.eastmoney.com/f10/lsjz"
 FUND_SEARCH_URL = "https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx"
 
+# ── Market indices ────────────────────────────────────────────────────────────
+MARKET_INDICES_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+
+# secid format: {market}.{code}  1=上交所 0=深交所 100=海外
+_INDEX_SECIDS = [
+    "1.000001",   # 上证指数
+    "0.399001",   # 深证成指
+    "0.399006",   # 创业板指
+    "0.399300",   # 沪深300
+    "1.000016",   # 上证50
+    "1.000905",   # 中证500
+    "100.HSI",    # 恒生指数
+    "100.SPX",    # 标普500
+    "100.NDX",    # 纳斯达克
+    "100.DJIA",   # 道琼斯
+    "100.N225",   # 日经225
+]
+
+
+async def fetch_market_indices() -> list[dict[str, Any]]:
+    """Fetch major domestic and overseas market indices from eastmoney push2 API."""
+    params = {
+        "fltt": "2",
+        "invt": "2",
+        "fields": "f2,f3,f4,f12,f14",
+        "secids": ",".join(_INDEX_SECIDS),
+    }
+    headers = {"Referer": "https://www.eastmoney.com/"}
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(MARKET_INDICES_URL, params=params, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_market_indices %.3fs", elapsed)
+
+    items = (data.get("data") or {}).get("diff") or []
+    return [
+        {
+            "code": item.get("f12"),
+            "name": item.get("f14"),
+            "value": item.get("f2"),       # 当前值
+            "change": item.get("f4"),      # 涨跌额
+            "change_percent": item.get("f3"),  # 涨跌幅%
+        }
+        for item in items
+        if item.get("f2") is not None
+    ]
+
 
 async def fetch_latest_nav(code: str) -> dict[str, Any] | None:
     """Fetch the most recent NAV record. Returns {date, nav} or None."""
     params = {"fundCode": code, "pageIndex": 1, "pageSize": 1}
     headers = {"Referer": "https://fund.eastmoney.com/"}
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(LSJZ_URL, params=params, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(LSJZ_URL, params=params, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_latest_nav [%s] %.3fs", code, elapsed)
     items = (data.get("Data") or {}).get("LSJZList") or []
     if items:
         return {"date": items[0].get("FSRQ"), "nav": _to_float(items[0].get("DWJZ"))}
@@ -322,10 +415,13 @@ async def fetch_nav_on_date(code: str, date: str) -> float | None:
         "endDate": date,
     }
     headers = {"Referer": "https://fund.eastmoney.com/"}
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(LSJZ_URL, params=params, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(LSJZ_URL, params=params, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_nav_on_date [%s@%s] %.3fs", code, date, elapsed)
     items = (data.get("Data") or {}).get("LSJZList") or []
     if items:
         return _to_float(items[0].get("DWJZ"))
@@ -338,10 +434,13 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
     Returns list of {"code": "110011", "name": "易方达优质精选混合(QDII)", "type": "QDII-混合偏股"}.
     """
     params = {"callback": "cb", "m": "1", "key": keyword}
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(FUND_SEARCH_URL, params=params)
-        resp.raise_for_status()
-        text = resp.text.strip()
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await client.get(FUND_SEARCH_URL, params=params)
+    resp.raise_for_status()
+    text = resp.text.strip()
+    elapsed = time.perf_counter() - t0
+    logger.debug("search_fund_by_name [%s] %.3fs", keyword, elapsed)
 
     # Strip JSONP wrapper: cb({...})
     if text.startswith("cb(") and text.endswith(")"):

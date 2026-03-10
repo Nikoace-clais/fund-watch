@@ -5,6 +5,16 @@ from pathlib import Path
 
 from rapidocr_onnxruntime import RapidOCR
 
+_ocr_engine: RapidOCR | None = None
+
+
+def _get_ocr() -> RapidOCR:
+    global _ocr_engine
+    if _ocr_engine is None:
+        _ocr_engine = RapidOCR()
+    return _ocr_engine
+
+
 CODE_RE = re.compile(r"\b\d{6}\b")
 # Match amounts like: ¥1,234.56  1,234.56元  1234.56  持有金额 1,234.56
 AMOUNT_RE = re.compile(r"[¥￥]?\s*([\d,]+\.\d{1,2})\s*元?")
@@ -25,8 +35,7 @@ SHARES_RE = re.compile(r"份额[：:]*\s*([\d,.]+)|确认份额[：:]*\s*([\d,.]
 
 
 def extract_fund_codes_from_image(image_path: Path) -> tuple[str, list[str]]:
-    engine = RapidOCR()
-    result, _ = engine(str(image_path))
+    result, _ = _get_ocr()(str(image_path))
     if not result:
         return "", []
 
@@ -41,8 +50,7 @@ def extract_funds_with_amounts(image_path: Path) -> tuple[str, list[dict]]:
     Returns (raw_text, matched_funds) where matched_funds is a list of
     {"code": "161725", "amount": 1234.56} dicts. amount may be None.
     """
-    engine = RapidOCR()
-    result, _ = engine(str(image_path))
+    result, _ = _get_ocr()(str(image_path))
     if not result:
         return "", []
 
@@ -131,8 +139,7 @@ def extract_transaction_from_image(image_path: Path) -> tuple[str, dict]:
     Returns (raw_text, tx_data) where tx_data has keys:
     direction, code, trade_date, nav, shares, amount — all may be None.
     """
-    engine = RapidOCR()
-    result, _ = engine(str(image_path))
+    result, _ = _get_ocr()(str(image_path))
     if not result:
         return "", {}
 
