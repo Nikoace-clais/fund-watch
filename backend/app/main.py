@@ -709,46 +709,23 @@ async def portfolio_summary() -> dict:
         total_daily_return += r.pop("_daily_return_d")
         items.append(r)
 
-    # Funds with imported values but no transactions
+    # Funds with no transactions: COALESCE(imported_holding_amount, amount) as base,
+    # fetch realtime gszzl to compute today's daily return.
     with get_conn() as conn:
-        imported_funds = [dict(r) for r in conn.execute(
-            """SELECT code, name, imported_holding_amount, imported_cumulative_return, imported_holding_return
+        notx_funds = [dict(r) for r in conn.execute(
+            """SELECT code, name,
+                      COALESCE(imported_holding_amount, amount) AS holding_amount,
+                      imported_cumulative_return,
+                      imported_holding_return
                FROM funds
                WHERE holding_shares IS NULL
-                 AND imported_holding_amount IS NOT NULL
+                 AND COALESCE(imported_holding_amount, amount) > 0
                ORDER BY created_at DESC"""
         ).fetchall()]
 
-    for f in imported_funds:
-        items.append({
-            "code": f["code"],
-            "name": f["name"],
-            "shares": None,
-            "nav": None,
-            "daily_change": 0.0,
-            "current_value": str(Decimal(str(f["imported_holding_amount"])).quantize(Decimal("0.01"))),
-            "daily_return": "0",
-            "total_cost": None,
-            "total_return": str(Decimal(str(f["imported_holding_return"] or 0)).quantize(Decimal("0.01"))),
-            "return_rate": None,
-            "imported_cumulative_return": str(Decimal(str(f["imported_cumulative_return"] or 0)).quantize(Decimal("0.01"))),
-            "is_imported": True,
-        })
-
-    # Funds without transactions: use realtime gszzl × holding amount for daily return
-    with get_conn() as conn:
-        no_tx_funds = [dict(r) for r in conn.execute(
-            """SELECT code, name, amount
-               FROM funds
-               WHERE holding_shares IS NULL
-                 AND amount IS NOT NULL
-                 AND amount > 0
-               ORDER BY created_at DESC"""
-        ).fetchall()]
-
-    for f in no_tx_funds:
+    async def _fetch_notx(f: dict) -> dict:
         code = f["code"]
-        amount = Decimal(str(f["amount"]))
+        amount = Decimal(str(f["holding_amount"]))
         daily_change = 0.0
         daily_return_val = Decimal("0")
         try:
@@ -759,9 +736,9 @@ async def portfolio_summary() -> dict:
                 daily_return_val = (amount * Decimal(str(daily_change)) / 100).quantize(Decimal("0.01"))
         except Exception:
             pass
-        total_current += amount
-        total_daily_return += daily_return_val
-        items.append({
+        cum_ret = f.get("imported_cumulative_return")
+        hold_ret = f.get("imported_holding_return")
+        return {
             "code": code,
             "name": f["name"],
             "shares": None,
@@ -770,9 +747,19 @@ async def portfolio_summary() -> dict:
             "current_value": str(amount),
             "daily_return": str(daily_return_val),
             "total_cost": None,
-            "total_return": "0",
+            "total_return": str(Decimal(str(hold_ret or 0)).quantize(Decimal("0.01"))),
             "return_rate": None,
-        })
+            "imported_cumulative_return": str(Decimal(str(cum_ret or 0)).quantize(Decimal("0.01"))),
+            "is_imported": True,
+            "_amount_d": amount,
+            "_daily_return_d": daily_return_val,
+        }
+
+    notx_results = list(await asyncio.gather(*[_fetch_notx(f) for f in notx_funds]))
+    for r in notx_results:
+        total_current += r.pop("_amount_d")
+        total_daily_return += r.pop("_daily_return_d")
+        items.append(r)
 
     total_return_rate = ((total_current - total_cost) / total_cost * 100).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
 
