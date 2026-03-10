@@ -915,7 +915,7 @@ async def portfolio_history(limit: int = 90) -> dict:
         if total > 0:
             date_totals[target_date] = total
 
-    # Today's estimated point: gsz for tx-funds, holding_amount for imported funds
+    # Today's estimated point using gsz; only insert if date not already in confirmed data
     CST = timezone(timedelta(hours=8))
     today = datetime.now(CST).strftime("%Y-%m-%d")
     today_total = sum(
@@ -923,9 +923,16 @@ async def portfolio_history(limit: int = 90) -> dict:
         for code, gsz in gsz_map.items()
         if code in current_holdings
     )
-    today_total += sum(float(v) for v in imported_funds.values())
+    # C1 fix: use implied_shares × gsz (market value) not holding_amount (cost basis)
+    for code, imp_shares in implied_shares.items():
+        gsz = gsz_map.get(code)
+        if gsz:
+            today_total += imp_shares * gsz
+        else:
+            today_total += float(imported_funds[code])  # fallback to holding_amount
+    # C2 fix: setdefault — don't overwrite an already-confirmed NAV for today
     if today_total > 0:
-        date_totals[today] = today_total
+        date_totals.setdefault(today, today_total)
 
     sorted_items = sorted(date_totals.items())
     return {
