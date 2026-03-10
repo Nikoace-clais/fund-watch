@@ -16,7 +16,7 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .db import get_conn, init_db
+from .db import get_conn, init_db, prune_old_snapshots
 from .fund_source import (
     close_shared_client,
     fetch_fund_detail,
@@ -67,10 +67,23 @@ def _in_trading_hours() -> bool:
 
 
 async def _snapshot_scheduler() -> None:
-    """Background loop: pull snapshots every 5 min during trading hours."""
+    """Background loop: pull snapshots every 5 min during trading hours.
+    Also prunes snapshots older than 30 days once per day at startup and at midnight.
+    """
     await asyncio.sleep(15)          # startup buffer
     logger.info("cron: scheduler started (interval=5min, trading-hours only)")
+    last_prune_day: int = -1
     while True:
+        now_cst = datetime.now(_CST)
+        # I3 fix: prune old snapshots once per calendar day
+        if now_cst.day != last_prune_day:
+            try:
+                deleted = prune_old_snapshots(keep_days=30)
+                logger.info("cron: pruned %d old snapshots (keep_days=30)", deleted)
+            except Exception as exc:
+                logger.warning("cron: prune failed — %s", exc)
+            last_prune_day = now_cst.day
+
         in_hours = _in_trading_hours()
         _cron_state["is_active"] = in_hours
         if in_hours:
@@ -658,6 +671,14 @@ async def portfolio_summary() -> dict:
 
     t0 = time.perf_counter()
 
+    # I2 fix: batch-compute PnL for all funds in ONE DB connection before async gather
+    pnl_map: dict[str, dict] = {}
+    codes = [f["code"] for f in funds if f.get("holding_shares") and Decimal(f["holding_shares"]) > 0]
+    if codes:
+        with get_conn() as conn:
+            for code in codes:
+                pnl_map[code] = _compute_pnl(conn, code)
+
     async def _fetch_fund_item(f: dict) -> dict | None:
         code = f["code"]
         shares = Decimal(f["holding_shares"]) if f["holding_shares"] else Decimal("0")
@@ -673,8 +694,7 @@ async def portfolio_summary() -> dict:
         daily_change = float(q.get("gszzl", 0)) if q.get("gszzl") else 0.0
         current_value = (shares * nav).quantize(Decimal("0.01"))
         daily_return_val = (current_value * Decimal(str(daily_change)) / 100).quantize(Decimal("0.01"))
-        with get_conn() as conn:
-            pnl = _compute_pnl(conn, code, str(nav))
+        pnl = pnl_map.get(code, {})
         cost = Decimal(pnl.get("total_cost", "0"))
         total_return = current_value - cost
         return_rate = (total_return / cost * 100).quantize(Decimal("0.01")) if cost > 0 else Decimal("0")
@@ -886,12 +906,17 @@ async def portfolio_history(limit: int = 90) -> dict:
 
     # Implied shares for imported funds: holding_amount ÷ latest confirmed NAV
     implied_shares: dict[str, float] = {}
+    excluded_codes: list[str] = []
     for code, holding_amount in imported_funds.items():
         nav_dict = nav_map.get(code, {})
         if nav_dict:
             latest_nav = nav_dict[max(nav_dict.keys())]
             if latest_nav > 0:
                 implied_shares[code] = float(holding_amount) / latest_nav
+        else:
+            # I6 fix: log and collect codes excluded due to missing NAV data
+            excluded_codes.append(code)
+            logger.warning("portfolio_history: no NAV data for %s, excluded from chart", code)
 
     all_dates = sorted({d for nd in nav_map.values() for d in nd})
     all_dates = all_dates[-limit:]
@@ -943,13 +968,16 @@ async def portfolio_history(limit: int = 90) -> dict:
         date_totals.setdefault(today, today_total)
 
     sorted_items = sorted(date_totals.items())
-    return {
+    result: dict = {
         "count": len(sorted_items),
         "history": [
             {"date": date, "total_value": round(value, 2)}
             for date, value in sorted_items
         ],
     }
+    if excluded_codes:
+        result["excluded_codes"] = excluded_codes  # I6: surface missing-NAV funds to caller
+    return result
 
 
 @app.get("/api/market/indices")
@@ -978,6 +1006,8 @@ async def search_funds(q: str = "") -> dict:
     q = q.strip()
     if not q:
         return {"results": []}
+    if len(q) > 50:
+        raise HTTPException(status_code=400, detail="搜索词过长（最多 50 个字符）")
     results = await search_fund_by_name(q, limit=10)
     return {"results": results}
 

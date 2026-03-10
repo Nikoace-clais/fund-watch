@@ -6,6 +6,10 @@ import re
 import time
 from typing import Any
 
+# ── Simple in-process TTL cache for NAV history (avoids re-fetching on range changes) ──
+_nav_history_cache: dict[str, tuple[float, list]] = {}  # code -> (fetched_at, data)
+_NAV_CACHE_TTL = 600  # 10 minutes
+
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -291,7 +295,16 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
     """Fetch historical NAV data from eastmoney pingzhongdata.
 
     Returns list of {date, nav, accNav, dailyReturn}.
+    Results are cached in-process for 10 minutes (TTL) to avoid repeated fetches
+    when the user switches between chart range buttons.
     """
+    # I4 fix: return cached data when still fresh
+    cached = _nav_history_cache.get(code)
+    if cached:
+        fetched_at, full_data = cached
+        if time.time() - fetched_at < _NAV_CACHE_TTL:
+            return full_data[-limit:] if limit < len(full_data) else full_data
+
     url = PINGZHONG_URL.format(code=code)
     t0 = time.perf_counter()
     client = _get_client()
@@ -332,7 +345,9 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
     for h in history:
         h["accNav"] = acc_map.get(h["date"])
 
-    return history
+    # Store full history in cache; callers slice by limit from here
+    _nav_history_cache[code] = (time.time(), history)
+    return history[-limit:] if limit < len(history) else history
 
 
 LSJZ_URL = "https://api.fund.eastmoney.com/f10/lsjz"
