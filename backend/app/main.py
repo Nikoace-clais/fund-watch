@@ -806,17 +806,21 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
 
 @app.get("/api/portfolio/history")
 async def portfolio_history(limit: int = 90) -> dict:
-    """Portfolio value history: holdings at each date × confirmed NAV, plus today's estimate."""
+    """Portfolio value history: holdings at each date × confirmed NAV, plus today's estimate.
+
+    For funds with transactions: per-date shares reconstructed from transaction log × NAV.
+    For imported funds without transactions: implied shares = holding_amount / latest_nav × NAV.
+    """
     limit = max(1, min(limit, 365))
 
+    from collections import defaultdict
+
     with get_conn() as conn:
-        # All transactions sorted by date (for per-date holdings reconstruction)
         transactions = [
             dict(r) for r in conn.execute(
                 "SELECT code, direction, trade_date, shares FROM transactions ORDER BY trade_date ASC"
             ).fetchall()
         ]
-        # Current holdings for today's estimated point
         current_holdings = {
             r["code"]: Decimal(r["holding_shares"])
             for r in conn.execute(
@@ -824,18 +828,28 @@ async def portfolio_history(limit: int = 90) -> dict:
             ).fetchall()
             if r["holding_shares"] and Decimal(r["holding_shares"]) > 0
         }
+        # Imported funds without any transactions: use holding_amount to infer shares
+        imported_funds: dict[str, Decimal] = {
+            r["code"]: Decimal(str(r["holding_amount"]))
+            for r in conn.execute(
+                """SELECT code, COALESCE(imported_holding_amount, amount) AS holding_amount
+                   FROM funds
+                   WHERE holding_shares IS NULL
+                     AND COALESCE(imported_holding_amount, amount) > 0"""
+            ).fetchall()
+        }
 
-    if not transactions:
-        return {"count": 0, "history": []}
-
-    # Group transactions by code
-    from collections import defaultdict
     tx_by_code: dict[str, list[dict]] = defaultdict(list)
     for tx in transactions:
         tx_by_code[tx["code"]].append(tx)
-    all_codes = list(tx_by_code.keys())
 
-    # Fetch historical NAV + today's estimate in parallel (one gather per code)
+    tx_codes = list(tx_by_code.keys())
+    imported_codes = list(imported_funds.keys())
+    all_codes = list(set(tx_codes + imported_codes))
+
+    if not all_codes:
+        return {"count": 0, "history": []}
+
     async def _fetch_code(code: str) -> tuple[str, dict[str, float], float | None]:
         nav_dict: dict[str, float] = {}
         gsz: float | None = None
@@ -862,15 +876,23 @@ async def portfolio_history(limit: int = 90) -> dict:
         if gsz:
             gsz_map[code] = gsz
 
-    # Collect confirmed trading dates across all funds
+    # Implied shares for imported funds: holding_amount ÷ latest confirmed NAV
+    implied_shares: dict[str, float] = {}
+    for code, holding_amount in imported_funds.items():
+        nav_dict = nav_map.get(code, {})
+        if nav_dict:
+            latest_nav = nav_dict[max(nav_dict.keys())]
+            if latest_nav > 0:
+                implied_shares[code] = float(holding_amount) / latest_nav
+
     all_dates = sorted({d for nd in nav_map.values() for d in nd})
     all_dates = all_dates[-limit:]
 
-    # For each date, compute holdings *at that date* from transactions
     date_totals: dict[str, float] = {}
     for target_date in all_dates:
         total = 0.0
-        for code in all_codes:
+        # Funds with transactions: per-date share count from transaction log
+        for code in tx_codes:
             shares = Decimal("0")
             for tx in tx_by_code[code]:
                 if tx["trade_date"] <= target_date:
@@ -884,20 +906,26 @@ async def portfolio_history(limit: int = 90) -> dict:
             if nav is None:
                 continue
             total += float(shares) * nav
+        # Imported funds without transactions: implied shares × that day's NAV
+        for code, imp_shares in implied_shares.items():
+            nav = nav_map.get(code, {}).get(target_date)
+            if nav is None:
+                continue
+            total += imp_shares * nav
         if total > 0:
             date_totals[target_date] = total
 
-    # Append today's estimated point using gsz (fills the T+0 gap)
+    # Today's estimated point: gsz for tx-funds, holding_amount for imported funds
     CST = timezone(timedelta(hours=8))
     today = datetime.now(CST).strftime("%Y-%m-%d")
-    if gsz_map and current_holdings:
-        today_total = sum(
-            float(current_holdings[code]) * gsz
-            for code, gsz in gsz_map.items()
-            if code in current_holdings
-        )
-        if today_total > 0:
-            date_totals[today] = today_total
+    today_total = sum(
+        float(current_holdings[code]) * gsz
+        for code, gsz in gsz_map.items()
+        if code in current_holdings
+    )
+    today_total += sum(float(v) for v in imported_funds.values())
+    if today_total > 0:
+        date_totals[today] = today_total
 
     sorted_items = sorted(date_totals.items())
     return {
