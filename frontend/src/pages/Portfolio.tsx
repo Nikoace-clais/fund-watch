@@ -5,8 +5,10 @@ import {
   TrendingUp,
   Plus,
   Trash2,
+  BookOpen,
 } from 'lucide-react'
 import { AddFundModal } from '@/components/AddFundModal'
+import { HoldingEditModal } from '@/components/HoldingEditModal'
 import {
   AreaChart,
   Area,
@@ -20,20 +22,30 @@ import {
   Cell,
 } from 'recharts'
 import { fetchPortfolioSummary, fetchFundsOverview, deleteFund } from '@/lib/api'
-import { cn, formatCNY, getColorForReturn, formatPercent } from '@/lib/utils'
+
+type WatchOnlyItem = {
+  code: string
+  name?: string
+  gszzl?: number
+  gsz?: number
+}
+import { cn, formatCNY, formatPercent } from '@/lib/utils'
+import { useColor } from '@/lib/color-context'
 
 /* ---------- types ---------- */
 type PortfolioItem = {
   code: string
   name?: string
-  shares: string
-  nav: string
+  shares: string | null
+  nav: string | null
   daily_change: number
   current_value: string
   daily_return: string
-  total_cost: string
+  total_cost: string | null
   total_return: string
-  return_rate: string
+  return_rate: string | null
+  imported_cumulative_return?: string
+  is_imported?: boolean
 }
 
 type PortfolioSummary = {
@@ -50,18 +62,35 @@ const PIE_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4
 
 /* ---------- component ---------- */
 export function Portfolio() {
+  const { colorFor } = useColor()
   const [summary, setSummary] = useState<PortfolioSummary | null>(null)
+  const [watchOnly, setWatchOnly] = useState<WatchOnlyItem[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [holdingEdit, setHoldingEdit] = useState<{ code: string; name?: string; nav?: number } | null>(null)
 
   const loadData = useCallback(async () => {
     try {
-      const [ps] = await Promise.allSettled([
+      const [ps, ov] = await Promise.allSettled([
         fetchPortfolioSummary(),
-        fetchFundsOverview(), // pre-warm; could use later
+        fetchFundsOverview(),
       ])
-      if (ps.status === 'fulfilled') setSummary(ps.value)
+      const portfolioData = ps.status === 'fulfilled' ? ps.value : null
+      if (portfolioData) setSummary(portfolioData)
+
+      if (ov.status === 'fulfilled') {
+        const holdingCodes = new Set((portfolioData?.items ?? []).map((i) => i.code))
+        const watchOnlyItems = ov.value.items
+          .filter((i) => !holdingCodes.has(i.fund.code))
+          .map((i) => ({
+            code: i.fund.code,
+            name: i.latest?.name || i.fund.name,
+            gszzl: i.latest?.gszzl,
+            gsz: i.latest?.gsz ?? i.latest?.dwjz,
+          }))
+        setWatchOnly(watchOnlyItems)
+      }
     } finally {
       setLoading(false)
     }
@@ -147,8 +176,18 @@ export function Portfolio() {
         onAdded={() => loadData()}
       />
 
+      {/* ---- Holding edit modal ---- */}
+      <HoldingEditModal
+        open={holdingEdit !== null}
+        onClose={() => setHoldingEdit(null)}
+        onSaved={() => loadData()}
+        code={holdingEdit?.code ?? ''}
+        name={holdingEdit?.name}
+        defaultNav={holdingEdit?.nav}
+      />
+
       {/* ---- Empty state ---- */}
-      {!hasItems && (
+      {!hasItems && watchOnly.length === 0 && (
         <div className="flex flex-col items-center justify-center py-32 text-center">
           <div className="rounded-full bg-slate-100 p-6 mb-6">
             <PieChartIcon className="h-10 w-10 text-slate-400" />
@@ -182,11 +221,11 @@ export function Portfolio() {
             {/* Daily return */}
             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
               <p className="text-sm text-slate-500 mb-1">今日收益(估算)</p>
-              <p className={cn('text-2xl font-bold', getColorForReturn(totalDailyReturn))}>
+              <p className={cn('text-2xl font-bold', colorFor(totalDailyReturn))}>
                 {totalDailyReturn > 0 ? '+' : ''}
                 {formatCNY(totalDailyReturn)}
               </p>
-              <p className={cn('text-xs mt-2', getColorForReturn(dailyReturnRate))}>
+              <p className={cn('text-xs mt-2', colorFor(dailyReturnRate))}>
                 今日收益率: {formatPercent(dailyReturnRate)}
               </p>
             </div>
@@ -194,11 +233,11 @@ export function Portfolio() {
             {/* Cumulative return */}
             <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
               <p className="text-sm text-slate-500 mb-1">累计收益</p>
-              <p className={cn('text-2xl font-bold', getColorForReturn(totalReturn))}>
+              <p className={cn('text-2xl font-bold', colorFor(totalReturn))}>
                 {totalReturn > 0 ? '+' : ''}
                 {formatCNY(totalReturn)}
               </p>
-              <p className={cn('text-xs mt-2', getColorForReturn(totalReturnRate))}>
+              <p className={cn('text-xs mt-2', colorFor(totalReturnRate))}>
                 累计收益率: {formatPercent(totalReturnRate)}
               </p>
             </div>
@@ -213,7 +252,7 @@ export function Portfolio() {
               {bestFund && (
                 <p className="text-xs text-slate-400 mt-2 truncate">
                   表现最好: {bestFund.name || bestFund.code}{' '}
-                  <span className={getColorForReturn(parseFloat(bestFund.return_rate))}>
+                  <span className={colorFor(parseFloat(bestFund.return_rate))}>
                     {formatPercent(parseFloat(bestFund.return_rate))}
                   </span>
                 </p>
@@ -258,60 +297,84 @@ export function Portfolio() {
                       const cv = parseFloat(it.current_value)
                       const dr = parseFloat(it.daily_return)
                       const tr = parseFloat(it.total_return)
-                      const rr = parseFloat(it.return_rate)
+                      const rr = it.return_rate != null ? parseFloat(it.return_rate) : null
                       const pct = totalCurrent > 0 ? (cv / totalCurrent) * 100 : 0
+                      const cumRet = it.imported_cumulative_return != null
+                        ? parseFloat(it.imported_cumulative_return) : null
 
                       return (
                         <tr key={it.code} className="hover:bg-slate-50 transition-colors">
                           <td className="px-4 py-3">
-                            <Link
-                              to={`/funds/${it.code}`}
-                              className="text-slate-900 font-medium hover:text-blue-600"
-                            >
-                              {it.name || it.code}
-                            </Link>
+                            <div className="flex items-center gap-1.5">
+                              <Link
+                                to={`/funds/${it.code}`}
+                                className="text-slate-900 font-medium hover:text-blue-600"
+                              >
+                                {it.name || it.code}
+                              </Link>
+                              {it.is_imported && (
+                                <span className="text-xs px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200">导入</span>
+                              )}
+                            </div>
                             <p className="text-xs text-slate-400">{it.code}</p>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <p className="text-slate-800">{parseFloat(it.nav).toFixed(4)}</p>
-                            <p className="text-xs text-slate-400">
-                              {parseFloat(it.shares).toFixed(2)} 份
-                            </p>
+                            {it.nav != null ? (
+                              <p className="text-slate-800">{parseFloat(it.nav).toFixed(4)}</p>
+                            ) : <p className="text-slate-300">—</p>}
+                            {it.shares != null ? (
+                              <p className="text-xs text-slate-400">{parseFloat(it.shares).toFixed(2)} 份</p>
+                            ) : <p className="text-xs text-slate-300">—</p>}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <p className="text-slate-800">{formatCNY(cv)}</p>
                             <p className="text-xs text-slate-400">{pct.toFixed(1)}%</p>
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <p className={cn('font-medium', getColorForReturn(dr))}>
-                              {dr > 0 ? '+' : ''}
-                              {formatCNY(dr)}
-                            </p>
-                            <p className={cn('text-xs', getColorForReturn(it.daily_change))}>
-                              {formatPercent(it.daily_change)}
-                            </p>
+                            {it.is_imported ? (
+                              <p className="text-xs text-slate-300">—</p>
+                            ) : (
+                              <>
+                                <p className={cn('font-medium', colorFor(dr))}>
+                                  {dr > 0 ? '+' : ''}{formatCNY(dr)}
+                                </p>
+                                <p className={cn('text-xs', colorFor(it.daily_change))}>
+                                  {formatPercent(it.daily_change)}
+                                </p>
+                              </>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <p className={cn('font-medium', getColorForReturn(tr))}>
-                              {tr > 0 ? '+' : ''}
-                              {formatCNY(tr)}
+                            <p className={cn('font-medium', colorFor(tr))}>
+                              {tr > 0 ? '+' : ''}{formatCNY(tr)}
                             </p>
-                            <p className={cn('text-xs', getColorForReturn(rr))}>
-                              {formatPercent(rr)}
-                            </p>
+                            {it.is_imported && cumRet != null ? (
+                              <p className="text-xs text-slate-400">累计 {cumRet > 0 ? '+' : ''}{formatCNY(cumRet)}</p>
+                            ) : rr != null ? (
+                              <p className={cn('text-xs', colorFor(rr))}>{formatPercent(rr)}</p>
+                            ) : null}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={() => handleDelete(it.code, it.name)}
-                              disabled={deleting === it.code}
-                              className={cn(
-                                'p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors',
-                                deleting === it.code && 'opacity-50 cursor-not-allowed',
-                              )}
-                              title="删除基金"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => setHoldingEdit({ code: it.code, name: it.name, nav: it.nav != null ? parseFloat(it.nav) : undefined })}
+                                className="p-1.5 rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                                title="记录交易"
+                              >
+                                <BookOpen className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(it.code, it.name)}
+                                disabled={deleting === it.code}
+                                className={cn(
+                                  'p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors',
+                                  deleting === it.code && 'opacity-50 cursor-not-allowed',
+                                )}
+                                title="删除基金"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       )
@@ -379,6 +442,66 @@ export function Portfolio() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ---- Watch-only funds (no position) ---- */}
+      {watchOnly.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h2 className="text-lg font-semibold text-slate-800">自选（未持仓）</h2>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {watchOnly.map((it) => (
+              <div key={it.code} className="flex items-center justify-between px-6 py-3">
+                <div>
+                  <Link
+                    to={`/funds/${it.code}`}
+                    className="text-sm font-medium text-slate-900 hover:text-blue-600"
+                  >
+                    {it.name || it.code}
+                  </Link>
+                  <p className="text-xs text-slate-400">{it.code}</p>
+                </div>
+                <div className="flex items-center gap-6">
+                  <div className="text-right">
+                    <p className="text-xs text-slate-400">估算净值</p>
+                    <p className="text-sm text-slate-800">
+                      {it.gsz != null ? it.gsz.toFixed(4) : '—'}
+                    </p>
+                  </div>
+                  <div className="text-right w-16">
+                    <p className="text-xs text-slate-400">日涨跌</p>
+                    {it.gszzl != null ? (
+                      <p className={cn('text-sm font-medium', colorFor(it.gszzl))}>
+                        {formatPercent(it.gszzl)}
+                      </p>
+                    ) : (
+                      <p className="text-sm text-slate-300">—</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setHoldingEdit({ code: it.code, name: it.name, nav: it.gsz })}
+                    className="p-1.5 rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                    title="记录持仓"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(it.code, it.name)}
+                    disabled={deleting === it.code}
+                    className={cn(
+                      'p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors',
+                      deleting === it.code && 'opacity-50 cursor-not-allowed',
+                    )}
+                    title="删除基金"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
