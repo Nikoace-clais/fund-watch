@@ -32,7 +32,7 @@ def init_db() -> None:
             )
             """
         )
-        # Migration: add sector, amount columns to funds
+        # Migration: add columns to funds
         for col, coltype in [
             ("sector", "TEXT"),
             ("amount", "REAL"),

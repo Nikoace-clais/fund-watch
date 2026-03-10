@@ -735,6 +735,45 @@ async def portfolio_summary() -> dict:
             "is_imported": True,
         })
 
+    # Funds without transactions: use realtime gszzl × holding amount for daily return
+    with get_conn() as conn:
+        no_tx_funds = [dict(r) for r in conn.execute(
+            """SELECT code, name, amount
+               FROM funds
+               WHERE holding_shares IS NULL
+                 AND amount IS NOT NULL
+                 AND amount > 0
+               ORDER BY created_at DESC"""
+        ).fetchall()]
+
+    for f in no_tx_funds:
+        code = f["code"]
+        amount = Decimal(str(f["amount"]))
+        daily_change = 0.0
+        daily_return_val = Decimal("0")
+        try:
+            q = await fetch_realtime_estimate(code)
+            gszzl = q.get("gszzl")
+            if gszzl is not None:
+                daily_change = float(gszzl)
+                daily_return_val = (amount * Decimal(str(daily_change)) / 100).quantize(Decimal("0.01"))
+        except Exception:
+            pass
+        total_current += amount
+        total_daily_return += daily_return_val
+        items.append({
+            "code": code,
+            "name": f["name"],
+            "shares": None,
+            "nav": None,
+            "daily_change": daily_change,
+            "current_value": str(amount),
+            "daily_return": str(daily_return_val),
+            "total_cost": None,
+            "total_return": "0",
+            "return_rate": None,
+        })
+
     total_return_rate = ((total_current - total_cost) / total_cost * 100).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
 
     return {
