@@ -8,7 +8,7 @@ import logging
 import re
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -732,39 +732,100 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
 
 @app.get("/api/portfolio/history")
 async def portfolio_history(limit: int = 90) -> dict:
-    """Estimated portfolio value history based on current holdings × historical NAV."""
+    """Portfolio value history: holdings at each date × confirmed NAV, plus today's estimate."""
     limit = max(1, min(limit, 365))
 
     with get_conn() as conn:
-        funds = [
+        # All transactions sorted by date (for per-date holdings reconstruction)
+        transactions = [
             dict(r) for r in conn.execute(
-                "SELECT code, holding_shares FROM funds WHERE holding_shares IS NOT NULL"
+                "SELECT code, direction, trade_date, shares FROM transactions ORDER BY trade_date ASC"
             ).fetchall()
         ]
+        # Current holdings for today's estimated point
+        current_holdings = {
+            r["code"]: Decimal(r["holding_shares"])
+            for r in conn.execute(
+                "SELECT code, holding_shares FROM funds WHERE holding_shares IS NOT NULL"
+            ).fetchall()
+            if r["holding_shares"] and Decimal(r["holding_shares"]) > 0
+        }
 
-    funds = [f for f in funds if f["holding_shares"] and Decimal(f["holding_shares"]) > 0]
-    if not funds:
+    if not transactions:
         return {"count": 0, "history": []}
 
-    async def _fetch(f: dict) -> tuple[Decimal, list]:
+    # Group transactions by code
+    from collections import defaultdict
+    tx_by_code: dict[str, list[dict]] = defaultdict(list)
+    for tx in transactions:
+        tx_by_code[tx["code"]].append(tx)
+    all_codes = list(tx_by_code.keys())
+
+    # Fetch historical NAV + today's estimate in parallel (one gather per code)
+    async def _fetch_code(code: str) -> tuple[str, dict[str, float], float | None]:
+        nav_dict: dict[str, float] = {}
+        gsz: float | None = None
         try:
-            hist = await fetch_nav_history(f["code"], limit=limit + 10)
-            return Decimal(f["holding_shares"]), hist
+            hist = await fetch_nav_history(code, limit=limit + 30)
+            nav_dict = {h["date"]: float(h["nav"]) for h in hist if h.get("date") and h.get("nav") is not None}
         except Exception:
-            return Decimal(f["holding_shares"]), []
+            pass
+        try:
+            q = await fetch_realtime_estimate(code)
+            raw = q.get("gsz")
+            if raw:
+                gsz = float(raw)
+        except Exception:
+            pass
+        return code, nav_dict, gsz
 
-    results = await asyncio.gather(*[_fetch(f) for f in funds])
+    fetch_results = await asyncio.gather(*[_fetch_code(c) for c in all_codes])
 
-    # Aggregate by date
+    nav_map: dict[str, dict[str, float]] = {}
+    gsz_map: dict[str, float] = {}
+    for code, nav_dict, gsz in fetch_results:
+        nav_map[code] = nav_dict
+        if gsz:
+            gsz_map[code] = gsz
+
+    # Collect confirmed trading dates across all funds
+    all_dates = sorted({d for nd in nav_map.values() for d in nd})
+    all_dates = all_dates[-limit:]
+
+    # For each date, compute holdings *at that date* from transactions
     date_totals: dict[str, float] = {}
-    for shares, history in results:
-        for h in history:
-            date = h.get("date")
-            nav = h.get("nav")
-            if date and nav is not None:
-                date_totals[date] = date_totals.get(date, 0.0) + float(shares) * float(nav)
+    for target_date in all_dates:
+        total = 0.0
+        for code in all_codes:
+            shares = Decimal("0")
+            for tx in tx_by_code[code]:
+                if tx["trade_date"] <= target_date:
+                    if tx["direction"] == "buy":
+                        shares += Decimal(tx["shares"])
+                    else:
+                        shares -= Decimal(tx["shares"])
+            if shares <= 0:
+                continue
+            nav = nav_map.get(code, {}).get(target_date)
+            if nav is None:
+                continue
+            total += float(shares) * nav
+        if total > 0:
+            date_totals[target_date] = total
 
-    sorted_items = sorted(date_totals.items())[-limit:]
+    # Append today's estimated point using gsz (fills the T+0 gap)
+    CST = timezone(timedelta(hours=8))
+    today = datetime.now(CST).strftime("%Y-%m-%d")
+    if gsz_map and current_holdings:
+        today_total = sum(
+            float(current_holdings[code]) * gsz
+            for code, gsz in gsz_map.items()
+            if code in current_holdings
+        )
+        if today_total > 0:
+            date_totals[today] = today_total
+
+    sorted_items = sorted(date_totals.items())
     return {
         "count": len(sorted_items),
         "history": [
