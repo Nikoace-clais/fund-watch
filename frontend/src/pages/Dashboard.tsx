@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { TrendingUp, ArrowRight, BarChart3, Activity, Briefcase } from 'lucide-react'
-import { fetchFundsOverview, fetchPortfolioSummary } from '@/lib/api'
+import { fetchFundsOverview, fetchPortfolioSummary, fetchMarketIndices } from '@/lib/api'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
@@ -17,29 +17,36 @@ type PortfolioSummary = {
   fund_count: number
 }
 
-/* ---------- mock market indices ---------- */
-const INDICES = [
-  { label: '上证指数', value: 3286.53, change: +0.42 },
-  { label: '深证成指', value: 10512.78, change: -0.18 },
-  { label: '创业板指', value: 2134.61, change: +1.05 },
-]
+/* ---------- A-share display codes for header badges ---------- */
+const BADGE_CODES = ['000001', '399001', '399006']
+
+type IndexBadge = { code: string; name: string; value: number; change_percent: number }
 
 /* ---------- component ---------- */
 export function Dashboard() {
   const { colorFor } = useColor()
   const [overview, setOverview] = useState<OverviewItem[]>([])
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
+  const [indices, setIndices] = useState<IndexBadge[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       try {
-        const [ov, ps] = await Promise.allSettled([
+        const [ov, ps, idx] = await Promise.allSettled([
           fetchFundsOverview(),
           fetchPortfolioSummary(),
+          fetchMarketIndices(),
         ])
         if (ov.status === 'fulfilled') setOverview(ov.value.items)
         if (ps.status === 'fulfilled') setPortfolio(ps.value)
+        if (idx.status === 'fulfilled') {
+          setIndices(
+            idx.value.items
+              .filter((i) => BADGE_CODES.includes(i.code))
+              .sort((a, b) => BADGE_CODES.indexOf(a.code) - BADGE_CODES.indexOf(b.code))
+          )
+        }
       } finally {
         setLoading(false)
       }
@@ -63,23 +70,30 @@ export function Dashboard() {
 
         {/* market indices */}
         <div className="flex gap-3 flex-wrap">
-          {INDICES.map((idx) => (
-            <span
-              key={idx.label}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border',
-                colorFor(idx.change).includes('red')
-                  ? 'bg-red-50 text-red-600 border-red-200'
-                  : colorFor(idx.change).includes('green')
-                    ? 'bg-green-50 text-green-600 border-green-200'
-                    : 'bg-gray-50 text-gray-600 border-gray-200',
-              )}
-            >
-              {idx.label}
-              <span className="font-semibold">{idx.value.toLocaleString()}</span>
-              <span>{idx.change > 0 ? '+' : ''}{idx.change.toFixed(2)}%</span>
-            </span>
-          ))}
+          {indices.map((idx) => {
+            const up = idx.change_percent > 0
+            const zero = idx.change_percent === 0
+            return (
+              <span
+                key={idx.code}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border',
+                  zero
+                    ? 'bg-gray-50 text-gray-600 border-gray-200'
+                    : colorFor(idx.change_percent).includes('red')
+                      ? 'bg-red-50 text-red-600 border-red-200'
+                      : 'bg-green-50 text-green-600 border-green-200',
+                )}
+              >
+                {idx.name}
+                <span className="font-semibold">{idx.value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span>{up ? '+' : ''}{idx.change_percent.toFixed(2)}%</span>
+              </span>
+            )
+          })}
+          {indices.length === 0 && !loading && (
+            <span className="text-xs text-slate-400">指数数据暂不可用</span>
+          )}
         </div>
       </div>
 
