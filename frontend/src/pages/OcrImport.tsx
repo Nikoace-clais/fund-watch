@@ -47,7 +47,7 @@ export function OcrImport() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState(false)
-  const [addResult, setAddResult] = useState<{ added: string[]; skipped: string[] } | null>(null)
+  const [addResult, setAddResult] = useState<{ added: string[]; invalid: string[]; warnings: string[] } | null>(null)
   const [showGuide, setShowGuide] = useState(false)
 
   const reset = () => {
@@ -130,10 +130,10 @@ export function OcrImport() {
     try {
       if (codes.length === 1) {
         await addFund(codes[0])
-        setAddResult({ added: codes, skipped: [] })
+        setAddResult({ added: codes, invalid: [], warnings: [] })
       } else {
         const data = await batchAddFunds(codes)
-        setAddResult({ added: data.added, skipped: data.skipped })
+        setAddResult({ added: data.added, invalid: data.invalid, warnings: data.warnings })
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '添加失败')
@@ -345,9 +345,14 @@ export function OcrImport() {
                   已添加: {addResult.added.join('、')}
                 </p>
               )}
-              {addResult.skipped.length > 0 && (
-                <p className="text-slate-500">
-                  已存在(跳过): {addResult.skipped.join('、')}
+              {addResult.invalid.length > 0 && (
+                <p className="text-red-500">
+                  无效/失败: {addResult.invalid.join('、')}
+                </p>
+              )}
+              {addResult.warnings.length > 0 && (
+                <p className="text-amber-600">
+                  提示: {addResult.warnings.join('；')}
                 </p>
               )}
               <Link

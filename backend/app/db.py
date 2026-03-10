@@ -68,9 +68,6 @@ def init_db() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(code)"
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_snapshots_code ON fund_snapshots(code)"
-        )
 
         conn.execute(
             """
@@ -85,6 +82,9 @@ def init_db() -> None:
                 captured_at TEXT NOT NULL
             )
             """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_snapshots_code ON fund_snapshots(code)"
         )
         conn.execute(
             """
