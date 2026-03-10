@@ -107,9 +107,9 @@ app = FastAPI(title="Fund Watch API", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -229,8 +229,9 @@ def _compute_pnl(conn, code: str, current_nav: str | None = None) -> dict:
     avg_cost_nav = (total_cost / buy_shares).quantize(Decimal("0.0001")) if buy_shares > 0 else Decimal("0")
 
     # Realized P&L: sell proceeds - cost of sold shares - sell fees
+    # Guard: if buy_shares == 0 we have no cost basis; skip to avoid inflated P&L
     realized_pnl = Decimal("0")
-    if sell_shares > 0:
+    if sell_shares > 0 and buy_shares > 0:
         realized_pnl = sell_amount - sell_shares * avg_cost_nav - sell_fee
     realized_pnl = realized_pnl.quantize(Decimal("0.01"))
 
@@ -699,13 +700,17 @@ async def portfolio_summary() -> dict:
     items: list[dict] = []
     total_current = Decimal("0")
     total_cost = Decimal("0")
+    total_current_with_cost = Decimal("0")  # tx-based funds only, for return rate
     total_daily_return = Decimal("0")
 
     for r in results:
         if r is None:
             continue
-        total_current += r.pop("_current_value_d")
-        total_cost += r.pop("_cost_d")
+        cv = r.pop("_current_value_d")
+        cost = r.pop("_cost_d")
+        total_current += cv
+        total_cost += cost
+        total_current_with_cost += cv
         total_daily_return += r.pop("_daily_return_d")
         items.append(r)
 
@@ -761,7 +766,10 @@ async def portfolio_summary() -> dict:
         total_daily_return += r.pop("_daily_return_d")
         items.append(r)
 
-    total_return_rate = ((total_current - total_cost) / total_cost * 100).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
+    # I1 fix: rate uses only tx-based funds (those with known cost basis)
+    total_return_rate = (
+        (total_current_with_cost - total_cost) / total_cost * 100
+    ).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
 
     return {
         "total_current": str(total_current),

@@ -68,9 +68,11 @@ export function fetchPortfolioSummary() {
     total_return_rate: string
     fund_count: number
     items: Array<{
-      code: string; name?: string; shares: string; nav: string
+      code: string; name?: string; shares: string | null; nav: string | null
       daily_change: number; current_value: string; daily_return: string
-      total_cost: string; total_return: string; return_rate: string
+      total_cost: string | null; total_return: string; return_rate: string | null
+      is_imported?: boolean
+      imported_cumulative_return?: string
     }>
   }>('/api/portfolio/summary')
 }
