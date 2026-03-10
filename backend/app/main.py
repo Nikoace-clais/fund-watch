@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .db import get_conn, init_db
-from .fund_source import fetch_fund_detail, fetch_fund_holdings, fetch_fund_info, fetch_nav_history, fetch_realtime_estimate, search_fund_by_name
+from .fund_source import fetch_fund_detail, fetch_fund_holdings, fetch_fund_info, fetch_latest_nav, fetch_nav_history, fetch_nav_on_date, fetch_realtime_estimate, search_fund_by_name
 from .ocr_service import extract_fund_codes_from_image, extract_fund_names_from_text, extract_funds_with_amounts, extract_transaction_from_image
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
@@ -31,9 +32,17 @@ class AddFundPayload(BaseModel):
     amount: float | None = None
 
 
+class BatchFundItem(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    holding_amount: float | None = None
+    cumulative_return: float | None = None
+    holding_return: float | None = None
+
 class BatchFundsPayload(BaseModel):
-    codes: list[str]
+    codes: list[str] = []
     amounts: dict[str, float] | None = None
+    funds: list[BatchFundItem] = []
 
 
 class UpdateFundPayload(BaseModel):
@@ -178,6 +187,166 @@ def recalc_percentage() -> dict:
     return {"ok": True, "total": total}
 
 
+@app.post("/api/funds/batch")
+async def add_funds_batch(payload: BatchFundsPayload) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Resolve items: cross-check code and name when both are provided
+    resolved_items: list[BatchFundItem] = []
+    unresolved: list[str] = []
+    warnings: list[str] = []
+
+    for item in payload.funds:
+        has_code = bool(item.code and re.match(r"^\d{6}$", item.code.strip()))
+        has_name = bool(item.name and item.name.strip())
+
+        if has_code and has_name:
+            # Cross-check: fetch actual name for the given code
+            try:
+                info = await fetch_fund_info(item.code.strip())  # type: ignore[union-attr]
+                actual_name: str = info.get("name") or ""
+                provided_name: str = item.name.strip()  # type: ignore[union-attr]
+                # Fuzzy check: provided name should be a substring or vice versa
+                if actual_name and provided_name not in actual_name and actual_name not in provided_name:
+                    warnings.append(
+                        f"代码 {item.code} 对应基金名称为「{actual_name}」，与提供的「{provided_name}」不一致，已按代码导入"
+                    )
+            except Exception:
+                pass
+            resolved_items.append(item)
+
+        elif has_code:
+            resolved_items.append(item)
+
+        elif has_name:
+            try:
+                results = await search_fund_by_name(item.name.strip(), limit=1)  # type: ignore[union-attr]
+                if results:
+                    resolved_items.append(item.model_copy(update={"code": results[0]["code"]}))
+                else:
+                    unresolved.append(item.name)  # type: ignore[arg-type]
+            except Exception:
+                unresolved.append(item.name)  # type: ignore[arg-type]
+
+        else:
+            unresolved.append(str(item.code or item.name or "unknown"))
+
+    # Merge codes list and funds list into a unified map: code -> extra data
+    extra: dict[str, BatchFundItem] = {item.code.strip(): item for item in resolved_items}  # type: ignore[union-attr]
+    all_codes: list[str] = list(extra.keys())
+    for c in payload.codes:
+        c = c.strip()
+        if c not in extra:
+            all_codes.append(c)
+
+    valid: list[str] = []
+    invalid: list[str] = list(unresolved)
+    for c in all_codes:
+        if c.isdigit() and len(c) == 6:
+            valid.append(c)
+        else:
+            invalid.append(c)
+    valid = sorted(set(valid))
+    amounts = payload.amounts or {}
+
+    actually_added: list[str] = []
+    with get_conn() as conn:
+        for code in valid:
+            name = None
+            sector = None
+            try:
+                info = await fetch_fund_info(code)
+                name = info.get("name")
+                sector = info.get("sector")
+            except Exception:
+                pass
+
+            # Reject codes that don't correspond to a real fund (no name returned)
+            item = extra.get(code)
+            existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+            if not existing and not name:
+                invalid.append(code)
+                continue
+            actually_added.append(code)
+            if existing:
+                updates = []
+                params: list = []
+                if name:
+                    updates.append("name=?"); params.append(name)
+                if sector:
+                    updates.append("sector=?"); params.append(sector)
+                amt = amounts.get(code)
+                if amt is not None:
+                    updates.append("amount=?"); params.append(amt)
+                if item:
+                    if item.holding_amount is not None:
+                        updates.append("imported_holding_amount=?"); params.append(item.holding_amount)
+                    if item.cumulative_return is not None:
+                        updates.append("imported_cumulative_return=?"); params.append(item.cumulative_return)
+                    if item.holding_return is not None:
+                        updates.append("imported_holding_return=?"); params.append(item.holding_return)
+                if updates:
+                    params.append(code)
+                    conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
+            else:
+                conn.execute(
+                    """INSERT INTO funds
+                       (code,name,sector,amount,imported_holding_amount,imported_cumulative_return,imported_holding_return,created_at)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (code, name, sector, amounts.get(code),
+                     item.holding_amount if item else None,
+                     item.cumulative_return if item else None,
+                     item.holding_return if item else None,
+                     now),
+                )
+        conn.commit()
+
+    # For funds with holding_amount, create a synthetic buy transaction using latest NAV
+    now = datetime.now(timezone.utc).isoformat()
+    nav_skipped: list[str] = []
+    for code in actually_added:
+        item = extra.get(code)
+        if not item or item.holding_amount is None or item.holding_amount <= 0:
+            continue
+        try:
+            with get_conn() as conn:
+                existing_tx = conn.execute(
+                    "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
+                ).fetchone()["c"]
+            if existing_tx > 0:
+                nav_skipped.append(f"{code}（已有交易记录，跳过）")
+                continue
+
+            latest = await fetch_latest_nav(code)
+            if not latest or not latest.get("nav"):
+                nav_skipped.append(f"{code}（无法获取净值）")
+                continue
+
+            nav_val = Decimal(str(latest["nav"]))
+            shares_val = (Decimal(str(item.holding_amount)) / nav_val).quantize(Decimal("0.01"))
+            if shares_val <= 0:
+                nav_skipped.append(f"{code}（计算份额为零）")
+                continue
+
+            amount_val = (nav_val * shares_val).quantize(Decimal("0.01"))
+            with get_conn() as conn:
+                conn.execute(
+                    """INSERT INTO transactions(code,direction,trade_date,nav,shares,amount,fee,source,created_at)
+                       VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (code, "buy", latest["date"], str(nav_val), str(shares_val),
+                     str(amount_val), "0", "import", now),
+                )
+                _recompute_holding_shares(conn, code)
+                conn.commit()
+        except Exception as e:
+            nav_skipped.append(f"{code}（{e}）")
+
+    if nav_skipped:
+        warnings.extend(nav_skipped)
+
+    return {"ok": True, "added": actually_added, "invalid": invalid, "warnings": warnings}
+
+
 @app.post("/api/funds/{code}")
 async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     code = _validate_code(code)
@@ -209,60 +378,6 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
             )
         conn.commit()
     return {"ok": True, "code": code, "name": name, "sector": sector}
-
-
-@app.post("/api/funds/batch")
-async def add_funds_batch(payload: BatchFundsPayload) -> dict:
-    now = datetime.now(timezone.utc).isoformat()
-    valid: list[str] = []
-    invalid: list[str] = []
-
-    for c in payload.codes:
-        c = c.strip()
-        if c.isdigit() and len(c) == 6:
-            valid.append(c)
-        else:
-            invalid.append(c)
-
-    valid = sorted(set(valid))
-    amounts = payload.amounts or {}
-
-    with get_conn() as conn:
-        for code in valid:
-            name = None
-            sector = None
-            try:
-                info = await fetch_fund_info(code)
-                name = info.get("name")
-                sector = info.get("sector")
-            except Exception:
-                pass
-
-            existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
-            if existing:
-                updates = []
-                params: list = []
-                if name:
-                    updates.append("name=?")
-                    params.append(name)
-                if sector:
-                    updates.append("sector=?")
-                    params.append(sector)
-                amt = amounts.get(code)
-                if amt is not None:
-                    updates.append("amount=?")
-                    params.append(amt)
-                if updates:
-                    params.append(code)
-                    conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
-            else:
-                conn.execute(
-                    "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
-                    (code, name, sector, amounts.get(code), now),
-                )
-        conn.commit()
-
-    return {"ok": True, "added": valid, "invalid": invalid}
 
 
 @app.get("/api/quote/{code}")
@@ -403,6 +518,17 @@ async def get_nav_history(code: str, limit: int = 365) -> dict:
     return {"code": code, "count": len(history), "history": history}
 
 
+@app.get("/api/funds/{code}/nav-on")
+async def get_nav_on_date(code: str, date: str) -> dict:
+    """Return the NAV for a specific date (YYYY-MM-DD)."""
+    code = _validate_code(code)
+    try:
+        nav = await fetch_nav_on_date(code, date)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"code": code, "date": date, "nav": nav}
+
+
 @app.delete("/api/funds/{code}")
 def delete_fund(code: str) -> dict:
     """Remove a fund from the watchlist."""
@@ -475,6 +601,32 @@ async def portfolio_summary() -> dict:
             "total_cost": str(cost),
             "total_return": str(total_return.quantize(Decimal("0.01"))),
             "return_rate": str(return_rate),
+        })
+
+    # Funds with imported values but no transactions
+    with get_conn() as conn:
+        imported_funds = [dict(r) for r in conn.execute(
+            """SELECT code, name, imported_holding_amount, imported_cumulative_return, imported_holding_return
+               FROM funds
+               WHERE holding_shares IS NULL
+                 AND imported_holding_amount IS NOT NULL
+               ORDER BY created_at DESC"""
+        ).fetchall()]
+
+    for f in imported_funds:
+        items.append({
+            "code": f["code"],
+            "name": f["name"],
+            "shares": None,
+            "nav": None,
+            "daily_change": 0.0,
+            "current_value": str(Decimal(str(f["imported_holding_amount"])).quantize(Decimal("0.01"))),
+            "daily_return": "0",
+            "total_cost": None,
+            "total_return": str(Decimal(str(f["imported_holding_return"] or 0)).quantize(Decimal("0.01"))),
+            "return_rate": None,
+            "imported_cumulative_return": str(Decimal(str(f["imported_cumulative_return"] or 0)).quantize(Decimal("0.01"))),
+            "is_imported": True,
         })
 
     total_return_rate = ((total_current - total_cost) / total_cost * 100).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
