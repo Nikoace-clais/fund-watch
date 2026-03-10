@@ -39,6 +39,7 @@ class BatchFundsPayload(BaseModel):
 class UpdateFundPayload(BaseModel):
     holding_shares: str | None = None
     sector: str | None = None
+    amount: float | None = None
 
 
 class AddTransactionPayload(BaseModel):
@@ -178,39 +179,6 @@ def recalc_percentage() -> dict:
     return {"ok": True, "total": total}
 
 
-@app.post("/api/funds/{code}")
-async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
-    code = _validate_code(code)
-    now = datetime.now(timezone.utc).isoformat()
-
-    # Fetch fund info (name + sector) from data source
-    name = None
-    sector = None
-    try:
-        info = await fetch_fund_info(code)
-        name = info.get("name")
-        sector = info.get("sector")
-    except Exception:
-        pass
-
-    amount = payload.amount if payload else None
-
-    with get_conn() as conn:
-        existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
-        if existing:
-            if amount is not None:
-                conn.execute("UPDATE funds SET amount=? WHERE code=?", (amount, code))
-            if sector and not conn.execute("SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL", (code,)).fetchone():
-                conn.execute("UPDATE funds SET sector=?, name=? WHERE code=?", (sector, name, code))
-        else:
-            conn.execute(
-                "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
-                (code, name, sector, amount, now),
-            )
-        conn.commit()
-    return {"ok": True, "code": code, "name": name, "sector": sector}
-
-
 @app.post("/api/funds/batch")
 async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     now = datetime.now(timezone.utc).isoformat()
@@ -265,6 +233,39 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     return {"ok": True, "added": valid, "invalid": invalid}
 
 
+@app.post("/api/funds/{code}")
+async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
+    code = _validate_code(code)
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Fetch fund info (name + sector) from data source
+    name = None
+    sector = None
+    try:
+        info = await fetch_fund_info(code)
+        name = info.get("name")
+        sector = info.get("sector")
+    except Exception:
+        pass
+
+    amount = payload.amount if payload else None
+
+    with get_conn() as conn:
+        existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+        if existing:
+            if amount is not None:
+                conn.execute("UPDATE funds SET amount=? WHERE code=?", (amount, code))
+            if sector and not conn.execute("SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL", (code,)).fetchone():
+                conn.execute("UPDATE funds SET sector=?, name=? WHERE code=?", (sector, name, code))
+        else:
+            conn.execute(
+                "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
+                (code, name, sector, amount, now),
+            )
+        conn.commit()
+    return {"ok": True, "code": code, "name": name, "sector": sector}
+
+
 @app.get("/api/quote/{code}")
 async def quote(code: str) -> dict:
     code = _validate_code(code)
@@ -278,7 +279,7 @@ async def quote(code: str) -> dict:
 @app.get("/api/funds/overview")
 async def funds_overview() -> dict:
     with get_conn() as conn:
-        funds = [dict(r) for r in conn.execute("SELECT code, name, sector, holding_shares, created_at FROM funds ORDER BY created_at DESC").fetchall()]
+        funds = [dict(r) for r in conn.execute("SELECT code, name, sector, amount, percentage, amount_mode, holding_shares, created_at FROM funds ORDER BY created_at DESC").fetchall()]
 
     items: list[dict] = []
     for f in funds:
@@ -512,6 +513,9 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
         if payload.sector is not None:
             updates.append("sector=?")
             params.append(payload.sector)
+        if payload.amount is not None:
+            updates.append("amount=?")
+            params.append(payload.amount)
         if not updates:
             raise HTTPException(status_code=400, detail="nothing to update")
         params.append(code)
@@ -651,7 +655,14 @@ async def get_pnl(code: str) -> dict:
             return {"code": code, "has_transactions": False}
         pnl = _compute_pnl(conn, code, current_nav)
 
-    return {"code": code, "has_transactions": True, **pnl}
+    return {
+        "code": code,
+        "has_transactions": True,
+        **pnl,
+        # Backward-compatible aliases for frontend fields
+        "pnl": pnl.get("total_pnl"),
+        "pnl_rate": pnl.get("total_pnl_rate"),
+    }
 
 
 @app.post("/api/transactions/csv")
