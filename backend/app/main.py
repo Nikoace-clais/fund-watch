@@ -730,6 +730,50 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
     return {"ok": True, "code": code}
 
 
+@app.get("/api/portfolio/history")
+async def portfolio_history(limit: int = 90) -> dict:
+    """Estimated portfolio value history based on current holdings × historical NAV."""
+    limit = max(1, min(limit, 365))
+
+    with get_conn() as conn:
+        funds = [
+            dict(r) for r in conn.execute(
+                "SELECT code, holding_shares FROM funds WHERE holding_shares IS NOT NULL"
+            ).fetchall()
+        ]
+
+    funds = [f for f in funds if f["holding_shares"] and Decimal(f["holding_shares"]) > 0]
+    if not funds:
+        return {"count": 0, "history": []}
+
+    async def _fetch(f: dict) -> tuple[Decimal, list]:
+        try:
+            hist = await fetch_nav_history(f["code"], limit=limit + 10)
+            return Decimal(f["holding_shares"]), hist
+        except Exception:
+            return Decimal(f["holding_shares"]), []
+
+    results = await asyncio.gather(*[_fetch(f) for f in funds])
+
+    # Aggregate by date
+    date_totals: dict[str, float] = {}
+    for shares, history in results:
+        for h in history:
+            date = h.get("date")
+            nav = h.get("nav")
+            if date and nav is not None:
+                date_totals[date] = date_totals.get(date, 0.0) + float(shares) * float(nav)
+
+    sorted_items = sorted(date_totals.items())[-limit:]
+    return {
+        "count": len(sorted_items),
+        "history": [
+            {"date": date, "total_value": round(value, 2)}
+            for date, value in sorted_items
+        ],
+    }
+
+
 @app.get("/api/market/indices")
 async def market_indices() -> dict:
     """Major domestic and overseas market indices from eastmoney."""

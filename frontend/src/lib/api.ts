@@ -140,6 +140,14 @@ export function addTransaction(code: string, payload: {
   })
 }
 
+// Portfolio value history (current holdings × historical NAV)
+export function fetchPortfolioHistory(limit = 90) {
+  return request<{
+    count: number
+    history: Array<{ date: string; total_value: number }>
+  }>(`/api/portfolio/history?limit=${limit}`)
+}
+
 // Market indices (domestic + overseas)
 export function fetchMarketIndices() {
   return request<{
