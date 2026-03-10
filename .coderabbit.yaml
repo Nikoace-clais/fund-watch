@@ -1,0 +1,52 @@
+# CodeRabbit configuration for fund-watch
+# https://docs.coderabbit.ai/configuration
+
+language: "zh-CN"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  path_instructions:
+    - path: "backend/**/*.py"
+      instructions: |
+        - 检查 FastAPI 路由的错误处理是否完整（返回清晰的 HTTP 状态码和 detail）
+        - 关注 SQLite 连接是否通过 get_conn() contextmanager 管理，不要裸用 sqlite3.connect
+        - 金融数值计算必须使用 Decimal，不得使用 float 累加
+        - 异步函数中的外部 HTTP 请求应使用共享的 httpx.AsyncClient（_get_client()），不要每次 async with httpx.AsyncClient()
+        - 确保 trade_date 格式校验（YYYY-MM-DD），fund code 为 6 位数字字符串
+        - 并发拉取时优先使用 asyncio.gather，避免串行等待
+
+    - path: "frontend/src/**/*.{ts,tsx}"
+      instructions: |
+        - 检查 useEffect 依赖数组是否完整，避免 stale closure
+        - API 调用应使用 Promise.allSettled 并处理 fulfilled/rejected 两种情况
+        - 金融数据展示：涨跌颜色必须通过 useColor().colorFor() 获取，不得硬编码颜色类名
+        - 格式化货币用 formatCNY()，格式化百分比用 formatPercent()
+        - Tailwind v4 项目，不使用 tailwind.config.js 中的自定义颜色 token
+
+    - path: "frontend/src/lib/api.ts"
+      instructions: |
+        - 新增接口函数需添加完整的返回类型声明
+        - 保持 response shape 向后兼容，新字段用可选属性
+
+    - path: "backend/app/db.py"
+      instructions: |
+        - 表结构变更必须通过 ALTER TABLE IF NOT EXISTS 做迁移兼容，不得直接 DROP TABLE
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+
+  tools:
+    github-checks:
+      enabled: true
+
+chat:
+  auto_reply: true
