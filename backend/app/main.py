@@ -1,23 +1,109 @@
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
-from datetime import datetime, timezone
+import logging
+import re
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .db import get_conn, init_db
-from .fund_source import fetch_fund_detail, fetch_fund_holdings, fetch_fund_info, fetch_nav_history, fetch_realtime_estimate
-from .ocr_service import extract_fund_codes_from_image, extract_funds_with_amounts, extract_transaction_from_image
+from .fund_source import (
+    close_shared_client,
+    fetch_fund_detail,
+    fetch_fund_holdings,
+    fetch_fund_info,
+    fetch_latest_nav,
+    fetch_market_indices,
+    fetch_nav_history,
+    fetch_nav_on_date,
+    fetch_realtime_estimate,
+    search_fund_by_name,
+)
+from .ocr_service import extract_fund_codes_from_image, extract_fund_names_from_text, extract_funds_with_amounts, extract_transaction_from_image
+
+# ── Logging setup ────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
+    datefmt="%H:%M:%S",
+)
+# Show DEBUG logs from fund_source so per-request timings are visible
+logging.getLogger("app.fund_source").setLevel(logging.DEBUG)
+logging.getLogger(__name__).setLevel(logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
 
-app = FastAPI(title="Fund Watch API", version="0.2.0")
+_CST = timezone(timedelta(hours=8))
+
+# ── Cron state ────────────────────────────────────────────────────────────────
+_cron_state: dict = {
+    "last_pull_at": None,
+    "pull_count": 0,
+    "last_error": None,
+    "is_active": False,
+}
+
+
+def _in_trading_hours() -> bool:
+    """True when current CST time is within A-share trading windows (weekdays)."""
+    now = datetime.now(_CST)
+    if now.weekday() >= 5:  # Saturday / Sunday
+        return False
+    t = now.hour * 60 + now.minute
+    morning   = 9 * 60 + 25 <= t <= 11 * 60 + 35
+    afternoon = 12 * 60 + 55 <= t <= 15 * 60 + 5
+    return morning or afternoon
+
+
+async def _snapshot_scheduler() -> None:
+    """Background loop: pull snapshots every 5 min during trading hours."""
+    await asyncio.sleep(15)          # startup buffer
+    logger.info("cron: scheduler started (interval=5min, trading-hours only)")
+    while True:
+        in_hours = _in_trading_hours()
+        _cron_state["is_active"] = in_hours
+        if in_hours:
+            try:
+                result = await pull_snapshots()
+                _cron_state["last_pull_at"] = datetime.now(timezone.utc).isoformat()
+                _cron_state["pull_count"] += 1
+                _cron_state["last_error"] = None
+                logger.info("cron: pull done — inserted=%s, total=%d",
+                            result.get("inserted"), _cron_state["pull_count"])
+            except Exception as exc:
+                _cron_state["last_error"] = str(exc)
+                logger.error("cron: pull failed — %s", exc)
+        await asyncio.sleep(5 * 60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    task = asyncio.create_task(_snapshot_scheduler())
+    logger.info("Fund Watch API started")
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    await close_shared_client()
+    logger.info("Fund Watch API shutdown")
+
+
+app = FastAPI(title="Fund Watch API", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,13 +113,31 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - t0
+    level = logging.WARNING if elapsed > 3.0 else logging.INFO
+    logger.log(level, "%s %s -> %d  %.3fs", request.method, request.url.path, response.status_code, elapsed)
+    return response
+
+
 class AddFundPayload(BaseModel):
     amount: float | None = None
 
 
+class BatchFundItem(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    holding_amount: float | None = None
+    cumulative_return: float | None = None
+    holding_return: float | None = None
+
 class BatchFundsPayload(BaseModel):
-    codes: list[str]
+    codes: list[str] = []
     amounts: dict[str, float] | None = None
+    funds: list[BatchFundItem] = []
 
 
 class UpdateFundPayload(BaseModel):
@@ -51,10 +155,6 @@ class AddTransactionPayload(BaseModel):
     source: str = "manual"
 
 
-@app.on_event("startup")
-def startup() -> None:
-    init_db()
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/api/health")
@@ -178,6 +278,173 @@ def recalc_percentage() -> dict:
     return {"ok": True, "total": total}
 
 
+@app.post("/api/funds/batch")
+async def add_funds_batch(payload: BatchFundsPayload) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Resolve items: cross-check code and name when both are provided
+    resolved_items: list[BatchFundItem] = []
+    unresolved: list[str] = []
+    warnings: list[str] = []
+
+    for item in payload.funds:
+        has_code = bool(item.code and re.match(r"^\d{6}$", item.code.strip()))
+        has_name = bool(item.name and item.name.strip())
+
+        if has_code and has_name:
+            # Cross-check: fetch actual name for the given code
+            try:
+                info = await fetch_fund_info(item.code.strip())  # type: ignore[union-attr]
+                actual_name: str = info.get("name") or ""
+                provided_name: str = item.name.strip()  # type: ignore[union-attr]
+                # Fuzzy check: provided name should be a substring or vice versa
+                if actual_name and provided_name not in actual_name and actual_name not in provided_name:
+                    warnings.append(
+                        f"代码 {item.code} 对应基金名称为「{actual_name}」，与提供的「{provided_name}」不一致，已按代码导入"
+                    )
+            except Exception:
+                pass
+            resolved_items.append(item)
+
+        elif has_code:
+            resolved_items.append(item)
+
+        elif has_name:
+            try:
+                results = await search_fund_by_name(item.name.strip(), limit=1)  # type: ignore[union-attr]
+                if results:
+                    resolved_items.append(item.model_copy(update={"code": results[0]["code"]}))
+                else:
+                    unresolved.append(item.name)  # type: ignore[arg-type]
+            except Exception:
+                unresolved.append(item.name)  # type: ignore[arg-type]
+
+        else:
+            unresolved.append(str(item.code or item.name or "unknown"))
+
+    # Merge codes list and funds list into a unified map: code -> extra data
+    extra: dict[str, BatchFundItem] = {item.code.strip(): item for item in resolved_items}  # type: ignore[union-attr]
+    all_codes: list[str] = list(extra.keys())
+    for c in payload.codes:
+        c = c.strip()
+        if c not in extra:
+            all_codes.append(c)
+
+    valid: list[str] = []
+    invalid: list[str] = list(unresolved)
+    for c in all_codes:
+        if c.isdigit() and len(c) == 6:
+            valid.append(c)
+        else:
+            invalid.append(c)
+    valid = sorted(set(valid))
+    amounts = payload.amounts or {}
+
+    # Fetch all fund infos in parallel
+    t_batch = time.perf_counter()
+
+    async def _safe_fetch_info(code: str) -> tuple[str, str | None, str | None]:
+        try:
+            info = await fetch_fund_info(code)
+            return code, info.get("name"), info.get("sector")
+        except Exception:
+            return code, None, None
+
+    info_results = await asyncio.gather(*[_safe_fetch_info(c) for c in valid])
+    fund_info_map: dict[str, tuple[str | None, str | None]] = {r[0]: (r[1], r[2]) for r in info_results}
+    logger.info("add_funds_batch: fetched info for %d codes in %.3fs", len(valid), time.perf_counter() - t_batch)
+
+    actually_added: list[str] = []
+    with get_conn() as conn:
+        for code in valid:
+            name, sector = fund_info_map.get(code, (None, None))
+
+            # Reject codes that don't correspond to a real fund (no name returned)
+            item = extra.get(code)
+            existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+            if not existing and not name:
+                invalid.append(code)
+                continue
+            actually_added.append(code)
+            if existing:
+                updates = []
+                params: list = []
+                if name:
+                    updates.append("name=?"); params.append(name)
+                if sector:
+                    updates.append("sector=?"); params.append(sector)
+                amt = amounts.get(code)
+                if amt is not None:
+                    updates.append("amount=?"); params.append(amt)
+                if item:
+                    if item.holding_amount is not None:
+                        updates.append("imported_holding_amount=?"); params.append(item.holding_amount)
+                    if item.cumulative_return is not None:
+                        updates.append("imported_cumulative_return=?"); params.append(item.cumulative_return)
+                    if item.holding_return is not None:
+                        updates.append("imported_holding_return=?"); params.append(item.holding_return)
+                if updates:
+                    params.append(code)
+                    conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
+            else:
+                conn.execute(
+                    """INSERT INTO funds
+                       (code,name,sector,amount,imported_holding_amount,imported_cumulative_return,imported_holding_return,created_at)
+                       VALUES(?,?,?,?,?,?,?,?)""",
+                    (code, name, sector, amounts.get(code),
+                     item.holding_amount if item else None,
+                     item.cumulative_return if item else None,
+                     item.holding_return if item else None,
+                     now),
+                )
+        conn.commit()
+
+    # For funds with holding_amount, create a synthetic buy transaction using latest NAV
+    tx_now = datetime.now(timezone.utc).isoformat()
+    nav_skipped: list[str] = []
+    for code in actually_added:
+        item = extra.get(code)
+        if not item or item.holding_amount is None or item.holding_amount <= 0:
+            continue
+        try:
+            with get_conn() as conn:
+                existing_tx = conn.execute(
+                    "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
+                ).fetchone()["c"]
+            if existing_tx > 0:
+                nav_skipped.append(f"{code}（已有交易记录，跳过）")
+                continue
+
+            latest = await fetch_latest_nav(code)
+            if not latest or not latest.get("nav"):
+                nav_skipped.append(f"{code}（无法获取净值）")
+                continue
+
+            nav_val = Decimal(str(latest["nav"]))
+            shares_val = (Decimal(str(item.holding_amount)) / nav_val).quantize(Decimal("0.01"))
+            if shares_val <= 0:
+                nav_skipped.append(f"{code}（计算份额为零）")
+                continue
+
+            amount_val = (nav_val * shares_val).quantize(Decimal("0.01"))
+            with get_conn() as conn:
+                conn.execute(
+                    """INSERT INTO transactions(code,direction,trade_date,nav,shares,amount,fee,source,created_at)
+                       VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (code, "buy", latest["date"], str(nav_val), str(shares_val),
+                     str(amount_val), "0", "import", tx_now),
+                )
+                _recompute_holding_shares(conn, code)
+                conn.commit()
+        except Exception as e:
+            nav_skipped.append(f"{code}（{e}）")
+
+    if nav_skipped:
+        warnings.extend(nav_skipped)
+
+    return {"ok": True, "added": actually_added, "invalid": invalid, "warnings": warnings}
+
+
 @app.post("/api/funds/{code}")
 async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     code = _validate_code(code)
@@ -211,60 +478,6 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     return {"ok": True, "code": code, "name": name, "sector": sector}
 
 
-@app.post("/api/funds/batch")
-async def add_funds_batch(payload: BatchFundsPayload) -> dict:
-    now = datetime.now(timezone.utc).isoformat()
-    valid: list[str] = []
-    invalid: list[str] = []
-
-    for c in payload.codes:
-        c = c.strip()
-        if c.isdigit() and len(c) == 6:
-            valid.append(c)
-        else:
-            invalid.append(c)
-
-    valid = sorted(set(valid))
-    amounts = payload.amounts or {}
-
-    with get_conn() as conn:
-        for code in valid:
-            name = None
-            sector = None
-            try:
-                info = await fetch_fund_info(code)
-                name = info.get("name")
-                sector = info.get("sector")
-            except Exception:
-                pass
-
-            existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
-            if existing:
-                updates = []
-                params: list = []
-                if name:
-                    updates.append("name=?")
-                    params.append(name)
-                if sector:
-                    updates.append("sector=?")
-                    params.append(sector)
-                amt = amounts.get(code)
-                if amt is not None:
-                    updates.append("amount=?")
-                    params.append(amt)
-                if updates:
-                    params.append(code)
-                    conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
-            else:
-                conn.execute(
-                    "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
-                    (code, name, sector, amounts.get(code), now),
-                )
-        conn.commit()
-
-    return {"ok": True, "added": valid, "invalid": invalid}
-
-
 @app.get("/api/quote/{code}")
 async def quote(code: str) -> dict:
     code = _validate_code(code)
@@ -280,17 +493,13 @@ async def funds_overview() -> dict:
     with get_conn() as conn:
         funds = [dict(r) for r in conn.execute("SELECT code, name, sector, holding_shares, created_at FROM funds ORDER BY created_at DESC").fetchall()]
 
-    items: list[dict] = []
-    for f in funds:
+    t0 = time.perf_counter()
+
+    async def _fetch_one(f: dict) -> dict:
         code = f["code"]
         with get_conn() as conn:
             row = conn.execute(
-                """
-                SELECT code,name,gsz,gszzl,gztime,captured_at
-                FROM fund_snapshots
-                WHERE code=?
-                ORDER BY id DESC LIMIT 1
-                """,
+                "SELECT code,name,gsz,gszzl,gztime,captured_at FROM fund_snapshots WHERE code=? ORDER BY id DESC LIMIT 1",
                 (code,),
             ).fetchone()
             tx_count = conn.execute("SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)).fetchone()["c"]
@@ -311,8 +520,10 @@ async def funds_overview() -> dict:
             except Exception:
                 latest_snapshot = None
 
-        items.append({"fund": f, "latest": latest_snapshot, "has_transactions": tx_count > 0})
+        return {"fund": f, "latest": latest_snapshot, "has_transactions": tx_count > 0}
 
+    items = list(await asyncio.gather(*[_fetch_one(f) for f in funds]))
+    logger.info("funds_overview: %d funds fetched in %.3fs", len(funds), time.perf_counter() - t0)
     return {"items": items}
 
 
@@ -322,29 +533,36 @@ async def pull_snapshots() -> dict:
         codes = [r["code"] for r in conn.execute("SELECT code FROM funds").fetchall()]
 
     captured_at = datetime.now(timezone.utc).isoformat()
+
+    async def _safe_fetch(code: str) -> tuple[str, dict | None]:
+        try:
+            return code, await fetch_realtime_estimate(code)
+        except Exception:
+            return code, None
+
+    results = await asyncio.gather(*[_safe_fetch(c) for c in codes])
+
     inserted = 0
     with get_conn() as conn:
-        for code in codes:
-            try:
-                d = await fetch_realtime_estimate(code)
-                conn.execute(
-                    """
-                    INSERT INTO fund_snapshots(code,name,dwjz,gsz,gszzl,gztime,captured_at)
-                    VALUES(?,?,?,?,?,?,?)
-                    """,
-                    (
-                        code,
-                        d.get("name"),
-                        d.get("dwjz"),
-                        d.get("gsz"),
-                        d.get("gszzl"),
-                        d.get("gztime"),
-                        captured_at,
-                    ),
-                )
-                inserted += 1
-            except Exception:
+        for code, d in results:
+            if d is None:
                 continue
+            conn.execute(
+                """
+                INSERT INTO fund_snapshots(code,name,dwjz,gsz,gszzl,gztime,captured_at)
+                VALUES(?,?,?,?,?,?,?)
+                """,
+                (
+                    code,
+                    d.get("name"),
+                    d.get("dwjz"),
+                    d.get("gsz"),
+                    d.get("gszzl"),
+                    d.get("gztime"),
+                    captured_at,
+                ),
+            )
+            inserted += 1
         conn.commit()
 
     return {"ok": True, "codes": len(codes), "inserted": inserted, "captured_at": captured_at}
@@ -403,6 +621,17 @@ async def get_nav_history(code: str, limit: int = 365) -> dict:
     return {"code": code, "count": len(history), "history": history}
 
 
+@app.get("/api/funds/{code}/nav-on")
+async def get_nav_on_date(code: str, date: str) -> dict:
+    """Return the NAV for a specific date (YYYY-MM-DD)."""
+    code = _validate_code(code)
+    try:
+        nav = await fetch_nav_on_date(code, date)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"code": code, "date": date, "nav": nav}
+
+
 @app.delete("/api/funds/{code}")
 def delete_fund(code: str) -> dict:
     """Remove a fund from the watchlist."""
@@ -426,45 +655,29 @@ async def portfolio_summary() -> dict:
             "SELECT code, name, holding_shares FROM funds WHERE holding_shares IS NOT NULL ORDER BY created_at DESC"
         ).fetchall()]
 
-    items: list[dict] = []
-    total_current = Decimal("0")
-    total_cost = Decimal("0")
-    total_daily_return = Decimal("0")
+    t0 = time.perf_counter()
 
-    for f in funds:
+    async def _fetch_fund_item(f: dict) -> dict | None:
         code = f["code"]
         shares = Decimal(f["holding_shares"]) if f["holding_shares"] else Decimal("0")
         if shares <= 0:
-            continue
-
-        # Get realtime estimate
+            return None
         try:
             q = await fetch_realtime_estimate(code)
         except Exception:
-            continue
-
+            return None
         nav = Decimal(str(q.get("gsz", 0))) if q.get("gsz") else None
-        daily_change = float(q.get("gszzl", 0)) if q.get("gszzl") else 0.0
-
         if nav is None:
-            continue
-
+            return None
+        daily_change = float(q.get("gszzl", 0)) if q.get("gszzl") else 0.0
         current_value = (shares * nav).quantize(Decimal("0.01"))
         daily_return_val = (current_value * Decimal(str(daily_change)) / 100).quantize(Decimal("0.01"))
-
-        # Get cost from transactions
         with get_conn() as conn:
             pnl = _compute_pnl(conn, code, str(nav))
-
         cost = Decimal(pnl.get("total_cost", "0"))
         total_return = current_value - cost
         return_rate = (total_return / cost * 100).quantize(Decimal("0.01")) if cost > 0 else Decimal("0")
-
-        total_current += current_value
-        total_cost += cost
-        total_daily_return += daily_return_val
-
-        items.append({
+        return {
             "code": code,
             "name": f["name"] or q.get("name"),
             "shares": str(shares),
@@ -475,6 +688,51 @@ async def portfolio_summary() -> dict:
             "total_cost": str(cost),
             "total_return": str(total_return.quantize(Decimal("0.01"))),
             "return_rate": str(return_rate),
+            "_current_value_d": current_value,
+            "_cost_d": cost,
+            "_daily_return_d": daily_return_val,
+        }
+
+    results = await asyncio.gather(*[_fetch_fund_item(f) for f in funds])
+    logger.info("portfolio_summary: %d funds fetched in %.3fs", len(funds), time.perf_counter() - t0)
+
+    items: list[dict] = []
+    total_current = Decimal("0")
+    total_cost = Decimal("0")
+    total_daily_return = Decimal("0")
+
+    for r in results:
+        if r is None:
+            continue
+        total_current += r.pop("_current_value_d")
+        total_cost += r.pop("_cost_d")
+        total_daily_return += r.pop("_daily_return_d")
+        items.append(r)
+
+    # Funds with imported values but no transactions
+    with get_conn() as conn:
+        imported_funds = [dict(r) for r in conn.execute(
+            """SELECT code, name, imported_holding_amount, imported_cumulative_return, imported_holding_return
+               FROM funds
+               WHERE holding_shares IS NULL
+                 AND imported_holding_amount IS NOT NULL
+               ORDER BY created_at DESC"""
+        ).fetchall()]
+
+    for f in imported_funds:
+        items.append({
+            "code": f["code"],
+            "name": f["name"],
+            "shares": None,
+            "nav": None,
+            "daily_change": 0.0,
+            "current_value": str(Decimal(str(f["imported_holding_amount"])).quantize(Decimal("0.01"))),
+            "daily_return": "0",
+            "total_cost": None,
+            "total_return": str(Decimal(str(f["imported_holding_return"] or 0)).quantize(Decimal("0.01"))),
+            "return_rate": None,
+            "imported_cumulative_return": str(Decimal(str(f["imported_cumulative_return"] or 0)).quantize(Decimal("0.01"))),
+            "is_imported": True,
         })
 
     total_return_rate = ((total_current - total_cost) / total_cost * 100).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
@@ -520,6 +778,141 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
     return {"ok": True, "code": code}
 
 
+@app.get("/api/portfolio/history")
+async def portfolio_history(limit: int = 90) -> dict:
+    """Portfolio value history: holdings at each date × confirmed NAV, plus today's estimate."""
+    limit = max(1, min(limit, 365))
+
+    with get_conn() as conn:
+        # All transactions sorted by date (for per-date holdings reconstruction)
+        transactions = [
+            dict(r) for r in conn.execute(
+                "SELECT code, direction, trade_date, shares FROM transactions ORDER BY trade_date ASC"
+            ).fetchall()
+        ]
+        # Current holdings for today's estimated point
+        current_holdings = {
+            r["code"]: Decimal(r["holding_shares"])
+            for r in conn.execute(
+                "SELECT code, holding_shares FROM funds WHERE holding_shares IS NOT NULL"
+            ).fetchall()
+            if r["holding_shares"] and Decimal(r["holding_shares"]) > 0
+        }
+
+    if not transactions:
+        return {"count": 0, "history": []}
+
+    # Group transactions by code
+    from collections import defaultdict
+    tx_by_code: dict[str, list[dict]] = defaultdict(list)
+    for tx in transactions:
+        tx_by_code[tx["code"]].append(tx)
+    all_codes = list(tx_by_code.keys())
+
+    # Fetch historical NAV + today's estimate in parallel (one gather per code)
+    async def _fetch_code(code: str) -> tuple[str, dict[str, float], float | None]:
+        nav_dict: dict[str, float] = {}
+        gsz: float | None = None
+        try:
+            hist = await fetch_nav_history(code, limit=limit + 30)
+            nav_dict = {h["date"]: float(h["nav"]) for h in hist if h.get("date") and h.get("nav") is not None}
+        except Exception:
+            pass
+        try:
+            q = await fetch_realtime_estimate(code)
+            raw = q.get("gsz")
+            if raw:
+                gsz = float(raw)
+        except Exception:
+            pass
+        return code, nav_dict, gsz
+
+    fetch_results = await asyncio.gather(*[_fetch_code(c) for c in all_codes])
+
+    nav_map: dict[str, dict[str, float]] = {}
+    gsz_map: dict[str, float] = {}
+    for code, nav_dict, gsz in fetch_results:
+        nav_map[code] = nav_dict
+        if gsz:
+            gsz_map[code] = gsz
+
+    # Collect confirmed trading dates across all funds
+    all_dates = sorted({d for nd in nav_map.values() for d in nd})
+    all_dates = all_dates[-limit:]
+
+    # For each date, compute holdings *at that date* from transactions
+    date_totals: dict[str, float] = {}
+    for target_date in all_dates:
+        total = 0.0
+        for code in all_codes:
+            shares = Decimal("0")
+            for tx in tx_by_code[code]:
+                if tx["trade_date"] <= target_date:
+                    if tx["direction"] == "buy":
+                        shares += Decimal(tx["shares"])
+                    else:
+                        shares -= Decimal(tx["shares"])
+            if shares <= 0:
+                continue
+            nav = nav_map.get(code, {}).get(target_date)
+            if nav is None:
+                continue
+            total += float(shares) * nav
+        if total > 0:
+            date_totals[target_date] = total
+
+    # Append today's estimated point using gsz (fills the T+0 gap)
+    CST = timezone(timedelta(hours=8))
+    today = datetime.now(CST).strftime("%Y-%m-%d")
+    if gsz_map and current_holdings:
+        today_total = sum(
+            float(current_holdings[code]) * gsz
+            for code, gsz in gsz_map.items()
+            if code in current_holdings
+        )
+        if today_total > 0:
+            date_totals[today] = today_total
+
+    sorted_items = sorted(date_totals.items())
+    return {
+        "count": len(sorted_items),
+        "history": [
+            {"date": date, "total_value": round(value, 2)}
+            for date, value in sorted_items
+        ],
+    }
+
+
+@app.get("/api/market/indices")
+async def market_indices() -> dict:
+    """Major domestic and overseas market indices from eastmoney."""
+    try:
+        items = await fetch_market_indices()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"items": items}
+
+
+@app.get("/api/cron/status")
+def cron_status() -> dict:
+    """Return the snapshot scheduler state."""
+    return {
+        "interval_minutes": 5,
+        "trading_hours": "09:25-11:35, 12:55-15:05 CST (周一至周五)",
+        **_cron_state,
+    }
+
+
+@app.get("/api/funds/search")
+async def search_funds(q: str = "") -> dict:
+    """Search funds by name or code keyword via eastmoney."""
+    q = q.strip()
+    if not q:
+        return {"results": []}
+    results = await search_fund_by_name(q, limit=10)
+    return {"results": results}
+
+
 @app.post("/api/ocr/fund-code")
 async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
     suffix = Path(file.filename or "upload.png").suffix or ".png"
@@ -529,6 +922,28 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
 
     raw_text, codes = extract_fund_codes_from_image(path)
     _, matched_funds = extract_funds_with_amounts(path)
+
+    # If no codes found, try to extract fund names and search for codes
+    name_matches: list[dict] = []
+    if not codes:
+        fund_names = extract_fund_names_from_text(raw_text)
+        seen_codes: set[str] = set()
+        for name in fund_names[:5]:  # limit to avoid too many API calls
+            try:
+                results = await search_fund_by_name(name, limit=1)
+                for r in results:
+                    if r["code"] not in seen_codes:
+                        seen_codes.add(r["code"])
+                        name_matches.append({
+                            "code": r["code"],
+                            "name": r.get("name", ""),
+                            "matched_keyword": name,
+                            "type": r.get("type"),
+                        })
+            except Exception:
+                continue
+        # Add name-matched codes to the codes list
+        codes = list(seen_codes)
 
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
@@ -542,7 +957,8 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
         "ok": True,
         "image": path.name,
         "matched_codes": codes,
-        "matched_funds": matched_funds,
+        "matched_funds": matched_funds if matched_funds else name_matches,
+        "name_matches": name_matches,
         "raw_text": raw_text,
         "saved_at": now,
     }
@@ -567,6 +983,8 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
     code = _validate_code(code)
     if payload.direction not in ("buy", "sell"):
         raise HTTPException(status_code=400, detail="direction must be 'buy' or 'sell'")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", payload.trade_date):
+        raise HTTPException(status_code=400, detail="trade_date must be YYYY-MM-DD")
 
     try:
         nav_d = Decimal(payload.nav)
@@ -587,14 +1005,15 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
             raise HTTPException(status_code=404, detail="fund not found")
 
         if payload.direction == "sell":
-            # Check sufficient shares
-            buy_sum = conn.execute(
-                "SELECT COALESCE(SUM(CAST(shares AS REAL)),0) as s FROM transactions WHERE code=? AND direction='buy'", (code,)
-            ).fetchone()["s"]
-            sell_sum = conn.execute(
-                "SELECT COALESCE(SUM(CAST(shares AS REAL)),0) as s FROM transactions WHERE code=? AND direction='sell'", (code,)
-            ).fetchone()["s"]
-            if float(shares_d) > (buy_sum - sell_sum):
+            # Check sufficient shares using Decimal for precision
+            tx_rows = conn.execute(
+                "SELECT direction, shares FROM transactions WHERE code=?", (code,)
+            ).fetchall()
+            current_holding = sum(
+                Decimal(r["shares"]) if r["direction"] == "buy" else -Decimal(r["shares"])
+                for r in tx_rows
+            ) if tx_rows else Decimal("0")
+            if shares_d > current_holding:
                 raise HTTPException(status_code=400, detail="insufficient shares to sell")
 
         conn.execute(
@@ -616,15 +1035,16 @@ def delete_transaction(tx_id: int) -> dict:
             raise HTTPException(status_code=404, detail="transaction not found")
         code = row["code"]
 
-        # Simulate post-delete shares
+        # Simulate post-delete shares using Decimal for precision
         if row["direction"] == "buy":
-            buy_sum = Decimal(str(conn.execute(
-                "SELECT COALESCE(SUM(CAST(shares AS REAL)),0) as s FROM transactions WHERE code=? AND direction='buy'", (code,)
-            ).fetchone()["s"]))
-            sell_sum = Decimal(str(conn.execute(
-                "SELECT COALESCE(SUM(CAST(shares AS REAL)),0) as s FROM transactions WHERE code=? AND direction='sell'", (code,)
-            ).fetchone()["s"]))
-            after_shares = buy_sum - Decimal(row["shares"]) - sell_sum
+            tx_rows = conn.execute(
+                "SELECT direction, shares FROM transactions WHERE code=?", (code,)
+            ).fetchall()
+            current_holding = sum(
+                Decimal(r["shares"]) if r["direction"] == "buy" else -Decimal(r["shares"])
+                for r in tx_rows
+            ) if tx_rows else Decimal("0")
+            after_shares = current_holding - Decimal(row["shares"])
             if after_shares < 0:
                 raise HTTPException(status_code=400, detail="删除失败：会导致持有份额为负")
 

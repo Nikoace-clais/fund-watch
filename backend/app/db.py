@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Generator
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "fund_watch.db"
 
 
-def get_conn() -> sqlite3.Connection:
+@contextmanager
+def get_conn() -> Generator[sqlite3.Connection, None, None]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    return conn
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:
@@ -31,6 +39,9 @@ def init_db() -> None:
             ("percentage", "REAL"),
             ("amount_mode", "TEXT DEFAULT 'manual'"),
             ("holding_shares", "TEXT"),
+            ("imported_holding_amount", "REAL"),
+            ("imported_cumulative_return", "REAL"),
+            ("imported_holding_return", "REAL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE funds ADD COLUMN {col} {coltype}")
@@ -71,6 +82,9 @@ def init_db() -> None:
                 captured_at TEXT NOT NULL
             )
             """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_snapshots_code ON fund_snapshots(code)"
         )
         conn.execute(
             """
