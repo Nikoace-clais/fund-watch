@@ -1,4 +1,4 @@
-const API = 'http://127.0.0.1:8010'
+const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8010'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, init)
@@ -138,6 +138,19 @@ export function addTransaction(code: string, payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fee: '0', ...payload }),
   })
+}
+
+// Market indices (domestic + overseas)
+export function fetchMarketIndices() {
+  return request<{
+    items: Array<{
+      code: string
+      name: string
+      value: number
+      change: number
+      change_percent: number
+    }>
+  }>('/api/market/indices')
 }
 
 // Snapshots history (intraday)

@@ -91,6 +91,13 @@ function SearchTab({ onAdded }: { onAdded: () => void }) {
   const [error, setError] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
+
   const doSearch = useCallback(async (q: string) => {
     if (q.trim().length < 1) {
       setResults([])

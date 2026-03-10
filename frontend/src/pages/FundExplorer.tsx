@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Search, Filter, ArrowUpDown } from 'lucide-react'
 import { fetchFundsOverview, fetchFundDetail } from '@/lib/api'
-import { cn, getColorForReturn, formatPercent } from '@/lib/utils'
+import { cn, formatPercent } from '@/lib/utils'
+import { useColor } from '@/lib/color-context'
 
 type OverviewItem = {
   fund: { code: string; name?: string; sector?: string; holding_shares?: string; created_at: string }
@@ -20,6 +21,7 @@ type SortKey = 'code' | 'name' | 'gsz' | 'gszzl' | 'three_month' | 'one_year'
 type SortDir = 'asc' | 'desc'
 
 export function FundExplorer() {
+  const { colorFor } = useColor()
   const [items, setItems] = useState<OverviewItem[]>([])
   const [details, setDetails] = useState<Record<string, DetailData>>({})
   const [loading, setLoading] = useState(true)
@@ -267,13 +269,13 @@ export function FundExplorer() {
                       <td className="px-4 py-3 text-sm text-slate-700 tabular-nums">
                         {gsz != null ? gsz.toFixed(4) : '\u2014'}
                       </td>
-                      <td className={cn('px-4 py-3 text-sm font-medium tabular-nums', gszzl != null ? getColorForReturn(gszzl) : 'text-slate-400')}>
+                      <td className={cn('px-4 py-3 text-sm font-medium tabular-nums', gszzl != null ? colorFor(gszzl) : 'text-slate-400')}>
                         {gszzl != null ? formatPercent(gszzl) : '\u2014'}
                       </td>
-                      <td className={cn('px-4 py-3 text-sm font-medium tabular-nums', threeMonth != null ? getColorForReturn(threeMonth) : 'text-slate-400')}>
+                      <td className={cn('px-4 py-3 text-sm font-medium tabular-nums', threeMonth != null ? colorFor(threeMonth) : 'text-slate-400')}>
                         {threeMonth != null ? formatPercent(threeMonth) : '\u2014'}
                       </td>
-                      <td className={cn('px-4 py-3 text-sm font-medium tabular-nums', oneYear != null ? getColorForReturn(oneYear) : 'text-slate-400')}>
+                      <td className={cn('px-4 py-3 text-sm font-medium tabular-nums', oneYear != null ? colorFor(oneYear) : 'text-slate-400')}>
                         {oneYear != null ? formatPercent(oneYear) : '\u2014'}
                       </td>
                     </tr>

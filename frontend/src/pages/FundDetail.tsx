@@ -134,7 +134,7 @@ export function FundDetail() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-center">
         <p className="text-xl text-slate-500 mb-4">未找到该基金</p>
-        <Link to="/funds" className="text-blue-600 hover:underline flex items-center gap-1">
+        <Link to="/market" className="text-blue-600 hover:underline flex items-center gap-1">
           <ArrowLeft className="h-4 w-4" /> 返回基金列表
         </Link>
       </div>
@@ -153,7 +153,7 @@ export function FundDetail() {
       {/* ---- Top bar ---- */}
       <div className="flex items-center justify-between">
         <Link
-          to="/funds"
+          to="/market"
           className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-blue-600 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" /> 返回

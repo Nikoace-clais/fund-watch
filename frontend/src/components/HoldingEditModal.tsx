@@ -43,7 +43,7 @@ export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNa
       const rate = d.subscription_rate ?? null
       setFeeRate(rate)
     }).catch(() => {/* silently ignore */})
-  }, [open, code]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, code, defaultNav])
 
   useEffect(() => {
     if (!open) return
