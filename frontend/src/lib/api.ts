@@ -35,6 +35,8 @@ export function fetchFundDetail(code: string) {
     one_year_return?: number
     asset_allocation: Array<{ name: string; value: number }>
     sector?: string
+    subscription_rate?: number
+    subscription_rate_discounted?: number
   }>(`/api/funds/${code}/detail`)
 }
 
@@ -101,11 +103,40 @@ export function searchFunds(q: string) {
 }
 
 // Batch add funds
-export function batchAddFunds(codes: string[]) {
-  return request<{ ok: boolean; added: string[]; skipped: string[] }>('/api/funds/batch', {
+export type BatchFundItem = {
+  code?: string
+  name?: string
+  holding_amount?: number
+  cumulative_return?: number
+  holding_return?: number
+}
+
+export function batchAddFunds(codes: string[], funds?: BatchFundItem[]) {
+  return request<{ ok: boolean; added: string[]; invalid: string[]; warnings: string[] }>('/api/funds/batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ codes }),
+    body: JSON.stringify({ codes, funds: funds ?? [] }),
+  })
+}
+
+// NAV on a specific date
+export function fetchNavOnDate(code: string, date: string) {
+  return request<{ code: string; date: string; nav: number | null }>(`/api/funds/${code}/nav-on?date=${date}`)
+}
+
+// Add transaction (buy/sell)
+export function addTransaction(code: string, payload: {
+  direction: 'buy' | 'sell'
+  trade_date: string
+  nav: string
+  shares: string
+  fee?: string
+  note?: string
+}) {
+  return request<{ ok: boolean; code: string }>(`/api/funds/${code}/transactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fee: '0', ...payload }),
   })
 }
 
