@@ -44,13 +44,61 @@ logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "data" / "uploads"
 
+_CST = timezone(timedelta(hours=8))
+
+# ── Cron state ────────────────────────────────────────────────────────────────
+_cron_state: dict = {
+    "last_pull_at": None,
+    "pull_count": 0,
+    "last_error": None,
+    "is_active": False,
+}
+
+
+def _in_trading_hours() -> bool:
+    """True when current CST time is within A-share trading windows (weekdays)."""
+    now = datetime.now(_CST)
+    if now.weekday() >= 5:  # Saturday / Sunday
+        return False
+    t = now.hour * 60 + now.minute
+    morning   = 9 * 60 + 25 <= t <= 11 * 60 + 35
+    afternoon = 12 * 60 + 55 <= t <= 15 * 60 + 5
+    return morning or afternoon
+
+
+async def _snapshot_scheduler() -> None:
+    """Background loop: pull snapshots every 5 min during trading hours."""
+    await asyncio.sleep(15)          # startup buffer
+    logger.info("cron: scheduler started (interval=5min, trading-hours only)")
+    while True:
+        in_hours = _in_trading_hours()
+        _cron_state["is_active"] = in_hours
+        if in_hours:
+            try:
+                result = await pull_snapshots()
+                _cron_state["last_pull_at"] = datetime.now(timezone.utc).isoformat()
+                _cron_state["pull_count"] += 1
+                _cron_state["last_error"] = None
+                logger.info("cron: pull done — inserted=%s, total=%d",
+                            result.get("inserted"), _cron_state["pull_count"])
+            except Exception as exc:
+                _cron_state["last_error"] = str(exc)
+                logger.error("cron: pull failed — %s", exc)
+        await asyncio.sleep(5 * 60)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    task = asyncio.create_task(_snapshot_scheduler())
     logger.info("Fund Watch API started")
     yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
     await close_shared_client()
     logger.info("Fund Watch API shutdown")
 
@@ -843,6 +891,16 @@ async def market_indices() -> dict:
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"items": items}
+
+
+@app.get("/api/cron/status")
+def cron_status() -> dict:
+    """Return the snapshot scheduler state."""
+    return {
+        "interval_minutes": 5,
+        "trading_hours": "09:25-11:35, 12:55-15:05 CST (周一至周五)",
+        **_cron_state,
+    }
 
 
 @app.get("/api/funds/search")

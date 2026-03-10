@@ -161,6 +161,18 @@ export function fetchMarketIndices() {
   }>('/api/market/indices')
 }
 
+// Cron / scheduler status
+export function fetchCronStatus() {
+  return request<{
+    interval_minutes: number
+    trading_hours: string
+    last_pull_at: string | null
+    pull_count: number
+    last_error: string | null
+    is_active: boolean
+  }>('/api/cron/status')
+}
+
 // Snapshots history (intraday)
 export function fetchSnapshots(code: string, limit = 200) {
   return request<{
