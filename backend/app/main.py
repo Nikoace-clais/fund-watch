@@ -14,7 +14,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from typing import Literal
+
+from pydantic import BaseModel, field_validator
 
 from .db import get_conn, init_db, prune_old_snapshots
 from .fund_source import (
@@ -172,16 +174,27 @@ class CreateDcaPlanPayload(BaseModel):
     code: str
     name: str | None = None
     amount: str
-    frequency: str  # daily / weekly / biweekly / monthly
+    frequency: Literal["daily", "weekly", "biweekly", "monthly"]
     day_of_week: int | None = None
     day_of_month: int | None = None
     start_date: str
     end_date: str | None = None
 
+    @field_validator("amount")
+    @classmethod
+    def amount_must_be_positive(cls, v: str) -> str:
+        try:
+            d = Decimal(v)
+        except InvalidOperation:
+            raise ValueError("amount must be a valid decimal number")
+        if d <= 0:
+            raise ValueError("amount must be positive")
+        return v
+
 class PatchDcaPlanPayload(BaseModel):
     name: str | None = None
     amount: str | None = None
-    frequency: str | None = None
+    frequency: Literal["daily", "weekly", "biweekly", "monthly"] | None = None
     day_of_week: int | None = None
     day_of_month: int | None = None
     end_date: str | None = None
@@ -1305,22 +1318,27 @@ def get_dca_plan(plan_id: int) -> dict:
 
 @app.patch("/api/dca/plans/{plan_id}")
 def patch_dca_plan(plan_id: int, payload: PatchDcaPlanPayload) -> dict:
-    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    PATCHABLE_DCA_PLAN_FIELDS = {"name", "amount", "frequency", "day_of_week", "day_of_month", "end_date", "is_active"}
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None and k in PATCHABLE_DCA_PLAN_FIELDS}
     if not updates:
         raise HTTPException(status_code=400, detail="no fields to update")
     set_clause = ", ".join(f"{k}=?" for k in updates)
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             f"UPDATE dca_plans SET {set_clause} WHERE id=?",
             (*updates.values(), plan_id),
         )
         conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="plan not found")
     return {"ok": True}
 
 
 @app.delete("/api/dca/plans/{plan_id}")
 def delete_dca_plan(plan_id: int) -> dict:
     with get_conn() as conn:
-        conn.execute("DELETE FROM dca_plans WHERE id=?", (plan_id,))
+        cur = conn.execute("DELETE FROM dca_plans WHERE id=?", (plan_id,))
         conn.commit()
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="plan not found")
     return {"ok": True}
