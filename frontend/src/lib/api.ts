@@ -201,3 +201,7 @@ export function fetchTransactions(code: string) {
     `/api/funds/${code}/transactions`
   )
 }
+
+export function deleteTransaction(txId: number) {
+  return request<{ ok: boolean; deleted: number }>(`/api/transactions/${txId}`, { method: 'DELETE' })
+}
