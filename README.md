@@ -64,27 +64,13 @@ fund-watch/
 
 ## 快速启动
 
-### 1) 后端
+详见 [docs/install.md](docs/install.md)，含 macOS / Linux 一键启动、Windows 分步启动、定时拉取配置说明。
 
-```bash
-cd backend
-uv venv
-uv pip install -r requirements.txt
-uv run uvicorn app.main:app --reload --port 8010
-```
-
-- 健康检查：`GET http://127.0.0.1:8010/api/health`
-- Swagger：`http://127.0.0.1:8010/docs`
-
-### 2) 前端
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-前端页面：`http://127.0.0.1:5173`（默认请求后端 `http://127.0.0.1:8010`）
+| 服务 | 地址 |
+|------|------|
+| 前端页面 | http://127.0.0.1:5173 |
+| API 文档 | http://127.0.0.1:8010/docs |
+| 健康检查 | http://127.0.0.1:8010/api/health |
 
 ## 前端页面
 
