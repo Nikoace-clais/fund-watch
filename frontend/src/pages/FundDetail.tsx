@@ -5,8 +5,9 @@ import {
   ReferenceDot,
   PieChart as RechartsPieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { ArrowLeft, Plus, Share2, Info, TrendingUp, PieChart, Activity } from 'lucide-react'
-import { fetchFundDetail, fetchNavHistory, fetchFundHoldings, fetchQuote, addFund, fetchTransactions, type Transaction } from '@/lib/api'
+import { ArrowLeft, Plus, Share2, Info, TrendingUp, PieChart, Activity, Trash2 } from 'lucide-react'
+import { fetchFundDetail, fetchNavHistory, fetchFundHoldings, fetchQuote, addFund, fetchTransactions, deleteTransaction, type Transaction } from '@/lib/api'
+import { HoldingEditModal } from '@/components/HoldingEditModal'
 import { cn, formatPercent, formatCNY } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
@@ -71,6 +72,13 @@ export function FundDetail() {
   const [range, setRange] = useState<number>(63) // default 3M
   const [addMsg, setAddMsg] = useState('')
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [showAddTx, setShowAddTx] = useState(false)
+  const [deletingTx, setDeletingTx] = useState<number | null>(null)
+
+  const reloadTransactions = () => {
+    if (!code) return
+    fetchTransactions(code).then((r) => setTransactions(r.items)).catch(() => {})
+  }
 
   useEffect(() => {
     if (!code) return
@@ -123,6 +131,17 @@ export function FundDetail() {
   const navValue = quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : null)
   const changeValue = quote?.gszzl ?? null
 
+  async function handleDeleteTx(id: number) {
+    if (!confirm('确认删除该条交易记录？')) return
+    setDeletingTx(id)
+    try {
+      await deleteTransaction(id)
+      reloadTransactions()
+    } finally {
+      setDeletingTx(null)
+    }
+  }
+
   async function handleAddFund() {
     if (!code) return
     try {
@@ -164,6 +183,15 @@ export function FundDetail() {
 
   return (
     <div className="space-y-6">
+      <HoldingEditModal
+        open={showAddTx}
+        onClose={() => setShowAddTx(false)}
+        onSaved={reloadTransactions}
+        code={code!}
+        name={detail.name}
+        defaultNav={quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : undefined)}
+      />
+
       {/* ---- Top bar ---- */}
       <div className="flex items-center justify-between">
         <Link
@@ -444,7 +472,14 @@ export function FundDetail() {
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="h-5 w-5 text-slate-600" />
           <h2 className="text-lg font-semibold text-slate-800">买卖明细</h2>
-          <span className="ml-auto text-xs text-slate-400">{transactions.length} 笔</span>
+          <span className="text-xs text-slate-400">{transactions.length} 笔</span>
+          <button
+            onClick={() => setShowAddTx(true)}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-sm hover:bg-blue-600 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            记录交易
+          </button>
         </div>
 
         {transactions.length === 0 ? (
@@ -463,6 +498,7 @@ export function FundDetail() {
                   <th className="text-right pb-2 font-medium">金额</th>
                   <th className="text-right pb-2 font-medium">手续费</th>
                   <th className="text-left pb-2 font-medium pl-4">备注</th>
+                  <th className="text-center pb-2 font-medium">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -493,6 +529,16 @@ export function FundDetail() {
                     </td>
                     <td className="py-2.5 pl-4 text-slate-400">
                       {tx.note || '—'}
+                    </td>
+                    <td className="py-2.5 text-center">
+                      <button
+                        onClick={() => handleDeleteTx(tx.id)}
+                        disabled={deletingTx === tx.id}
+                        className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                        title="删除"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
