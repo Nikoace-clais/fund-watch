@@ -205,3 +205,127 @@ export function fetchTransactions(code: string) {
 export function deleteTransaction(txId: number) {
   return request<{ ok: boolean; deleted: number }>(`/api/transactions/${txId}`, { method: 'DELETE' })
 }
+
+// ── DCA ────────────────────────────────────────────────────────────────────
+
+export type DcaPlan = {
+  id: number
+  code: string
+  name?: string | null
+  amount: string
+  frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly'
+  day_of_week?: number | null
+  day_of_month?: number | null
+  start_date: string
+  end_date?: string | null
+  is_active: number
+  created_at: string
+}
+
+export type DcaRecord = {
+  id: number
+  plan_id: number
+  scheduled_date: string
+  status: 'success' | 'failed'
+  transaction_id?: number | null
+  note?: string | null
+  nav?: string | null
+  shares?: string | null
+  tx_amount?: string | null
+  created_at: string
+}
+
+export type DcaStats = {
+  plan_id: number
+  code: string
+  total_periods: number
+  success_count: number
+  failed_count: number
+  total_invested: string
+  avg_cost: string
+  total_shares: string
+  current_value: string
+  total_return: string
+  return_rate: string
+}
+
+export function fetchDcaPlans() {
+  return request<{ items: DcaPlan[] }>('/api/dca/plans')
+}
+
+export function fetchDcaPlansByCode(code: string) {
+  return fetchDcaPlans().then((r) => ({
+    items: r.items.filter((p) => p.code === code),
+  }))
+}
+
+export function createDcaPlan(payload: {
+  code: string
+  name?: string
+  amount: string
+  frequency: string
+  day_of_week?: number
+  day_of_month?: number
+  start_date: string
+  end_date?: string
+}) {
+  return request<{ ok: boolean; id: number }>('/api/dca/plans', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function patchDcaPlan(planId: number, payload: Partial<{
+  name: string; amount: string; frequency: string
+  day_of_week: number; day_of_month: number; end_date: string; is_active: number
+}>) {
+  return request<{ ok: boolean }>(`/api/dca/plans/${planId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteDcaPlan(planId: number) {
+  return request<{ ok: boolean }>(`/api/dca/plans/${planId}`, { method: 'DELETE' })
+}
+
+export function fetchDcaRecords(planId: number) {
+  return request<{ items: DcaRecord[] }>(`/api/dca/plans/${planId}/records`)
+}
+
+export function addDcaRecord(planId: number, payload: {
+  scheduled_date: string
+  status: 'success' | 'failed'
+  transaction_id?: number
+  note?: string
+}) {
+  return request<{ ok: boolean; id: number }>(`/api/dca/plans/${planId}/records`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function patchDcaRecord(recordId: number, payload: Partial<{
+  status: string; transaction_id: number | null; note: string | null
+}>) {
+  return request<{ ok: boolean }>(`/api/dca/records/${recordId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteDcaRecord(recordId: number) {
+  return request<{ ok: boolean }>(`/api/dca/records/${recordId}`, { method: 'DELETE' })
+}
+
+export function fetchDcaPlanStats(planId: number) {
+  return request<DcaStats>(`/api/dca/plans/${planId}/stats`)
+}
+
+export function fetchAllDcaStats() {
+  return request<{ items: DcaStats[] }>('/api/dca/stats')
+}
