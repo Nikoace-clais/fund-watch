@@ -1393,9 +1393,15 @@ def add_dca_record(plan_id: int, payload: AddDcaRecordPayload) -> dict:
 @app.patch("/api/dca/records/{record_id}")
 def patch_dca_record(record_id: int, payload: PatchDcaRecordPayload) -> dict:
     PATCHABLE_RECORD_FIELDS = {"status", "transaction_id", "note"}
-    updates = {k: v for k, v in payload.model_dump().items() if v is not None and k in PATCHABLE_RECORD_FIELDS}
+    updates = {
+        k: v
+        for k, v in payload.model_dump().items()
+        if k in payload.model_fields_set and k in PATCHABLE_RECORD_FIELDS
+    }
     if not updates:
         raise HTTPException(status_code=400, detail="no fields to update")
+    if "status" in updates and updates["status"] not in ("success", "failed"):
+        raise HTTPException(status_code=400, detail="status must be success or failed")
     set_clause = ", ".join(f"{k}=?" for k in updates)
     with get_conn() as conn:
         cur = conn.execute(
@@ -1435,6 +1441,7 @@ def _calc_dca_stats(plan_id: int, conn: sqlite3.Connection) -> dict:
     ).fetchall()
 
     total_periods = len(records)
+    success_count = sum(1 for r in records if r["status"] == "success")
     success_rows = [r for r in records if r["status"] == "success" and r["shares"]]
     failed_count = sum(1 for r in records if r["status"] == "failed")
 
@@ -1467,7 +1474,7 @@ def _calc_dca_stats(plan_id: int, conn: sqlite3.Connection) -> dict:
         "plan_id": plan_id,
         "code": plan["code"],
         "total_periods": total_periods,
-        "success_count": len(success_rows),
+        "success_count": success_count,
         "failed_count": failed_count,
         "total_invested": str(total_invested.quantize(Decimal("0.01"))),
         "avg_cost": str(avg_cost),
