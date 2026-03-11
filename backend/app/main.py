@@ -168,6 +168,24 @@ class AddTransactionPayload(BaseModel):
     source: str = "manual"
 
 
+class CreateDcaPlanPayload(BaseModel):
+    code: str
+    name: str | None = None
+    amount: str
+    frequency: str  # daily / weekly / biweekly / monthly
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+    start_date: str
+    end_date: str | None = None
+
+class PatchDcaPlanPayload(BaseModel):
+    name: str | None = None
+    amount: str | None = None
+    frequency: str | None = None
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+    end_date: str | None = None
+    is_active: int | None = None
 
 
 @app.get("/api/health")
@@ -1243,3 +1261,66 @@ async def ocr_transaction(file: UploadFile = File(...)) -> dict:
         "raw_text": raw_text,
         "transaction": tx_data,
     }
+
+
+# ── DCA Plans ────────────────────────────────────────────────────────────────
+
+@app.post("/api/dca/plans")
+def create_dca_plan(payload: CreateDcaPlanPayload) -> dict:
+    _validate_code(payload.code)
+    now = datetime.now(_CST).isoformat()
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO dca_plans(code,name,amount,frequency,day_of_week,day_of_month,
+               start_date,end_date,is_active,created_at)
+               VALUES(?,?,?,?,?,?,?,?,1,?)""",
+            (payload.code, payload.name, payload.amount, payload.frequency,
+             payload.day_of_week, payload.day_of_month,
+             payload.start_date, payload.end_date, now),
+        )
+        conn.commit()
+        plan_id = cur.lastrowid
+    return {"ok": True, "id": plan_id}
+
+
+@app.get("/api/dca/plans")
+def list_dca_plans() -> dict:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM dca_plans ORDER BY created_at DESC"
+        ).fetchall()
+    return {"items": [dict(r) for r in rows]}
+
+
+@app.get("/api/dca/plans/{plan_id}")
+def get_dca_plan(plan_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM dca_plans WHERE id=?", (plan_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="plan not found")
+    return dict(row)
+
+
+@app.patch("/api/dca/plans/{plan_id}")
+def patch_dca_plan(plan_id: int, payload: PatchDcaPlanPayload) -> dict:
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="no fields to update")
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE dca_plans SET {set_clause} WHERE id=?",
+            (*updates.values(), plan_id),
+        )
+        conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/dca/plans/{plan_id}")
+def delete_dca_plan(plan_id: int) -> dict:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM dca_plans WHERE id=?", (plan_id,))
+        conn.commit()
+    return {"ok": True}
