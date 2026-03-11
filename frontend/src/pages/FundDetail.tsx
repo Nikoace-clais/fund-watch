@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ReferenceDot,
   PieChart as RechartsPieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { ArrowLeft, Plus, Share2, Info, TrendingUp, PieChart, Activity } from 'lucide-react'
@@ -317,6 +318,24 @@ export function FundDetail() {
                     dot={false}
                     activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#3b82f6' }}
                   />
+                  {filteredHistory.flatMap((point) => {
+                    const txs = tradeMap.get(point.date)
+                    if (!txs || txs.length === 0) return []
+                    // 同日有买入优先显示买入色
+                    const hasBuy = txs.some((t) => t.direction === 'buy')
+                    const color = hasBuy ? '#ef4444' : '#10b981'
+                    return [
+                      <ReferenceDot
+                        key={point.date}
+                        x={point.date}
+                        y={point.nav}
+                        r={5}
+                        fill={color}
+                        stroke="#fff"
+                        strokeWidth={2}
+                      />
+                    ]
+                  })}
                 </AreaChart>
               </ResponsiveContainer>
             )}
