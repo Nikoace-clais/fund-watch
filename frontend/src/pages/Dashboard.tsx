@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { TrendingUp, ArrowRight, BarChart3, Activity, Briefcase } from 'lucide-react'
+import { TrendingUp, ArrowRight, BarChart3, Briefcase } from 'lucide-react'
 import { fetchFundsOverview, fetchPortfolioSummary, fetchMarketIndices } from '@/lib/api'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
@@ -132,15 +132,7 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* market heat */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex items-center gap-2 text-slate-500 text-sm mb-2">
-            <Activity className="h-4 w-4" />
-            市场热度
-          </div>
-          <p className="text-2xl font-bold text-orange-500">适中</p>
-          <p className="text-xs text-slate-400 mt-1">基于大盘指数与涨跌比综合判断</p>
-        </div>
+        {/* market heat — placeholder, hidden until real signal is implemented */}
       </div>
 
       {/* ---- Hot funds section ---- */}

@@ -264,7 +264,8 @@ export function Portfolio() {
 
   const bestFund = items.length
     ? items.reduce((best, it) =>
-        parseFloat(it.return_rate ?? '-Infinity') > parseFloat(best.return_rate ?? '-Infinity') ? it : best)
+        parseFloat(it.return_rate ?? String(Number.NEGATIVE_INFINITY)) >
+        parseFloat(best.return_rate ?? String(Number.NEGATIVE_INFINITY)) ? it : best)
     : null
 
   const dailyReturnRate =

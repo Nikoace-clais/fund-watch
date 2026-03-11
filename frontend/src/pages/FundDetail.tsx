@@ -2,11 +2,12 @@ import { useEffect, useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ReferenceDot,
   PieChart as RechartsPieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { ArrowLeft, Plus, Share2, Info, TrendingUp, PieChart, Activity } from 'lucide-react'
-import { fetchFundDetail, fetchNavHistory, fetchFundHoldings, fetchQuote, addFund } from '@/lib/api'
-import { cn, formatPercent } from '@/lib/utils'
+import { fetchFundDetail, fetchNavHistory, fetchFundHoldings, fetchQuote, addFund, fetchTransactions, type Transaction } from '@/lib/api'
+import { cn, formatPercent, formatCNY } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
 /* ---------- types ---------- */
@@ -69,6 +70,7 @@ export function FundDetail() {
   const [notFound, setNotFound] = useState(false)
   const [range, setRange] = useState<number>(63) // default 3M
   const [addMsg, setAddMsg] = useState('')
+  const [transactions, setTransactions] = useState<Transaction[]>([])
 
   useEffect(() => {
     if (!code) return
@@ -80,7 +82,8 @@ export function FundDetail() {
       fetchNavHistory(code, 500),
       fetchFundHoldings(code),
       fetchQuote(code),
-    ]).then(([detailRes, navRes, holdRes, quoteRes]) => {
+      fetchTransactions(code),
+    ]).then(([detailRes, navRes, holdRes, quoteRes, txRes]) => {
       if (detailRes.status === 'fulfilled') {
         setDetail(detailRes.value)
       } else {
@@ -89,6 +92,7 @@ export function FundDetail() {
       if (navRes.status === 'fulfilled') setHistory(navRes.value.history)
       if (holdRes.status === 'fulfilled') setHoldings(holdRes.value.holdings)
       if (quoteRes.status === 'fulfilled') setQuote(quoteRes.value)
+      if (txRes.status === 'fulfilled') setTransactions(txRes.value.items)
       setLoading(false)
     })
   }, [code])
@@ -97,6 +101,16 @@ export function FundDetail() {
     if (range === 0) return history
     return history.slice(-range)
   }, [history, range])
+
+  const tradeMap = useMemo(() => {
+    const map = new Map<string, Transaction[]>()
+    for (const tx of transactions) {
+      const list = map.get(tx.trade_date) ?? []
+      list.push(tx)
+      map.set(tx.trade_date, list)
+    }
+    return map
+  }, [transactions])
 
   const assetData = useMemo(() => {
     if (!detail) return []
@@ -304,6 +318,24 @@ export function FundDetail() {
                     dot={false}
                     activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#3b82f6' }}
                   />
+                  {filteredHistory.flatMap((point) => {
+                    const txs = tradeMap.get(point.date)
+                    if (!txs || txs.length === 0) return []
+                    // 同日有买入优先显示买入色
+                    const hasBuy = txs.some((t) => t.direction === 'buy')
+                    const color = hasBuy ? '#ef4444' : '#10b981'
+                    return [
+                      <ReferenceDot
+                        key={point.date}
+                        x={point.date}
+                        y={point.nav}
+                        r={5}
+                        fill={color}
+                        stroke="#fff"
+                        strokeWidth={2}
+                      />
+                    ]
+                  })}
                 </AreaChart>
               </ResponsiveContainer>
             )}
@@ -405,6 +437,69 @@ export function FundDetail() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* ---- 买卖明细 ---- */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="h-5 w-5 text-slate-600" />
+          <h2 className="text-lg font-semibold text-slate-800">买卖明细</h2>
+          <span className="ml-auto text-xs text-slate-400">{transactions.length} 笔</span>
+        </div>
+
+        {transactions.length === 0 ? (
+          <div className="flex items-center justify-center h-24 text-slate-400 text-sm">
+            暂无交易记录
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-slate-400 border-b border-slate-100">
+                  <th className="text-left pb-2 font-medium">日期</th>
+                  <th className="text-left pb-2 font-medium">方向</th>
+                  <th className="text-right pb-2 font-medium">成交净值</th>
+                  <th className="text-right pb-2 font-medium">份额</th>
+                  <th className="text-right pb-2 font-medium">金额</th>
+                  <th className="text-right pb-2 font-medium">手续费</th>
+                  <th className="text-left pb-2 font-medium pl-4">备注</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {transactions.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-2.5 text-slate-600">{tx.trade_date}</td>
+                    <td className="py-2.5">
+                      <span className={cn(
+                        'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
+                        tx.direction === 'buy'
+                          ? 'bg-red-50 text-red-600'
+                          : 'bg-green-50 text-green-600',
+                      )}>
+                        {tx.direction === 'buy' ? '买入' : '卖出'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right text-slate-700 font-mono">
+                      {parseFloat(tx.nav).toFixed(4)}
+                    </td>
+                    <td className="py-2.5 text-right text-slate-700">
+                      {parseFloat(tx.shares).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="py-2.5 text-right text-slate-700">
+                      {formatCNY(parseFloat(tx.amount))}
+                    </td>
+                    <td className="py-2.5 text-right text-slate-500">
+                      {parseFloat(tx.fee) > 0 ? formatCNY(parseFloat(tx.fee)) : '—'}
+                    </td>
+                    <td className="py-2.5 pl-4 text-slate-400">
+                      {tx.note || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )

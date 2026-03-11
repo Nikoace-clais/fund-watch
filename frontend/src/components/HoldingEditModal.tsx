@@ -40,7 +40,7 @@ export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNa
 
     fetchFundDetail(code).then((d) => {
       // prefer discounted rate (天天基金优惠), fall back to original
-      const rate = d.subscription_rate ?? null
+      const rate = d.subscription_rate_discounted ?? d.subscription_rate ?? null
       setFeeRate(rate)
     }).catch(() => {/* silently ignore */})
   }, [open, code, defaultNav])

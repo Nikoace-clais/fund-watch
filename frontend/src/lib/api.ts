@@ -68,9 +68,11 @@ export function fetchPortfolioSummary() {
     total_return_rate: string
     fund_count: number
     items: Array<{
-      code: string; name?: string; shares: string; nav: string
+      code: string; name?: string; shares: string | null; nav: string | null
       daily_change: number; current_value: string; daily_return: string
-      total_cost: string; total_return: string; return_rate: string
+      total_cost: string | null; total_return: string; return_rate: string | null
+      is_imported?: boolean
+      imported_cumulative_return?: string
     }>
   }>('/api/portfolio/summary')
 }
@@ -179,4 +181,27 @@ export function fetchSnapshots(code: string, limit = 200) {
     code: string; count: number
     items: Array<{ gsz?: number; gszzl?: number; gztime?: string; captured_at: string }>
   }>(`/api/snapshots/${code}?limit=${limit}`)
+}
+
+export type Transaction = {
+  id: number
+  direction: 'buy' | 'sell'
+  trade_date: string
+  nav: string
+  shares: string
+  amount: string
+  fee: string
+  note?: string | null
+  source?: string | null
+  created_at: string
+}
+
+export function fetchTransactions(code: string) {
+  return request<{ code: string; items: Transaction[] }>(
+    `/api/funds/${code}/transactions`
+  )
+}
+
+export function deleteTransaction(txId: number) {
+  return request<{ ok: boolean; deleted: number }>(`/api/transactions/${txId}`, { method: 'DELETE' })
 }
