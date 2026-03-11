@@ -182,3 +182,22 @@ export function fetchSnapshots(code: string, limit = 200) {
     items: Array<{ gsz?: number; gszzl?: number; gztime?: string; captured_at: string }>
   }>(`/api/snapshots/${code}?limit=${limit}`)
 }
+
+export type Transaction = {
+  id: number
+  direction: 'buy' | 'sell'
+  trade_date: string
+  nav: string
+  shares: string
+  amount: string
+  fee: string
+  note?: string | null
+  source?: string | null
+  created_at: string
+}
+
+export function fetchTransactions(code: string) {
+  return request<{ code: string; items: Transaction[] }>(
+    `/api/funds/${code}/transactions`
+  )
+}
