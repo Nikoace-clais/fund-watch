@@ -5,7 +5,7 @@ import {
   PieChart as RechartsPieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { ArrowLeft, Plus, Share2, Info, TrendingUp, PieChart, Activity } from 'lucide-react'
-import { fetchFundDetail, fetchNavHistory, fetchFundHoldings, fetchQuote, addFund } from '@/lib/api'
+import { fetchFundDetail, fetchNavHistory, fetchFundHoldings, fetchQuote, addFund, fetchTransactions, type Transaction } from '@/lib/api'
 import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
@@ -69,6 +69,7 @@ export function FundDetail() {
   const [notFound, setNotFound] = useState(false)
   const [range, setRange] = useState<number>(63) // default 3M
   const [addMsg, setAddMsg] = useState('')
+  const [transactions, setTransactions] = useState<Transaction[]>([])
 
   useEffect(() => {
     if (!code) return
@@ -80,7 +81,8 @@ export function FundDetail() {
       fetchNavHistory(code, 500),
       fetchFundHoldings(code),
       fetchQuote(code),
-    ]).then(([detailRes, navRes, holdRes, quoteRes]) => {
+      fetchTransactions(code),
+    ]).then(([detailRes, navRes, holdRes, quoteRes, txRes]) => {
       if (detailRes.status === 'fulfilled') {
         setDetail(detailRes.value)
       } else {
@@ -89,6 +91,7 @@ export function FundDetail() {
       if (navRes.status === 'fulfilled') setHistory(navRes.value.history)
       if (holdRes.status === 'fulfilled') setHoldings(holdRes.value.holdings)
       if (quoteRes.status === 'fulfilled') setQuote(quoteRes.value)
+      if (txRes.status === 'fulfilled') setTransactions(txRes.value.items)
       setLoading(false)
     })
   }, [code])
@@ -97,6 +100,16 @@ export function FundDetail() {
     if (range === 0) return history
     return history.slice(-range)
   }, [history, range])
+
+  const tradeMap = useMemo(() => {
+    const map = new Map<string, Transaction[]>()
+    for (const tx of transactions) {
+      const list = map.get(tx.trade_date) ?? []
+      list.push(tx)
+      map.set(tx.trade_date, list)
+    }
+    return map
+  }, [transactions])
 
   const assetData = useMemo(() => {
     if (!detail) return []
