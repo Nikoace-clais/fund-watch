@@ -85,6 +85,40 @@ def init_db() -> None:
 
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS dca_plans (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                code         TEXT NOT NULL,
+                name         TEXT,
+                amount       TEXT NOT NULL,
+                frequency    TEXT NOT NULL CHECK(frequency IN ('daily','weekly','biweekly','monthly')),
+                day_of_week  INTEGER,
+                day_of_month INTEGER,
+                start_date   TEXT NOT NULL,
+                end_date     TEXT,
+                is_active    INTEGER NOT NULL DEFAULT 1,
+                created_at   TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dca_records (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id        INTEGER NOT NULL REFERENCES dca_plans(id) ON DELETE CASCADE,
+                scheduled_date TEXT NOT NULL,
+                status         TEXT NOT NULL CHECK(status IN ('success','failed')),
+                transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
+                note           TEXT,
+                created_at     TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dca_records_plan ON dca_records(plan_id)"
+        )
+
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS fund_snapshots (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 code TEXT NOT NULL,
