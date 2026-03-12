@@ -14,6 +14,7 @@ def get_conn() -> Generator[sqlite3.Connection, None, None]:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout=5000")
     try:
         yield conn
@@ -81,6 +82,43 @@ def init_db() -> None:
         )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(code)"
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dca_plans (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                code         TEXT NOT NULL,
+                name         TEXT,
+                amount       TEXT NOT NULL CHECK(CAST(amount AS REAL) > 0),
+                frequency    TEXT NOT NULL CHECK(frequency IN ('daily','weekly','biweekly','monthly')),
+                day_of_week  INTEGER CHECK(day_of_week IS NULL OR day_of_week BETWEEN 0 AND 6),
+                day_of_month INTEGER CHECK(day_of_month IS NULL OR day_of_month BETWEEN 1 AND 28),
+                start_date   TEXT NOT NULL,
+                end_date     TEXT,
+                is_active    INTEGER NOT NULL DEFAULT 1,
+                created_at   TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dca_records (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                plan_id        INTEGER NOT NULL REFERENCES dca_plans(id) ON DELETE CASCADE,
+                scheduled_date TEXT NOT NULL,
+                status         TEXT NOT NULL CHECK(status IN ('success','failed')),
+                transaction_id INTEGER REFERENCES transactions(id) ON DELETE SET NULL,
+                note           TEXT,
+                created_at     TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dca_records_plan ON dca_records(plan_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dca_plans_code ON dca_plans(code)"
         )
 
         conn.execute(
