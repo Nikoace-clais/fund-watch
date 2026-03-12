@@ -89,7 +89,7 @@ function SearchTab({ onAdded }: { onAdded: () => void }) {
   const [addedCodes, setAddedCodes] = useState<Set<string>>(new Set())
   const [adding, setAdding] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>()
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // Cleanup debounce timer on unmount
   useEffect(() => {

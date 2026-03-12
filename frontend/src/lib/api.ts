@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8010'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -204,4 +206,15 @@ export function fetchTransactions(code: string) {
 
 export function deleteTransaction(txId: number) {
   return request<{ ok: boolean; deleted: number }>(`/api/transactions/${txId}`, { method: 'DELETE' })
+}
+
+export function ocrFundCode(file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return request<{
+    matched_codes: string[]
+    matched_funds: { code: string; name: string }[]
+    name_matches: { code: string; name: string; matched_keyword: string; type?: string }[]
+    raw_text: string
+  }>('/api/ocr/fund-code', { method: 'POST', body: form })
 }

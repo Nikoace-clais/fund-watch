@@ -9,6 +9,8 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  History,
+  X,
 } from 'lucide-react'
 import {
   useReactTable,
@@ -26,7 +28,7 @@ import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine,
 } from 'recharts'
-import { fetchPortfolioSummary, fetchFundsOverview, deleteFund, fetchPortfolioHistory } from '@/lib/api'
+import { fetchPortfolioSummary, fetchFundsOverview, deleteFund, fetchPortfolioHistory, fetchTransactions, deleteTransaction, type Transaction } from '@/lib/api'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
@@ -171,6 +173,119 @@ function BatchBar({
   )
 }
 
+/* ---------- TransactionModal ---------- */
+function TransactionModal({
+  code, name, onClose, onChanged, onAddTx,
+}: {
+  code: string
+  name?: string
+  onClose: () => void
+  onChanged: () => void
+  onAddTx: () => void
+}) {
+  const [items, setItems] = useState<Transaction[]>([])
+  const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState<number | null>(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    fetchTransactions(code)
+      .then((r) => setItems(r.items))
+      .finally(() => setLoading(false))
+  }, [code])
+
+  useEffect(() => { load() }, [load])
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('确认删除该条交易记录？')) return
+    setDeleting(id)
+    try {
+      await deleteTransaction(id)
+      onChanged()
+      load()
+    } finally {
+      setDeleting(null)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">交易记录</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{name || code} · {code}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onAddTx}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500 text-white text-sm hover:bg-blue-600 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              记录交易
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-6 py-4">
+          {loading ? (
+            <p className="text-center text-slate-400 py-8 text-sm">加载中...</p>
+          ) : items.length === 0 ? (
+            <p className="text-center text-slate-400 py-8 text-sm">暂无交易记录</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-slate-400 border-b border-slate-100">
+                  <th className="text-left pb-2 font-medium">日期</th>
+                  <th className="text-center pb-2 font-medium">方向</th>
+                  <th className="text-right pb-2 font-medium">净值</th>
+                  <th className="text-right pb-2 font-medium">份额</th>
+                  <th className="text-right pb-2 font-medium">金额</th>
+                  <th className="text-center pb-2 font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {items.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-slate-50">
+                    <td className="py-2.5 text-slate-600">{tx.trade_date}</td>
+                    <td className="py-2.5 text-center">
+                      <span className={cn(
+                        'inline-block px-2 py-0.5 rounded-full text-xs font-medium',
+                        tx.direction === 'buy' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600',
+                      )}>
+                        {tx.direction === 'buy' ? '买入' : '卖出'}
+                      </span>
+                    </td>
+                    <td className="py-2.5 text-right text-slate-700">{parseFloat(tx.nav).toFixed(4)}</td>
+                    <td className="py-2.5 text-right text-slate-700">{parseFloat(tx.shares).toFixed(2)}</td>
+                    <td className="py-2.5 text-right text-slate-700">{formatCNY(parseFloat(tx.amount))}</td>
+                    <td className="py-2.5 text-center">
+                      <button
+                        onClick={() => handleDelete(tx.id)}
+                        disabled={deleting === tx.id}
+                        className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                        title="删除"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ---------- component ---------- */
 export function Portfolio() {
   const { colorFor } = useColor()
@@ -181,6 +296,7 @@ export function Portfolio() {
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [holdingEdit, setHoldingEdit] = useState<{ code: string; name?: string; nav?: number } | null>(null)
+  const [txView, setTxView] = useState<{ code: string; name?: string } | null>(null)
   const [holdingSorting, setHoldingSorting] = useState<SortingState>([{ id: 'current_value', desc: true }])
   const [watchSorting, setWatchSorting] = useState<SortingState>([{ id: 'gszzl', desc: true }])
   const [holdingSelection, setHoldingSelection] = useState<RowSelectionState>({})
@@ -422,6 +538,13 @@ export function Portfolio() {
           return (
             <div className="flex items-center justify-center gap-1">
               <button
+                onClick={() => setTxView({ code: it.code, name: it.name })}
+                className="p-1.5 rounded-md text-slate-400 hover:text-violet-500 hover:bg-violet-50 transition-colors"
+                title="交易记录"
+              >
+                <History className="h-4 w-4" />
+              </button>
+              <button
                 onClick={() => setHoldingEdit({ code: it.code, name: it.name, nav: it.nav != null ? parseFloat(it.nav) : undefined })}
                 className="p-1.5 rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
                 title="记录交易"
@@ -565,7 +688,7 @@ export function Portfolio() {
     enableRowSelection: true,
     getRowId: (row) => row.code,
     sortDescFirst: true,
-    sortUndefined: 'last',
+    ...({ sortUndefined: 'last' } as object),
   })
 
   const watchTable = useReactTable({
@@ -579,7 +702,7 @@ export function Portfolio() {
     enableRowSelection: true,
     getRowId: (row) => row.code,
     sortDescFirst: true,
-    sortUndefined: 'last',
+    ...({ sortUndefined: 'last' } as object),
   })
 
   const holdingSelectedCodes = holdingTable.getSelectedRowModel().rows.map((r) => r.original.code)
@@ -616,6 +739,16 @@ export function Portfolio() {
         name={holdingEdit?.name}
         defaultNav={holdingEdit?.nav}
       />
+
+      {txView && (
+        <TransactionModal
+          code={txView.code}
+          name={txView.name}
+          onClose={() => setTxView(null)}
+          onChanged={() => { loadData(); }}
+          onAddTx={() => { setTxView(null); setHoldingEdit({ code: txView.code, name: txView.name }); }}
+        />
+      )}
 
       {/* ---- Empty state ---- */}
       {!hasItems && watchOnly.length === 0 && (
@@ -841,7 +974,7 @@ export function Portfolio() {
                         <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(value: number) => formatCNY(value)} />
+                    <Tooltip formatter={(value: number) => formatCNY(value)} wrapperStyle={{ zIndex: 10 }} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
