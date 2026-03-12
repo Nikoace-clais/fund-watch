@@ -565,7 +565,7 @@ export function Portfolio() {
     enableRowSelection: true,
     getRowId: (row) => row.code,
     sortDescFirst: true,
-    sortUndefined: 'last',
+    ...({ sortUndefined: 'last' } as object),
   })
 
   const watchTable = useReactTable({
@@ -579,7 +579,7 @@ export function Portfolio() {
     enableRowSelection: true,
     getRowId: (row) => row.code,
     sortDescFirst: true,
-    sortUndefined: 'last',
+    ...({ sortUndefined: 'last' } as object),
   })
 
   const holdingSelectedCodes = holdingTable.getSelectedRowModel().rows.map((r) => r.original.code)

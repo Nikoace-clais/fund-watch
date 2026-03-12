@@ -4,6 +4,7 @@ import { Dashboard } from './pages/Dashboard'
 import { FundDetail } from './pages/FundDetail'
 import { Portfolio } from './pages/Portfolio'
 import { Market } from './pages/Market'
+import { Dca } from './pages/Dca'
 
 export const router = createBrowserRouter([
   {
@@ -14,6 +15,7 @@ export const router = createBrowserRouter([
       { path: 'funds/:code', Component: FundDetail },
       { path: 'portfolio', Component: Portfolio },
       { path: 'market', Component: Market },
+      { path: 'dca', Component: Dca },
     ],
   },
 ])
