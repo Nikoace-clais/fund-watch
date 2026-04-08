@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { Upload, FileImage, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import type { ImportPreviewResult, ImportPreviewItem } from '../services/import';
 import {
   previewImport,
@@ -154,7 +155,7 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
     return (
       <div className="flex flex-col items-center justify-center p-12 space-y-4">
         <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-        <p className="text-gray-600">正在识别截图中的基金...</p>
+        <p className="text-slate-600">正在识别截图中的基金...</p>
       </div>
     );
   }
@@ -163,10 +164,10 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
     return (
       <div className="space-y-4">
         {/* Header Stats */}
-        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
           <div className="flex items-center space-x-4">
-            <span className="text-sm text-gray-600">
-              识别到 <strong className="text-gray-900">{totalCount}</strong> 个基金
+            <span className="text-sm text-slate-600">
+              识别到 <strong className="text-slate-900">{totalCount}</strong> 个基金
             </span>
             {stats && (
               <div className="flex items-center space-x-2 text-xs">
@@ -184,7 +185,7 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
           </div>
           <button
             onClick={handleReset}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-slate-500 hover:text-slate-700"
           >
             重新上传
           </button>
@@ -203,30 +204,30 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
         {/* Results Table */}
         <div className="border rounded-lg overflow-hidden">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-slate-50">
               <tr>
                 <th className="px-4 py-3 text-left">
                   <input
                     type="checkbox"
                     checked={selectedCodes.size === totalCount && totalCount > 0}
                     onChange={toggleSelectAll}
-                    className="rounded border-gray-300"
+                    className="rounded border-slate-300"
                     data-testid="select-all"
                   />
                 </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
                   基金名称
                 </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
                   基金代码
                 </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
                   类型
                 </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
                   置信度
                 </th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">
+                <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
                   状态
                 </th>
               </tr>
@@ -246,13 +247,13 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between pt-4">
-          <div className="text-sm text-gray-600">
-            已选择 <strong className="text-gray-900">{selectedCount}</strong> 个基金
+          <div className="text-sm text-slate-600">
+            已选择 <strong className="text-slate-900">{selectedCount}</strong> 个基金
           </div>
           <div className="flex space-x-3">
             <button
               onClick={handleReset}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              className="px-4 py-2 text-slate-600 hover:text-slate-800"
             >
               取消
             </button>
@@ -284,7 +285,7 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
       className={`relative border-2 border-dashed rounded-xl p-12 text-center transition-colors ${
         isDragging
           ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-300 hover:border-gray-400'
+          : 'border-slate-300 hover:border-slate-400'
       }`}
     >
       <input
@@ -306,8 +307,8 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
             <FileImage className="w-8 h-8 text-blue-600" />
           )}
         </div>
-        <h3 className="text-lg font-medium text-gray-900 mb-2">上传截图</h3>
-        <p className="text-sm text-gray-500 mb-4">
+        <h3 className="text-lg font-medium text-slate-900 mb-2">上传截图</h3>
+        <p className="text-sm text-slate-500 mb-4">
           支持 PNG、JPG、WebP 格式，最大 10MB
         </p>
         <span className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
@@ -336,26 +337,26 @@ const ImportRow: React.FC<ImportRowProps> = ({ fund, isSelected, onToggle }) => 
 
   return (
     <tr
-      className={`hover:bg-gray-50 ${fund.needs_review ? 'bg-yellow-50/30' : ''}`}
+      className={`hover:bg-slate-50 ${fund.needs_review ? 'bg-yellow-50/30' : ''}`}
     >
       <td className="px-4 py-3">
         <input
           type="checkbox"
           checked={isSelected}
           onChange={onToggle}
-          className="rounded border-gray-300"
+          className="rounded border-slate-300"
         />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center">
-          <span className="font-medium text-gray-900">{fund.name}</span>
+          <span className="font-medium text-slate-900">{fund.name}</span>
           {fund.needs_review && (
             <AlertCircle className="w-4 h-4 text-yellow-500 ml-2" />
           )}
         </div>
       </td>
-      <td className="px-4 py-3 text-sm font-mono text-gray-600">{fund.code}</td>
-      <td className="px-4 py-3 text-sm text-gray-600">{fund.type}</td>
+      <td className="px-4 py-3 text-sm font-mono text-slate-600">{fund.code}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">{fund.type}</td>
       <td className="px-4 py-3">
         <span className={`text-sm font-medium ${getConfidenceColor(fund.confidence)}`}>
           {formatConfidence(fund.confidence)}

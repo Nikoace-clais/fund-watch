@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { TrendingUp, ArrowRight, BarChart3, Briefcase } from 'lucide-react'
+import { TrendingUp, ArrowRight, BarChart3, Briefcase, Camera } from 'lucide-react'
 import { fetchFundsOverview, fetchPortfolioSummary, fetchMarketIndices } from '@/lib/api'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
@@ -133,6 +133,17 @@ export function Dashboard() {
         </div>
 
         {/* market heat — placeholder, hidden until real signal is implemented */}
+      </div>
+
+      {/* ---- Quick actions ---- */}
+      <div className="flex gap-3">
+        <Link
+          to="/import"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+        >
+          <Camera className="h-4 w-4" />
+          截图导入基金
+        </Link>
       </div>
 
       {/* ---- Hot funds section ---- */}
