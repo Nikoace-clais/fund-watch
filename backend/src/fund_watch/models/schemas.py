@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FundBase(BaseModel):
@@ -26,8 +26,7 @@ class Fund(FundBase):
     amount: float | None = None
     percentage: float | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FundOverview(BaseModel):
@@ -61,8 +60,7 @@ class Snapshot(BaseModel):
     gztime: str | None = None
     captured_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class Transaction(BaseModel):
@@ -79,8 +77,7 @@ class Transaction(BaseModel):
     source: str = "manual"
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class FundBatchImport(BaseModel):
