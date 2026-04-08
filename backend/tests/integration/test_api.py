@@ -41,3 +41,13 @@ def test_delete_nonexistent_fund(client):
     """Test deleting non-existent fund."""
     response = client.delete("/api/funds/999999")
     assert response.status_code == 404
+
+
+@pytest.mark.integration
+def test_market_indices(client):
+    """Test market indices endpoint."""
+    response = client.get("/api/market/indices")
+    assert response.status_code == 200
+    data = response.json()
+    assert "items" in data
+    assert isinstance(data["items"], list)
