@@ -175,12 +175,49 @@ bun run test:e2e
 
 ### 开发服务器
 
+#### 方式一：一键启动（推荐）
+
+```bash
+./start.sh
+```
+
+自动启动前后端服务，带彩色日志和优雅关闭。
+
+#### 方式二：分别启动
+
 ```bash
 # 后端
 cd backend && uv run python run.py
 
-# 前端
+# 前端（新终端）
 cd frontend && bun run dev
 ```
 
 访问 http://localhost:5173/import 使用截图导入功能
+
+### 日志系统
+
+#### 后端日志格式
+
+```
+13:37:42 | INFO     | 🚀 Starting Fund Watch API
+13:37:42 | INFO     | ✅ Database initialized
+13:37:45 | INFO     | GET    /api/health                   200    2.3ms
+13:37:46 | INFO     | 📸 Starting OCR on 12543 bytes image
+13:37:48 | INFO     | ✅ OCR completed in 2.15s, extracted 12 lines
+13:37:48 | INFO     | ✅ Preview generated in 2.18s | Total: 5 | High conf: 3 | Need review: 1 | Avg conf: 82%
+```
+
+特点：
+- 彩色级别显示（绿色 INFO、黄色 WARNING、红色 ERROR）
+- HTTP 请求带耗时统计
+- Emoji 图标直观标识操作类型
+- 结构化业务日志（OCR、导入等）
+
+#### 日志文件
+
+```bash
+# 实时查看日志
+tail -f logs/backend.log
+tail -f logs/frontend.log
+```
