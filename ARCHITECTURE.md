@@ -147,8 +147,23 @@ bun run test:e2e
 
 ### 前端组件
 
-- **ImportPreview**: 上传和预览组件
-- **ImportPage**: 完整页面（包含成功状态）
+- **ImportPreview**: 上传和预览组件（拖拽上传、置信度标识、批量选择）
+- **ImportPage**: 完整页面（适配 Layout、成功状态、使用提示）
+- **集成位置**: 
+  - 侧边栏导航（截图导入）
+  - Dashboard 快捷入口按钮
+
+### 路由配置
+
+```tsx
+{ path: 'import', Component: ImportPage }
+```
+
+### 样式适配
+
+- 使用 slate 设计系统（与现有组件一致）
+- 渐变提示卡片
+- 统一的圆角和阴影
 
 ### 测试状态
 
@@ -157,3 +172,15 @@ bun run test:e2e
 | 后端单元测试 | 23 | ✅ 通过 |
 | 前端单元测试 | 10 | ✅ 通过 |
 | **总计** | **33** | **✅ 全部通过** |
+
+### 开发服务器
+
+```bash
+# 后端
+cd backend && uv run python run.py
+
+# 前端
+cd frontend && bun run dev
+```
+
+访问 http://localhost:5173/import 使用截图导入功能
