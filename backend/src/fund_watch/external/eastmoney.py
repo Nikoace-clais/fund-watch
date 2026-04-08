@@ -73,7 +73,7 @@ def _get_client() -> httpx.AsyncClient:
             timeout=httpx.Timeout(connect=5.0, read=15.0, write=5.0, pool=5.0),
             limits=httpx.Limits(max_connections=30, max_keepalive_connections=10),
         )
-        logger.info("httpx shared client initialized")
+        logger.debug("🌐 HTTP client initialized")
     return _client
 
 

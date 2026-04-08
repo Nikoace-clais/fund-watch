@@ -1,13 +1,17 @@
 """Fund import service with OCR and fuzzy matching."""
 from __future__ import annotations
 
+import logging
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from rapidfuzz import fuzz, process
 
 from ..repositories.fund_repo import FundRepository
+
+logger = logging.getLogger('fund-watch.import')
 
 
 @dataclass
@@ -52,6 +56,9 @@ class FundImportService:
         
         Note: Currently uses paddleocr if available, falls back to mock for testing.
         """
+        logger.info(f"📸 Starting OCR on {len(image_data)} bytes image")
+        start_time = time.time()
+        
         try:
             from paddleocr import PaddleOCR
             
@@ -83,10 +90,13 @@ class FundImportService:
                     if line:
                         texts.append(line[1][0])  # text content
             
+            elapsed = time.time() - start_time
+            logger.info(f"✅ OCR completed in {elapsed:.2f}s, extracted {len(texts)} lines")
+            
             return '\n'.join(texts)
         except Exception as e:
             # Fallback: return empty string for testing
-            # In production, this should log the error
+            logger.warning(f"⚠️ OCR failed: {e}, using fallback")
             return ""
     
     def _extract_fund_codes(self, text: str) -> list[str]:
@@ -212,10 +222,14 @@ class FundImportService:
     
     def preview_import(self, image_data: bytes) -> ImportResult:
         """Generate import preview from image."""
+        logger.info("🔍 Starting import preview generation")
+        start_time = time.time()
+        
         # Step 1: OCR
         raw_text = self._ocr_image(image_data)
         
         if not raw_text:
+            logger.warning("⚠️ No text extracted from image")
             return ImportResult(
                 funds=[],
                 total_confidence=0.0,
@@ -227,14 +241,18 @@ class FundImportService:
         found_codes: dict[str, dict] = {}  # code -> {source, confidence}
         
         # Strategy 1: Direct code extraction
-        for code in self._extract_fund_codes(raw_text):
+        code_matches = self._extract_fund_codes(raw_text)
+        for code in code_matches:
             if code not in found_codes:
                 found_codes[code] = {"source": "code"}
+        logger.debug(f"📋 Code extraction: {len(code_matches)} codes found")
         
         # Strategy 2: Table extraction
-        for code in self._extract_from_table(raw_text):
+        table_matches = self._extract_from_table(raw_text)
+        for code in table_matches:
             if code not in found_codes:
                 found_codes[code] = {"source": "table"}
+        logger.debug(f"📊 Table extraction: {len(table_matches)} codes found")
         
         # Strategy 3: Name fuzzy match
         name_matches = self._fuzzy_match_name(raw_text)
@@ -245,6 +263,7 @@ class FundImportService:
                     "source": "name_match",
                     "match_score": match.get("match_score", 0.7)
                 }
+        logger.debug(f"🔤 Name matching: {len(name_matches)} funds found")
         
         # Step 3: Validate and build preview
         funds = []
@@ -254,6 +273,7 @@ class FundImportService:
         for code, info in found_codes.items():
             fund_data = self._validate_fund(code)
             if not fund_data:
+                logger.debug(f"⚠️ Fund {code} validation failed")
                 continue
             
             # Calculate confidence
@@ -286,6 +306,18 @@ class FundImportService:
         # Calculate average confidence
         avg_confidence = total_confidence / len(funds) if funds else 0.0
         
+        elapsed = time.time() - start_time
+        high_conf = sum(1 for f in funds if f.confidence >= 0.85)
+        review_count = sum(1 for f in funds if f.needs_review)
+        
+        logger.info(
+            f"✅ Preview generated in {elapsed:.2f}s | "
+            f"Total: {len(funds)} | "
+            f"High conf: {high_conf} | "
+            f"Need review: {review_count} | "
+            f"Avg conf: {avg_confidence:.0%}"
+        )
+        
         return ImportResult(
             funds=funds,
             total_confidence=round(avg_confidence, 2),
@@ -295,7 +327,10 @@ class FundImportService:
     
     def confirm_import(self, codes: list[str]) -> dict:
         """Confirm import of selected funds."""
+        logger.info(f"💾 Confirming import of {len(codes)} funds")
+        
         if not codes:
+            logger.debug("No codes provided, returning empty result")
             return {
                 "success": True,
                 "added": 0,
@@ -313,9 +348,15 @@ class FundImportService:
                 valid_codes.append(code)
             else:
                 invalid.append(code)
+                logger.warning(f"⚠️ Invalid fund code: {code}")
         
         # Batch create
         result = self.repo.batch_create(valid_codes)
+        
+        logger.info(
+            f"✅ Import complete: {result['inserted']} added, "
+            f"{len(invalid)} invalid"
+        )
         
         return {
             "success": True,
