@@ -56,6 +56,10 @@ class FundImportService:
         
         Note: Currently uses paddleocr if available, falls back to mock for testing.
         """
+        # Disable oneDNN to avoid compatibility issues
+        import os
+        os.environ['FLAGS_use_mkldnn'] = '0'
+        
         logger.info(f"📸 Starting OCR on {len(image_data)} bytes image")
         start_time = time.time()
         
@@ -64,11 +68,7 @@ class FundImportService:
             
             # Initialize OCR (lazy loading)
             if not hasattr(self, '_ocr'):
-                self._ocr = PaddleOCR(
-                    use_angle_cls=True,
-                    lang='ch',
-                    show_log=False
-                )
+                self._ocr = PaddleOCR(lang='ch')
             
             # Save image temporarily
             import tempfile
@@ -76,8 +76,11 @@ class FundImportService:
                 f.write(image_data)
                 temp_path = f.name
             
-            # Run OCR
-            result = self._ocr.ocr(temp_path, cls=True)
+            # Run OCR (newer versions don't need cls parameter)
+            try:
+                result = self._ocr.ocr(temp_path, cls=True)
+            except TypeError:
+                result = self._ocr.ocr(temp_path)
             
             # Cleanup
             import os
