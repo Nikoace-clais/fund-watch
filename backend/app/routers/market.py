@@ -1,18 +1,24 @@
 """Market indices."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import logging
+
+from fastapi import APIRouter
 
 from ..fund_source import fetch_market_indices
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["market"])
 
 
 @router.get("/api/market/indices")
 async def market_indices() -> dict:
-    """Major domestic and overseas market indices from eastmoney."""
+    """Major domestic and overseas market indices from Sina Finance."""
     try:
         items = await fetch_market_indices()
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        logger.warning("Failed to fetch market indices: %s", exc)
+        # Return empty items on failure so frontend doesn't break
+        return {"items": [], "error": "暂时无法获取行情数据，请稍后重试"}
     return {"items": items}

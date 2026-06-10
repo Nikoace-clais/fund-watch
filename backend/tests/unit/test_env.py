@@ -28,6 +28,6 @@ def test_project_structure_exists():
     backend = Path(__file__).parent.parent.parent
     
     # Check key directories exist
-    assert (backend / "src" / "fund_watch").exists()
+    assert (backend / "app").exists()
     assert (backend / "tests" / "unit").exists()
     assert (backend / "tests" / "integration").exists()

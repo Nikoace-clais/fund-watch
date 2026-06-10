@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -24,6 +25,7 @@ def _get_client() -> httpx.AsyncClient:
         _client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=5.0, read=15.0, write=5.0, pool=5.0),
             limits=httpx.Limits(max_connections=30, max_keepalive_connections=10),
+            http2=False,  # Disable HTTP/2 to avoid connection issues
         )
         logger.info("httpx shared client initialized")
     return _client
@@ -353,54 +355,106 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
 LSJZ_URL = "https://api.fund.eastmoney.com/f10/lsjz"
 FUND_SEARCH_URL = "https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx"
 
-# ── Market indices ────────────────────────────────────────────────────────────
-MARKET_INDICES_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get"
+# ── Market indices (Sina Finance API; eastmoney push2 was unstable) ─────────
+SINA_HQ_URL = "https://hq.sinajs.cn/list={codes}"
 
-# secid format: {market}.{code}  1=上交所 0=深交所 100=海外
-_INDEX_SECIDS = [
-    "1.000001",   # 上证指数
-    "0.399001",   # 深证成指
-    "0.399006",   # 创业板指
-    "0.399300",   # 沪深300
-    "1.000016",   # 上证50
-    "1.000905",   # 中证500
-    "100.HSI",    # 恒生指数
-    "100.SPX",    # 标普500
-    "100.NDX",    # 纳斯达克
-    "100.DJIA",   # 道琼斯
-    "100.N225",   # 日经225
-]
+_SINA_INDICES = {
+    "sh000001": {"name": "上证指数", "code": "000001"},
+    "sz399001": {"name": "深证成指", "code": "399001"},
+    "sz399006": {"name": "创业板指", "code": "399006"},
+    "sh000300": {"name": "沪深300", "code": "000300"},
+    "sh000016": {"name": "上证50", "code": "000016"},
+    "sh000905": {"name": "中证500", "code": "000905"},
+    "hkHSI": {"name": "恒生指数", "code": "HSI"},
+}
+
+_SINA_HQ_RE = re.compile(r'var hq_str_(\w+)="([^"]*)";')
+
+
+def _parse_sina_hq_response(text: str) -> list[dict[str, Any]]:
+    """Parse Sina Finance API response for market indices.
+
+    A-share format (sh/sz prefix):
+    var hq_str_sh000001="上证指数,previous_close,open,current,high,low,...";
+
+    HK stock format (hk prefix):
+    var hq_str_hkHSI="HSI,name,previous_close,open,high,low,current,change,change_percent,...";
+    """
+    results = []
+    for code, data in _SINA_HQ_RE.findall(text):
+        if not data or code not in _SINA_INDICES:
+            continue
+
+        parts = data.split(",")
+        if len(parts) < 5:
+            continue
+
+        index_info = _SINA_INDICES[code]
+
+        if code.startswith("hk"):
+            # HK format: parts[2] = previous_close, parts[6] = current,
+            # parts[7] = change, parts[8] = change_percent
+            if len(parts) < 9:
+                continue
+            current = float(parts[6]) if parts[6] else 0
+            change = float(parts[7]) if parts[7] else 0
+            change_percent = float(parts[8]) if parts[8] else 0
+        else:
+            # A-share format: parts[1] = previous_close, parts[3] = current
+            previous_close = float(parts[1]) if parts[1] else 0
+            current = float(parts[3]) if parts[3] else 0
+            change = current - previous_close if previous_close else 0
+            change_percent = (change / previous_close * 100) if previous_close else 0
+
+        results.append({
+            "code": index_info["code"],
+            "name": index_info["name"],
+            "value": round(current, 2),
+            "change": round(change, 2),
+            "change_percent": round(change_percent, 2),
+        })
+
+    return results
 
 
 async def fetch_market_indices() -> list[dict[str, Any]]:
-    """Fetch major domestic and overseas market indices from eastmoney push2 API."""
-    params = {
-        "fltt": "2",
-        "invt": "2",
-        "fields": "f2,f3,f4,f12,f14",
-        "secids": ",".join(_INDEX_SECIDS),
+    """Fetch major market indices from Sina Finance API (3 retries with backoff)."""
+    codes = ",".join(_SINA_INDICES.keys())
+    url = SINA_HQ_URL.format(codes=codes)
+    headers = {
+        "Referer": "https://finance.sina.com.cn",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
     }
-    headers = {"Referer": "https://www.eastmoney.com/"}
+
     t0 = time.perf_counter()
     client = _get_client()
-    resp = await client.get(MARKET_INDICES_URL, params=params, headers=headers)
-    resp.raise_for_status()
-    data = resp.json()
-    elapsed = time.perf_counter() - t0
-    logger.debug("fetch_market_indices %.3fs", elapsed)
 
-    items = (data.get("data") or {}).get("diff") or []
-    return [
-        {
-            "code": item.get("f12"),
-            "name": item.get("f14"),
-            "value": item.get("f2"),       # 当前值
-            "change": item.get("f4"),      # 涨跌额
-            "change_percent": item.get("f3"),  # 涨跌幅%
-        }
-        for item in items
-        if item.get("f2") is not None
-    ]
+    max_retries = 3
+    last_error: Exception | None = None
+
+    for attempt in range(max_retries):
+        try:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            # Response is GBK encoded
+            text = resp.content.decode("gbk", errors="ignore")
+            items = _parse_sina_hq_response(text)
+            elapsed = time.perf_counter() - t0
+            logger.debug("fetch_market_indices %.3fs (attempt %d)", elapsed, attempt + 1)
+            return items
+
+        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as e:
+            last_error = e
+            logger.warning("fetch_market_indices attempt %d failed: %s", attempt + 1, e)
+            if attempt < max_retries - 1:
+                await asyncio.sleep(0.5 * (attempt + 1))
+            continue
+        except Exception as e:
+            logger.error("fetch_market_indices unexpected error: %s", e)
+            raise
+
+    logger.error("fetch_market_indices all %d attempts failed", max_retries)
+    raise last_error or Exception("Failed to fetch market indices")
 
 
 async def fetch_latest_nav(code: str) -> dict[str, Any] | None:

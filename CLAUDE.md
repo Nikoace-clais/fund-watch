@@ -17,12 +17,13 @@ Current scope is **free data sources first**, then harden for multi-user usage.
 ## Tech Stack
 
 - Backend: FastAPI (Python 3.x)
-- Frontend: React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7
+- Frontend: React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7 + TanStack Query
 - Storage: SQLite (early stage)
 - Charts: Recharts
 - Realtime source: `fundgz.1234567.com.cn`
 - Historical source: `fund.eastmoney.com/pingzhongdata`
 - Fund search: `fundsuggest.eastmoney.com`
+- Market indices: `hq.sinajs.cn`（新浪行情，3 次重试退避）
 
 ---
 
@@ -52,7 +53,6 @@ fund-watch/
 │   │       ├── holdings.py     # 份额重算 + P&L 计算
 │   │       ├── snapshots.py    # 快照拉取 + 交易时段调度器
 │   │       └── dca.py          # 定投绩效统计
-│   ├── src/fund_watch/         # ⚠ 历史遗留（待删除）：仅剩未移植的新浪指数数据源改动
 │   └── data/
 │       └── fund_watch.db       # SQLite 数据库（运行后生成）
 └── frontend/
@@ -64,12 +64,17 @@ fund-watch/
         ├── routes.tsx          # 路由定义
         ├── styles/             # Tailwind CSS v4
         ├── lib/
-        │   ├── api.ts          # API 客户端（唯一 base URL 定义处）
+        │   ├── api.ts          # API 客户端 + 全部响应类型（唯一类型来源）
+        │   ├── queries.ts      # TanStack Query：queryClient/keys/hooks
+        │   ├── color-context.tsx # 涨跌配色（colorFor/badgeClassFor/chartColorFor）
         │   └── utils.ts        # 工具函数
         ├── services/
         │   └── import.ts       # 截图导入预览/确认（基于 lib/api）
         ├── components/
-        │   └── Layout.tsx      # 侧边栏布局
+        │   ├── Layout.tsx      # 侧边栏布局（含 cron 状态、移动端红点）
+        │   ├── PageState.tsx   # 统一加载/空态占位
+        │   ├── portfolio/      # Portfolio 页子组件（表格/统计卡/图表/弹窗）
+        │   └── fund-detail/    # FundDetail 页子组件（净值图/配置/定投等）
         └── pages/
             ├── Dashboard.tsx   # 概览
             ├── FundDetail.tsx  # 基金详情
@@ -79,8 +84,8 @@ fund-watch/
             └── ImportPage.tsx  # 截图导入
 ```
 
-**重要**：生产后端是 `backend/app/`（已完成分层拆分）。`backend/src/fund_watch/` 是历史遗留代码，
-修改接口时一律改 `app/`，不要动 `src/fund_watch/`（其中新浪指数数据源改动移植到 `app/fund_source.py` 后整个目录即可删除）。
+**重要**：生产后端是 `backend/app/`（已完成分层拆分）。历史遗留的 `backend/src/fund_watch/`
+已删除，新浪指数数据源已移植到 `app/fund_source.py`。修改接口一律改 `app/`。
 
 ---
 
@@ -144,7 +149,7 @@ Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: 
 ### OCR & misc
 - `POST /api/ocr/fund-code` — 截图识别基金代码（rapidocr）
 - `POST /api/ocr/transaction` — 截图识别交易记录
-- `GET /api/market/indices` — 大盘指数
+- `GET /api/market/indices` — 大盘指数（新浪源；失败时返回空 items + error 字段，不抛 502）
 - `GET /api/cron/status` — 快照调度状态
 
 When extending APIs:

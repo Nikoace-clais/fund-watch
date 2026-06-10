@@ -3,8 +3,7 @@
 ## 后端现状（重要）
 
 **生产后端是 `backend/app/`，已完成分层拆分**（routers / services / schemas）。
-`backend/src/fund_watch/` 是历史遗留代码，不承载前端流量；其中尚未移植的新浪指数数据源改动
-搬到 `app/fund_source.py` 之后，整个目录连同对应测试即可删除。
+历史遗留的 `backend/src/fund_watch/` 已删除（新浪指数数据源已移植到 `app/fund_source.py`）。
 
 修改或新增接口时一律改 `backend/app/`。
 
@@ -26,7 +25,6 @@ fund-watch/
 │   │   ├── routers/             # API 路由（health/funds/quotes/portfolio/
 │   │   │                        #   transactions/dca/ocr/market）
 │   │   └── services/            # 业务逻辑（holdings/snapshots/dca）
-│   ├── src/fund_watch/          # 历史遗留（待删除）
 │   └── tests/                   # pytest（unit / integration，含 app 集成测试）
 │
 └── frontend/                     # React/Vite 前端
@@ -60,7 +58,7 @@ fund-watch/
 ┌────────────▼────────────────────────┐
 │  db.py / fund_source.py             │
 │  - SQLite 数据访问                   │
-│  - 东方财富等外部数据源                │
+│  - 东方财富/新浪等外部数据源           │
 └─────────────────────────────────────┘
 ```
 
@@ -123,7 +121,7 @@ bun run test:e2e
 - **集成测试**: 测试 API 端点
 - **E2E 测试**: 测试完整用户流程
 
-当前状态: **后端 43 个测试通过（含 19 个 app 集成测试）**
+当前状态: **后端 22 个测试通过（含 19 个 app 集成测试）**
 
 ## 截图导入功能
 
@@ -172,9 +170,9 @@ bun run test:e2e
 
 | 类型 | 数量 | 状态 |
 |------|------|------|
-| 后端测试（含 app 集成测试） | 43 | ✅ 通过 |
+| 后端测试（含 app 集成测试） | 22 | ✅ 通过 |
 | 前端单元测试 | 10 | ✅ 通过 |
-| **总计** | **53** | **✅ 全部通过** |
+| **总计** | **32** | **✅ 全部通过** |
 
 ### 开发服务器
 
