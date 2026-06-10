@@ -92,10 +92,6 @@ export const ImportPage: React.FC = () => {
                 <span className="w-1 h-1 bg-blue-400 rounded-full"></span>
                 置信度低于 75% 的结果需要人工确认
               </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1 h-1 bg-blue-400 rounded-full"></span>
-                AI 辅助识别接口已预留，未来支持更智能的识别
-              </li>
             </ul>
           </div>
         </div>

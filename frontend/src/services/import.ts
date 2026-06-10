@@ -1,4 +1,4 @@
-import { API_BASE_URL } from './config';
+import { ocrFundCode, batchAddFunds, searchFunds } from '@/lib/api'
 
 export interface ImportPreviewItem {
   code: string;
@@ -24,63 +24,86 @@ export interface ImportConfirmResult {
 }
 
 /**
- * Upload image and get import preview
+ * Upload image and get import preview.
+ * Uses /api/ocr/fund-code for recognition, then fills missing
+ * fund names via /api/funds/search.
  */
 export async function previewImport(file: File): Promise<ImportPreviewResult> {
-  const formData = new FormData();
-  formData.append('file', file);
+  const ocr = await ocrFundCode(file)
+  const nameMatched = new Map(ocr.name_matches.map((m) => [m.code, m]))
 
-  const response = await fetch(`${API_BASE_URL}/api/import/preview`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to preview import');
+  const items: ImportPreviewItem[] = []
+  const seen = new Set<string>()
+  for (const code of ocr.matched_codes) {
+    if (seen.has(code)) continue
+    seen.add(code)
+    const nm = nameMatched.get(code)
+    if (nm) {
+      // matched by fuzzy fund-name search → medium confidence
+      items.push({
+        code,
+        name: nm.name,
+        type: nm.type || '—',
+        confidence: 0.78,
+        source: 'name_match',
+        needs_review: true,
+      })
+    } else {
+      // 6-digit code found directly in the screenshot → high confidence
+      items.push({
+        code,
+        name: '',
+        type: '—',
+        confidence: 0.95,
+        source: 'code',
+        needs_review: false,
+      })
+    }
   }
 
-  return response.json();
+  await Promise.allSettled(
+    items
+      .filter((item) => !item.name)
+      .map(async (item) => {
+        const r = await searchFunds(item.code)
+        const hit = r.results.find((f) => f.code === item.code)
+        if (hit) {
+          item.name = hit.name
+          if (hit.type) item.type = hit.type
+        }
+      }),
+  )
+  // Code recognized but no fund found for it → needs manual review
+  for (const item of items) {
+    if (!item.name) {
+      item.name = item.code
+      item.confidence = Math.min(item.confidence, 0.7)
+      item.needs_review = true
+    }
+  }
+
+  const total = items.length
+  return {
+    funds: items,
+    total_confidence: total
+      ? items.reduce((sum, item) => sum + item.confidence, 0) / total
+      : 0,
+    needs_review: items.some((item) => item.needs_review),
+    total_count: total,
+  }
 }
 
 /**
- * Confirm import of selected funds
+ * Confirm import of selected funds via /api/funds/batch.
  */
 export async function confirmImport(codes: string[]): Promise<ImportConfirmResult> {
-  const response = await fetch(`${API_BASE_URL}/api/import/confirm`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ codes }),
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to confirm import');
+  const res = await batchAddFunds(codes)
+  return {
+    success: res.ok,
+    added: res.added.length,
+    total: codes.length,
+    invalid: res.invalid,
   }
-
-  return response.json();
-}
-
-/**
- * AI-assisted import (placeholder)
- */
-export async function aiImport(file: File): Promise<ImportPreviewResult> {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await fetch(`${API_BASE_URL}/api/import/ai`, {
-    method: 'POST',
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to process AI import');
-  }
-
-  return response.json();
 }
 
 /**

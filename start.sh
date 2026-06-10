@@ -125,9 +125,7 @@ start_backend() {
 
     # 启动后端（使用简洁日志格式）
     uv run python -c "
-import sys
-sys.path.insert(0, 'src')
-from fund_watch.main import app
+from app.main import app
 import uvicorn
 
 # 配置简洁日志

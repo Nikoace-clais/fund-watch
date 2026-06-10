@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ImportPreview } from '../components/ImportPreview';
+import type { ImportPreviewResult } from '../services/import';
 
 describe('ImportPreview Component', () => {
   beforeEach(() => {
@@ -40,7 +41,7 @@ describe('ImportPreview Component', () => {
   });
 
   it('should display preview results', async () => {
-    const mockResult = {
+    const mockResult: ImportPreviewResult = {
       funds: [
         {
           code: '005827',
@@ -66,7 +67,7 @@ describe('ImportPreview Component', () => {
   });
 
   it('should show needs review warning for low confidence', async () => {
-    const mockResult = {
+    const mockResult: ImportPreviewResult = {
       funds: [
         {
           code: '005827',
@@ -91,7 +92,7 @@ describe('ImportPreview Component', () => {
   });
 
   it('should handle select all checkbox', async () => {
-    const mockResult = {
+    const mockResult: ImportPreviewResult = {
       funds: [
         { code: '005827', name: '基金A', type: '混合型', confidence: 0.95, source: 'code', needs_review: false },
         { code: '110011', name: '基金B', type: '股票型', confidence: 0.85, source: 'code', needs_review: false },
@@ -114,7 +115,7 @@ describe('ImportPreview Component', () => {
   });
 
   it('should show selected count', () => {
-    const mockResult = {
+    const mockResult: ImportPreviewResult = {
       funds: [
         { code: '005827', name: '基金A', type: '混合型', confidence: 0.95, source: 'code', needs_review: false },
         { code: '110011', name: '基金B', type: '股票型', confidence: 0.65, source: 'name_match', needs_review: true },
@@ -134,7 +135,7 @@ describe('ImportPreview Component', () => {
 
   it('should call onImport with selected codes', async () => {
     const mockImport = vi.fn();
-    const mockResult = {
+    const mockResult: ImportPreviewResult = {
       funds: [
         { code: '005827', name: '基金A', type: '混合型', confidence: 0.95, source: 'code', needs_review: false },
       ],
@@ -143,10 +144,10 @@ describe('ImportPreview Component', () => {
       total_count: 1,
     };
 
-    // Mock successful API response
+    // Mock successful /api/funds/batch response
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ success: true, added: 1, total: 1, invalid: [] }),
+      json: async () => ({ ok: true, added: ['005827'], invalid: [], warnings: [] }),
     });
 
     render(<ImportPreview onImport={mockImport} initialData={mockResult} />);
