@@ -33,18 +33,30 @@ fund-watch/
 ├── PLAN.md
 ├── README.md
 ├── CLAUDE.md
+├── start.sh                    # 一键启动前后端
 ├── backend/
-│   ├── requirements.txt
+│   ├── pyproject.toml          # uv 配置
+│   ├── run.py                  # 开发服务器入口（启动 app.main:app）
 │   ├── pull_quotes.py          # 定时拉取脚本
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py             # FastAPI 入口 + 所有路由
-│   │   ├── db.py               # SQLite 初始化/连接
-│   │   └── fund_source.py      # 估值源 / 详情 / 搜索适配
+│   ├── app/                    # ★ 生产后端（分层架构，前端所有接口在此）
+│   │   ├── main.py             # 应用装配：FastAPI/CORS/中间件/lifespan/路由注册
+│   │   ├── core.py             # 共享常量与校验（CST、UPLOAD_DIR、validate_code）
+│   │   ├── schemas.py          # Pydantic 请求模型
+│   │   ├── db.py               # SQLite 初始化/连接（FUND_WATCH_DB 可覆盖路径）
+│   │   ├── fund_source.py      # 估值源 / 详情 / 搜索适配
+│   │   ├── ocr_service.py      # 截图 OCR（rapidocr）
+│   │   ├── routers/            # API 路由（按域拆分）
+│   │   │   ├── health.py  funds.py  quotes.py  portfolio.py
+│   │   │   └── transactions.py  dca.py  ocr.py  market.py
+│   │   └── services/           # 业务逻辑
+│   │       ├── holdings.py     # 份额重算 + P&L 计算
+│   │       ├── snapshots.py    # 快照拉取 + 交易时段调度器
+│   │       └── dca.py          # 定投绩效统计
+│   ├── src/fund_watch/         # ⚠ 历史遗留（待删除）：仅剩未移植的新浪指数数据源改动
 │   └── data/
 │       └── fund_watch.db       # SQLite 数据库（运行后生成）
 └── frontend/
-    ├── package.json
+    ├── package.json            # bun 管理依赖
     ├── vite.config.ts
     ├── index.html
     └── src/
@@ -52,36 +64,49 @@ fund-watch/
         ├── routes.tsx          # 路由定义
         ├── styles/             # Tailwind CSS v4
         ├── lib/
-        │   ├── api.ts          # API 客户端
+        │   ├── api.ts          # API 客户端（唯一 base URL 定义处）
         │   └── utils.ts        # 工具函数
+        ├── services/
+        │   └── import.ts       # 截图导入预览/确认（基于 lib/api）
         ├── components/
         │   └── Layout.tsx      # 侧边栏布局
         └── pages/
             ├── Dashboard.tsx   # 概览
-            ├── FundExplorer.tsx # 基金市场
             ├── FundDetail.tsx  # 基金详情
-            └── Portfolio.tsx   # 自选基金
+            ├── Portfolio.tsx   # 自选基金
+            ├── Market.tsx      # 行情数据
+            ├── Dca.tsx         # 定投计划
+            └── ImportPage.tsx  # 截图导入
 ```
+
+**重要**：生产后端是 `backend/app/`（已完成分层拆分）。`backend/src/fund_watch/` 是历史遗留代码，
+修改接口时一律改 `app/`，不要动 `src/fund_watch/`（其中新浪指数数据源改动移植到 `app/fund_source.py` 后整个目录即可删除）。
 
 ---
 
 ## Runbook
 
+### 一键启动（推荐）
+
+```bash
+cd /home/niko/hobby/fund-watch/fund-watch
+./start.sh
+```
+
 ### Backend
 
 ```bash
 cd /home/niko/hobby/fund-watch/fund-watch/backend
-/home/niko/.local/bin/uv venv
-/home/niko/.local/bin/uv pip install -r requirements.txt
-/home/niko/.local/bin/uv run uvicorn app.main:app --reload --port 8010
+uv sync
+uv run python run.py          # 或: uv run uvicorn app.main:app --reload --port 8010
 ```
 
 ### Frontend
 
 ```bash
 cd /home/niko/hobby/fund-watch/fund-watch/frontend
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: `http://127.0.0.1:8010/docs`
@@ -108,6 +133,19 @@ Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: 
 - `POST /api/snapshots/pull` — 批量拉取快照并落库
 - `GET /api/snapshots/{code}?limit=30` — 盘中快照序列
 - `GET /api/portfolio/summary` — 组合汇总统计
+- `GET /api/portfolio/history?limit=90` — 组合市值历史
+
+### Transactions & DCA
+- `GET/POST /api/funds/{code}/transactions` — 交易记录
+- `DELETE /api/transactions/{tx_id}` — 删除交易
+- `POST /api/transactions/csv` — CSV 批量导入
+- `/api/dca/plans*`、`/api/dca/records*`、`/api/dca/stats` — 定投计划/记录/统计
+
+### OCR & misc
+- `POST /api/ocr/fund-code` — 截图识别基金代码（rapidocr）
+- `POST /api/ocr/transaction` — 截图识别交易记录
+- `GET /api/market/indices` — 大盘指数
+- `GET /api/cron/status` — 快照调度状态
 
 When extending APIs:
 - keep response shape stable
@@ -116,16 +154,19 @@ When extending APIs:
 
 ---
 
-## AI Import Format
+## 截图导入
 
-不再使用 OCR 识别截图。改为让 AI 识别截图后按以下 JSON 格式输出，再通过 `/api/funds/batch` 导入：
+前端 `/import` 页面（ImportPage → ImportPreview）走以下流程：
+
+1. 上传截图 → `POST /api/ocr/fund-code`（rapidocr 识别 6 位代码，识别不到代码时按基金名模糊搜索）
+2. 缺名称的代码通过 `GET /api/funds/search?q=代码` 补全
+3. 用户勾选确认 → `POST /api/funds/batch` 批量入库
 
 ```json
 {"codes": ["110011", "161725", "012414"]}
 ```
 
-Prompt 示例：
-> 请识别这张图中的所有基金，输出它们的 6 位基金代码，格式为 JSON：`{"codes": ["代码1", "代码2"]}`。如果只看到基金名称，请查询对应的 6 位代码。
+也可以让 AI 识别截图后直接按上述 JSON 调 `/api/funds/batch` 导入。
 
 ---
 

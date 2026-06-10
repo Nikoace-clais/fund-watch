@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator
 
-DB_PATH = Path(__file__).resolve().parents[1] / "data" / "fund_watch.db"
+# FUND_WATCH_DB overrides the default path (used by tests for isolation)
+DB_PATH = Path(
+    os.environ.get("FUND_WATCH_DB")
+    or Path(__file__).resolve().parents[1] / "data" / "fund_watch.db"
+)
 
 
 @contextmanager

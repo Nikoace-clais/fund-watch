@@ -1,5 +1,13 @@
 # Fund Watch - Architecture
 
+## 后端现状（重要）
+
+**生产后端是 `backend/app/`，已完成分层拆分**（routers / services / schemas）。
+`backend/src/fund_watch/` 是历史遗留代码，不承载前端流量；其中尚未移植的新浪指数数据源改动
+搬到 `app/fund_source.py` 之后，整个目录连同对应测试即可删除。
+
+修改或新增接口时一律改 `backend/app/`。
+
 ## 项目结构
 
 ```
@@ -7,66 +15,60 @@ fund-watch/
 ├── backend/                      # Python/FastAPI 后端
 │   ├── pyproject.toml           # uv 配置
 │   ├── uv.lock                  # 依赖锁定
-│   ├── run.py                   # 开发服务器启动
-│   └── src/fund_watch/          # 源代码
-│       ├── main.py              # FastAPI 入口
-│       ├── models/              # Pydantic 模型
-│       │   └── schemas.py
-│       ├── repositories/        # 数据访问层
-│       │   └── fund_repo.py
-│       ├── services/            # 业务逻辑层
-│       │   ├── fund_service.py
-│       │   └── quote_service.py
-│       ├── routers/             # API 路由
-│       │   ├── funds.py
-│       │   └── health.py
-│       └── external/            # 外部 API
-│           └── eastmoney.py
+│   ├── run.py                   # 开发服务器启动（app.main:app）
+│   ├── app/                     # ★ 生产后端（分层架构）
+│   │   ├── main.py              # 应用装配：CORS/中间件/lifespan/路由注册
+│   │   ├── core.py              # 共享常量与校验
+│   │   ├── schemas.py           # Pydantic 请求模型
+│   │   ├── db.py                # SQLite 初始化/连接（FUND_WATCH_DB 可覆盖）
+│   │   ├── fund_source.py       # 估值/详情/搜索数据源适配
+│   │   ├── ocr_service.py       # 截图 OCR（rapidocr）
+│   │   ├── routers/             # API 路由（health/funds/quotes/portfolio/
+│   │   │                        #   transactions/dca/ocr/market）
+│   │   └── services/            # 业务逻辑（holdings/snapshots/dca）
+│   ├── src/fund_watch/          # 历史遗留（待删除）
+│   └── tests/                   # pytest（unit / integration，含 app 集成测试）
 │
-├── frontend/                     # React/Vite 前端
-│   ├── package.json             # bun 配置
-│   ├── bun.lock                 # 依赖锁定
-│   ├── vite.config.ts
-│   ├── vitest.config.ts         # 单元测试
-│   ├── playwright.config.ts     # E2E 测试
-│   └── src/
-│       └── test/                # 测试文件
-│
-└── tests/                        # 测试目录
-    ├── unit/                    # 单元测试
-    ├── integration/             # 集成测试
-    └── e2e/                     # E2E 测试
+└── frontend/                     # React/Vite 前端
+    ├── package.json             # bun 配置
+    ├── bun.lock                 # 依赖锁定
+    ├── vite.config.ts
+    ├── vitest.config.ts         # 单元测试
+    ├── playwright.config.ts     # E2E 测试
+    └── src/
+        └── test/                # 测试文件
 ```
 
 ## 架构模式
 
-### 后端 - 分层架构
+### 后端 - 分层架构（`app/`）
 
 ```
 ┌─────────────────────────────────────┐
 │  routers/      # API 端点            │
 │  - HTTP 请求处理                      │
-│  - 参数校验                          │
+│  - 参数校验（schemas.py）             │
 └────────────┬────────────────────────┘
              │
 ┌────────────▼────────────────────────┐
 │  services/     # 业务逻辑            │
-│  - 业务规则处理                       │
-│  - 数据编排                          │
+│  - holdings: 份额重算 + P&L          │
+│  - snapshots: 快照拉取 + 调度器       │
+│  - dca: 定投绩效统计                  │
 └────────────┬────────────────────────┘
              │
 ┌────────────▼────────────────────────┐
-│  repositories/ # 数据访问            │
-│  - 数据库操作                        │
-│  - 数据持久化                        │
-└────────────┬────────────────────────┘
-             │
-┌────────────▼────────────────────────┐
-│  external/     # 外部服务            │
-│  - 东方财富 API                      │
-│  - 第三方数据源                      │
+│  db.py / fund_source.py             │
+│  - SQLite 数据访问                   │
+│  - 东方财富等外部数据源                │
 └─────────────────────────────────────┘
 ```
+
+### 路由注册顺序
+
+字面量路由必须先于参数化路由注册（如 `POST /api/funds/batch` 先于
+`POST /api/funds/{code}`），各 router 内的声明顺序已保证这一点，
+新增路由时注意保持。
 
 ### 前端
 
@@ -121,29 +123,30 @@ bun run test:e2e
 - **集成测试**: 测试 API 端点
 - **E2E 测试**: 测试完整用户流程
 
-当前状态: **23 个测试通过**
+当前状态: **后端 43 个测试通过（含 19 个 app 集成测试）**
 
 ## 截图导入功能
 
-### API 端点
+### API 端点（生产后端 `app/`）
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/import/preview` | POST | 上传截图，返回识别预览 |
-| `/api/import/confirm` | POST | 确认导入选中的基金 |
-| `/api/import/ai` | POST | AI辅助识别（预留接口） |
+| `/api/ocr/fund-code` | POST | 上传截图，OCR 识别基金代码/名称 |
+| `/api/funds/search?q=` | GET | 按代码补全基金名称（预览阶段） |
+| `/api/funds/batch` | POST | 确认导入选中的基金 |
+
+前端封装在 `frontend/src/services/import.ts`（`previewImport` / `confirmImport`），UI 为 `/import` 页面。
 
 ### 识别策略
 
-1. **代码提取**: 识别 6 位数字基金代码
-2. **表格解析**: 从表格结构中提取基金信息
-3. **模糊匹配**: 使用 rapidfuzz 匹配基金名称
+1. **代码提取**: OCR 识别 6 位数字基金代码（高置信度）
+2. **名称回退**: 识别不到代码时提取中文基金名，调搜索接口模糊匹配（中置信度）
 
 ### 置信度机制
 
 - **高置信度 (≥0.85)**: 直接代码匹配
-- **中置信度 (0.75-0.84)**: 表格或模糊匹配
-- **低置信度 (<0.75)**: 需要人工确认
+- **中置信度 (0.75-0.84)**: 基金名模糊匹配
+- **低置信度 (<0.75)**: 代码无法对应到基金，需要人工确认
 
 ### 前端组件
 
@@ -169,9 +172,9 @@ bun run test:e2e
 
 | 类型 | 数量 | 状态 |
 |------|------|------|
-| 后端单元测试 | 23 | ✅ 通过 |
+| 后端测试（含 app 集成测试） | 43 | ✅ 通过 |
 | 前端单元测试 | 10 | ✅ 通过 |
-| **总计** | **33** | **✅ 全部通过** |
+| **总计** | **53** | **✅ 全部通过** |
 
 ### 开发服务器
 
