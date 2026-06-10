@@ -1,28 +1,14 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { TrendingUp } from 'lucide-react'
-import { fetchDcaPlans, fetchAllDcaStats, type DcaPlan, type DcaStats } from '@/lib/api'
+import { useAllDcaStats, useDcaPlans } from '@/lib/queries'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
+import { PageState } from '@/components/PageState'
 
 export function Dca() {
   const { colorFor } = useColor()
-  const [plans, setPlans] = useState<DcaPlan[]>([])
-  const [statsMap, setStatsMap] = useState<Map<number, DcaStats>>(new Map())
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    Promise.allSettled([fetchDcaPlans(), fetchAllDcaStats()])
-      .then(([plansRes, statsRes]) => {
-        if (plansRes.status === 'fulfilled') setPlans(plansRes.value.items)
-        if (statsRes.status === 'fulfilled') {
-          const m = new Map<number, DcaStats>()
-          statsRes.value.items.forEach((s) => m.set(s.plan_id, s))
-          setStatsMap(m)
-        }
-      })
-      .finally(() => setLoading(false))
-  }, [])
+  const { data: plans = [], isLoading: loading } = useDcaPlans()
+  const { data: statsMap = new Map() } = useAllDcaStats()
 
   const allStats = [...statsMap.values()]
   const totalInvested = allStats.reduce((s, r) => s + parseFloat(r.total_invested), 0)
@@ -34,7 +20,7 @@ export function Dca() {
     ({ daily:'每日', weekly:'每周', biweekly:'每两周', monthly:'每月' }[f] ?? f)
 
   if (loading) {
-    return <div className="flex items-center justify-center py-32 text-slate-400">加载中...</div>
+    return <PageState loading />
   }
 
   return (

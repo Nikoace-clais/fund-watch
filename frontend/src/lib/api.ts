@@ -11,79 +11,142 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+/* ── Shared response types (single source of truth for pages/components) ── */
+
+export type FundSnapshot = {
+  code: string
+  name?: string
+  gsz?: number
+  gszzl?: number
+  gztime?: string
+  dwjz?: number
+}
+
+export type FundOverviewItem = {
+  fund: { code: string; name?: string; sector?: string; holding_shares?: string; created_at: string }
+  latest?: FundSnapshot | null
+  has_transactions: boolean
+}
+
+export type FundDetailData = {
+  code: string
+  name?: string
+  fund_type?: string
+  manager?: string
+  size?: number
+  established_date?: string
+  one_month_return?: number
+  three_month_return?: number
+  six_month_return?: number
+  one_year_return?: number
+  asset_allocation: Array<{ name: string; value: number }>
+  sector?: string
+  subscription_rate?: number
+  subscription_rate_discounted?: number
+}
+
+export type NavPoint = { date: string; nav: number; accNav?: number; dailyReturn?: number }
+
+export type StockHolding = { stock_code: string; stock_name: string; percentage: number | null }
+
+export type PortfolioItem = {
+  code: string
+  name?: string
+  shares: string | null
+  nav: string | null
+  daily_change: number
+  current_value: string
+  daily_return: string
+  total_cost: string | null
+  total_return: string
+  return_rate: string | null
+  is_imported?: boolean
+  imported_cumulative_return?: string
+}
+
+export type PortfolioSummary = {
+  total_current: string
+  total_cost: string
+  total_daily_return: string
+  total_return: string
+  total_return_rate: string
+  fund_count: number
+  items: PortfolioItem[]
+}
+
+export type Quote = {
+  fundcode: string
+  name?: string
+  dwjz?: number
+  gsz?: number
+  gszzl?: number
+  gztime?: string
+}
+
+export type MarketIndex = {
+  code: string
+  name: string
+  value: number
+  change: number
+  change_percent: number
+}
+
+export type CronStatus = {
+  interval_minutes: number
+  trading_hours: string
+  last_pull_at: string | null
+  pull_count: number
+  last_error: string | null
+  is_active: boolean
+}
+
+export type Transaction = {
+  id: number
+  direction: 'buy' | 'sell'
+  trade_date: string
+  nav: string
+  shares: string
+  amount: string
+  fee: string
+  note?: string | null
+  source?: string | null
+  created_at: string
+}
+
+/* ── Endpoints ──────────────────────────────────────────────────────────── */
+
 // Fund list + latest snapshot
 export function fetchFundsOverview() {
-  return request<{
-    items: Array<{
-      fund: { code: string; name?: string; sector?: string; holding_shares?: string; created_at: string }
-      latest?: { code: string; name?: string; gsz?: number; gszzl?: number; gztime?: string; dwjz?: number } | null
-      has_transactions: boolean
-    }>
-  }>('/api/funds/overview')
+  return request<{ items: FundOverviewItem[] }>('/api/funds/overview')
 }
 
 // Fund detail (manager, size, returns, allocation)
 export function fetchFundDetail(code: string) {
-  return request<{
-    code: string
-    name?: string
-    fund_type?: string
-    manager?: string
-    size?: number
-    established_date?: string
-    one_month_return?: number
-    three_month_return?: number
-    six_month_return?: number
-    one_year_return?: number
-    asset_allocation: Array<{ name: string; value: number }>
-    sector?: string
-    subscription_rate?: number
-    subscription_rate_discounted?: number
-  }>(`/api/funds/${code}/detail`)
+  return request<FundDetailData>(`/api/funds/${code}/detail`)
 }
 
 // NAV history
 export function fetchNavHistory(code: string, limit = 365) {
-  return request<{
-    code: string
-    count: number
-    history: Array<{ date: string; nav: number; accNav?: number; dailyReturn?: number }>
-  }>(`/api/funds/${code}/nav-history?limit=${limit}`)
+  return request<{ code: string; count: number; history: NavPoint[] }>(
+    `/api/funds/${code}/nav-history?limit=${limit}`
+  )
 }
 
 // Top holdings
 export function fetchFundHoldings(code: string) {
-  return request<{
-    code: string
-    count: number
-    holdings: Array<{ stock_code: string; stock_name: string; percentage: number | null }>
-  }>(`/api/funds/${code}/holdings`)
+  return request<{ code: string; count: number; holdings: StockHolding[] }>(
+    `/api/funds/${code}/holdings`
+  )
 }
 
 // Portfolio summary
 export function fetchPortfolioSummary() {
-  return request<{
-    total_current: string
-    total_cost: string
-    total_daily_return: string
-    total_return: string
-    total_return_rate: string
-    fund_count: number
-    items: Array<{
-      code: string; name?: string; shares: string | null; nav: string | null
-      daily_change: number; current_value: string; daily_return: string
-      total_cost: string | null; total_return: string; return_rate: string | null
-      is_imported?: boolean
-      imported_cumulative_return?: string
-    }>
-  }>('/api/portfolio/summary')
+  return request<PortfolioSummary>('/api/portfolio/summary')
 }
 
 // Realtime quote
 export function fetchQuote(code: string) {
-  return request<{
-    fundcode: string; name?: string; dwjz?: number; gsz?: number; gszzl?: number; gztime?: string
-  }>(`/api/quote/${code}`)
+  return request<Quote>(`/api/quote/${code}`)
 }
 
 // Add fund
@@ -154,27 +217,12 @@ export function fetchPortfolioHistory(limit = 90) {
 
 // Market indices (domestic + overseas)
 export function fetchMarketIndices() {
-  return request<{
-    items: Array<{
-      code: string
-      name: string
-      value: number
-      change: number
-      change_percent: number
-    }>
-  }>('/api/market/indices')
+  return request<{ items: MarketIndex[] }>('/api/market/indices')
 }
 
 // Cron / scheduler status
 export function fetchCronStatus() {
-  return request<{
-    interval_minutes: number
-    trading_hours: string
-    last_pull_at: string | null
-    pull_count: number
-    last_error: string | null
-    is_active: boolean
-  }>('/api/cron/status')
+  return request<CronStatus>('/api/cron/status')
 }
 
 // Snapshots history (intraday)
@@ -183,19 +231,6 @@ export function fetchSnapshots(code: string, limit = 200) {
     code: string; count: number
     items: Array<{ gsz?: number; gszzl?: number; gztime?: string; captured_at: string }>
   }>(`/api/snapshots/${code}?limit=${limit}`)
-}
-
-export type Transaction = {
-  id: number
-  direction: 'buy' | 'sell'
-  trade_date: string
-  nav: string
-  shares: string
-  amount: string
-  fee: string
-  note?: string | null
-  source?: string | null
-  created_at: string
 }
 
 export function fetchTransactions(code: string) {

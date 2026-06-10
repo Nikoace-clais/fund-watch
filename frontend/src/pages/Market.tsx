@@ -1,20 +1,17 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useMemo } from 'react'
 import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import { BarChart3, Globe, RefreshCw, AlertCircle } from 'lucide-react'
-import { fetchMarketIndices } from '@/lib/api'
+import { useMarketIndices } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
 /* ---------- types ---------- */
-type IndexItem = {
+type IndexData = {
   code: string
   name: string
   value: number
   change: number
   change_percent: number
-}
-
-type IndexData = IndexItem & {
   sparkline: { v: number }[]
 }
 
@@ -97,34 +94,20 @@ function SkeletonCard() {
 
 /* ---------- main page ---------- */
 export function Market() {
-  const [items, setItems] = useState<IndexData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const { data, isLoading: loading, isFetching, error: queryError, refetch, dataUpdatedAt } = useMarketIndices()
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true)
-    else setLoading(true)
-    setError(null)
-    try {
-      const data = await fetchMarketIndices()
-      setItems(
-        data.items.map((item) => ({
-          ...item,
-          sparkline: generateSparkline(item.value, item.change_percent),
-        }))
-      )
-      setUpdatedAt(new Date())
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '获取行情数据失败')
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
+  const refreshing = isFetching && !loading
+  const error = queryError ? (queryError instanceof Error ? queryError.message : '获取行情数据失败') : null
+  const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : null
 
-  useEffect(() => { load() }, [load])
+  const items = useMemo<IndexData[]>(
+    () =>
+      (data ?? []).map((item) => ({
+        ...item,
+        sparkline: generateSparkline(item.value, item.change_percent),
+      })),
+    [data],
+  )
 
   const domestic = items.filter((i) => DOMESTIC_CODES.has(i.code))
   const international = items.filter((i) => !DOMESTIC_CODES.has(i.code))
@@ -149,7 +132,7 @@ export function Market() {
             </span>
           )}
           <button
-            onClick={() => load(true)}
+            onClick={() => refetch()}
             disabled={refreshing}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
           >

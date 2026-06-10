@@ -3,7 +3,7 @@ import { LineChart, PieChart, TrendingUp, Home, Menu, X, Settings, CalendarClock
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { useColor, type ColorScheme } from '@/lib/color-context'
-import { fetchCronStatus } from '@/lib/api'
+import { useCronStatus } from '@/lib/queries'
 
 const navigation = [
   { name: '概览', href: '/', icon: Home },
@@ -86,17 +86,8 @@ function ColorSchemeSetting() {
   )
 }
 
-type CronStatus = Awaited<ReturnType<typeof fetchCronStatus>>
-
 function CronStatusBadge() {
-  const [status, setStatus] = useState<CronStatus | null>(null)
-
-  useEffect(() => {
-    const load = () => fetchCronStatus().then(setStatus).catch(() => {})
-    load()
-    const id = setInterval(load, 60_000)
-    return () => clearInterval(id)
-  }, [])
+  const { data: status } = useCronStatus()
 
   if (!status) return null
 
@@ -126,6 +117,9 @@ function CronStatusBadge() {
 export function Layout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const location = useLocation()
+  // 侧边栏在移动端隐藏,cron 失败时在 header 菜单按钮上加红点提示
+  const { data: cronStatus } = useCronStatus()
+  const cronFailed = !!cronStatus?.last_error
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 overflow-hidden">
@@ -173,10 +167,16 @@ export function Layout() {
           </div>
           <button
             type="button"
-            className="text-slate-500 hover:text-slate-600"
+            className="relative text-slate-500 hover:text-slate-600"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
             {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {cronFailed && !isMobileMenuOpen && (
+              <span
+                className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500"
+                title="快照拉取失败"
+              />
+            )}
           </button>
         </header>
 
@@ -207,6 +207,11 @@ export function Layout() {
             </nav>
             {/* Mobile settings */}
             <div className="px-4 pb-3 border-t border-slate-100 pt-2">
+              {cronFailed && (
+                <p className="px-3 py-1.5 text-xs text-red-500 truncate" title={cronStatus?.last_error ?? undefined}>
+                  ⚠ 快照拉取失败
+                </p>
+              )}
               <ColorSchemeSetting />
             </div>
           </div>
