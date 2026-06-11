@@ -49,9 +49,11 @@ async def portfolio_summary() -> dict:
         nav = Decimal(str(q.get("gsz", 0))) if q.get("gsz") else None
         if nav is None:
             return None
-        daily_change = float(q.get("gszzl", 0)) if q.get("gszzl") else 0.0
+        daily_change = Decimal(str(q.get("gszzl"))) if q.get("gszzl") else Decimal("0")
         current_value = (shares * nav).quantize(Decimal("0.01"))
-        daily_return_val = (current_value * Decimal(str(daily_change)) / 100).quantize(Decimal("0.01"))
+        daily_return_val = (
+            current_value * daily_change / 100
+        ).quantize(Decimal("0.01"))
         pnl = pnl_map.get(code, {})
         cost = Decimal(pnl.get("total_cost", "0"))
         total_return = current_value - cost
@@ -61,7 +63,7 @@ async def portfolio_summary() -> dict:
             "name": f["name"] or q.get("name"),
             "shares": str(shares),
             "nav": str(nav),
-            "daily_change": daily_change,
+            "daily_change": float(daily_change),
             "current_value": str(current_value),
             "daily_return": str(daily_return_val),
             "total_cost": str(cost),
@@ -109,14 +111,16 @@ async def portfolio_summary() -> dict:
     async def _fetch_notx(f: dict) -> dict:
         code = f["code"]
         amount = Decimal(str(f["holding_amount"]))
-        daily_change = 0.0
+        daily_change = Decimal("0")
         daily_return_val = Decimal("0")
         try:
             q = await fetch_realtime_estimate(code)
             gszzl = q.get("gszzl")
             if gszzl is not None:
-                daily_change = float(gszzl)
-                daily_return_val = (amount * Decimal(str(daily_change)) / 100).quantize(Decimal("0.01"))
+                daily_change = Decimal(str(gszzl))
+                daily_return_val = (
+                    amount * daily_change / 100
+                ).quantize(Decimal("0.01"))
         except Exception:
             pass
         cum_ret = f.get("imported_cumulative_return")
@@ -126,7 +130,7 @@ async def portfolio_summary() -> dict:
             "name": f["name"],
             "shares": None,
             "nav": None,
-            "daily_change": daily_change,
+            "daily_change": float(daily_change),
             "current_value": str(amount),
             "daily_return": str(daily_return_val),
             "total_cost": None,
@@ -204,41 +208,45 @@ async def portfolio_history(limit: int = 90) -> dict:
     if not all_codes:
         return {"count": 0, "history": []}
 
-    async def _fetch_code(code: str) -> tuple[str, dict[str, float], float | None]:
-        nav_dict: dict[str, float] = {}
-        gsz: float | None = None
+    async def _fetch_code(code: str) -> tuple[str, dict[str, Decimal], Decimal | None]:
+        nav_dict: dict[str, Decimal] = {}
+        gsz: Decimal | None = None
         try:
             hist = await fetch_nav_history(code, limit=limit + 30)
-            nav_dict = {h["date"]: float(h["nav"]) for h in hist if h.get("date") and h.get("nav") is not None}
+            nav_dict = {
+                h["date"]: Decimal(str(h["nav"]))
+                for h in hist
+                if h.get("date") and h.get("nav") is not None
+            }
         except Exception:
             pass
         try:
             q = await fetch_realtime_estimate(code)
             raw = q.get("gsz")
             if raw:
-                gsz = float(raw)
+                gsz = Decimal(str(raw))
         except Exception:
             pass
         return code, nav_dict, gsz
 
     fetch_results = await asyncio.gather(*[_fetch_code(c) for c in all_codes])
 
-    nav_map: dict[str, dict[str, float]] = {}
-    gsz_map: dict[str, float] = {}
+    nav_map: dict[str, dict[str, Decimal]] = {}
+    gsz_map: dict[str, Decimal] = {}
     for code, nav_dict, gsz in fetch_results:
         nav_map[code] = nav_dict
         if gsz:
             gsz_map[code] = gsz
 
     # Implied shares for imported funds: holding_amount ÷ latest confirmed NAV
-    implied_shares: dict[str, float] = {}
+    implied_shares: dict[str, Decimal] = {}
     excluded_codes: list[str] = []
     for code, holding_amount in imported_funds.items():
         nav_dict = nav_map.get(code, {})
         if nav_dict:
             latest_nav = nav_dict[max(nav_dict.keys())]
             if latest_nav > 0:
-                implied_shares[code] = float(holding_amount) / latest_nav
+                implied_shares[code] = holding_amount / latest_nav
         else:
             # I6 fix: log and collect codes excluded due to missing NAV data
             excluded_codes.append(code)
@@ -247,9 +255,9 @@ async def portfolio_history(limit: int = 90) -> dict:
     all_dates = sorted({d for nd in nav_map.values() for d in nd})
     all_dates = all_dates[-limit:]
 
-    date_totals: dict[str, float] = {}
+    date_totals: dict[str, Decimal] = {}
     for target_date in all_dates:
-        total = 0.0
+        total = Decimal("0")
         # Funds with transactions: per-date share count from transaction log
         for code in tx_codes:
             shares = Decimal("0")
@@ -264,7 +272,7 @@ async def portfolio_history(limit: int = 90) -> dict:
             nav = nav_map.get(code, {}).get(target_date)
             if nav is None:
                 continue
-            total += float(shares) * nav
+            total += shares * nav
         # Imported funds without transactions: implied shares × that day's NAV
         for code, imp_shares in implied_shares.items():
             nav = nav_map.get(code, {}).get(target_date)
@@ -278,9 +286,12 @@ async def portfolio_history(limit: int = 90) -> dict:
     CST = timezone(timedelta(hours=8))
     today = datetime.now(CST).strftime("%Y-%m-%d")
     today_total = sum(
-        float(current_holdings[code]) * gsz
-        for code, gsz in gsz_map.items()
-        if code in current_holdings
+        (
+            current_holdings[code] * gsz
+            for code, gsz in gsz_map.items()
+            if code in current_holdings
+        ),
+        Decimal("0"),
     )
     # C1 fix: use implied_shares × gsz (market value) not holding_amount (cost basis)
     for code, imp_shares in implied_shares.items():
@@ -288,7 +299,7 @@ async def portfolio_history(limit: int = 90) -> dict:
         if gsz:
             today_total += imp_shares * gsz
         else:
-            today_total += float(imported_funds[code])  # fallback to holding_amount
+            today_total += imported_funds[code]  # fallback to holding_amount
     # C2 fix: setdefault — don't overwrite an already-confirmed NAV for today
     if today_total > 0:
         date_totals.setdefault(today, today_total)
@@ -297,7 +308,7 @@ async def portfolio_history(limit: int = 90) -> dict:
     result: dict = {
         "count": len(sorted_items),
         "history": [
-            {"date": date, "total_value": round(value, 2)}
+            {"date": date, "total_value": float(value.quantize(Decimal("0.01")))}
             for date, value in sorted_items
         ],
     }

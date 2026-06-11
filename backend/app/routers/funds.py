@@ -95,13 +95,21 @@ async def search_funds(q: str = "") -> dict:
 def recalc_percentage() -> dict:
     with get_conn() as conn:
         rows = conn.execute("SELECT code, amount FROM funds").fetchall()
-        total = sum(r["amount"] for r in rows if r["amount"])
+        total = sum(
+            (Decimal(str(r["amount"])) for r in rows if r["amount"]), Decimal("0")
+        )
         if total > 0:
             for r in rows:
-                pct = round((r["amount"] / total) * 100, 2) if r["amount"] else None
-                conn.execute("UPDATE funds SET percentage=? WHERE code=?", (pct, r["code"]))
+                pct = (
+                    (Decimal(str(r["amount"])) / total * 100).quantize(Decimal("0.01"))
+                    if r["amount"] else None
+                )
+                conn.execute(
+                    "UPDATE funds SET percentage=? WHERE code=?",
+                    (float(pct) if pct is not None else None, r["code"]),
+                )
         conn.commit()
-    return {"ok": True, "total": total}
+    return {"ok": True, "total": float(total)}
 
 
 @router.post("/api/funds/batch")
@@ -201,14 +209,18 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                     updates.append("sector=?"); params.append(sector)
                 amt = amounts.get(code)
                 if amt is not None:
-                    updates.append("amount=?"); params.append(amt)
+                    updates.append("amount=?")
+                    params.append(float(amt))
                 if item:
                     if item.holding_amount is not None:
-                        updates.append("imported_holding_amount=?"); params.append(item.holding_amount)
+                        updates.append("imported_holding_amount=?")
+                        params.append(float(item.holding_amount))
                     if item.cumulative_return is not None:
-                        updates.append("imported_cumulative_return=?"); params.append(item.cumulative_return)
+                        updates.append("imported_cumulative_return=?")
+                        params.append(float(item.cumulative_return))
                     if item.holding_return is not None:
-                        updates.append("imported_holding_return=?"); params.append(item.holding_return)
+                        updates.append("imported_holding_return=?")
+                        params.append(float(item.holding_return))
                 if updates:
                     params.append(code)
                     conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
@@ -217,10 +229,14 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                     """INSERT INTO funds
                        (code,name,sector,amount,imported_holding_amount,imported_cumulative_return,imported_holding_return,created_at)
                        VALUES(?,?,?,?,?,?,?,?)""",
-                    (code, name, sector, amounts.get(code),
-                     item.holding_amount if item else None,
-                     item.cumulative_return if item else None,
-                     item.holding_return if item else None,
+                    (code, name, sector,
+                     float(amounts[code]) if code in amounts else None,
+                     float(item.holding_amount)
+                     if item and item.holding_amount is not None else None,
+                     float(item.cumulative_return)
+                     if item and item.cumulative_return is not None else None,
+                     float(item.holding_return)
+                     if item and item.holding_return is not None else None,
                      now),
                 )
         conn.commit()
@@ -247,7 +263,7 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                 continue
 
             nav_val = Decimal(str(latest["nav"]))
-            shares_val = (Decimal(str(item.holding_amount)) / nav_val).quantize(Decimal("0.01"))
+            shares_val = (item.holding_amount / nav_val).quantize(Decimal("0.01"))
             if shares_val <= 0:
                 nav_skipped.append(f"{code}（计算份额为零）")
                 continue
@@ -286,7 +302,7 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     except Exception:
         pass
 
-    amount = payload.amount if payload else None
+    amount = float(payload.amount) if payload and payload.amount is not None else None
 
     with get_conn() as conn:
         existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
