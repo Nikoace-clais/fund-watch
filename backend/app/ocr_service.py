@@ -4,27 +4,67 @@ import re
 import threading
 from pathlib import Path
 
+import cv2
 from rapidocr_onnxruntime import RapidOCR
 
 _ocr_engine: RapidOCR | None = None
 # Engine init and inference are not thread-safe; routes call us via threadpool
 _ocr_lock = threading.Lock()
 
+# Tall scroll-screenshots are sliced into overlapping chunks: the engine's
+# global max_side_len would otherwise downscale them until small text
+# (fund codes, amounts) becomes illegible.
+_SLICE_HEIGHT = 1600
+_SLICE_OVERLAP = 200  # must exceed one text-line height so no line is cut
+_MIN_TAIL = 80  # skip leftover slivers shorter than a text line
+
 
 def _get_ocr() -> RapidOCR:
     global _ocr_engine
     if _ocr_engine is None:
-        _ocr_engine = RapidOCR()
+        # Recall-biased: regex extraction + code verification downstream filter
+        # the extra noise, so a lower text_score is a net win; max_side_len
+        # raised so medium-long screenshots are not downscaled as hard.
+        _ocr_engine = RapidOCR(text_score=0.4, max_side_len=3500)
     return _ocr_engine
 
 
-def _run_ocr_lines(image_path: Path) -> list[str]:
-    """Run OCR once and return recognized text lines."""
-    with _ocr_lock:
-        result, _ = _get_ocr()(str(image_path))
+def _ocr_image(img) -> list[str]:
+    """Run the engine on one image (ndarray or path str), return text lines."""
+    result, _ = _get_ocr()(img)
     if not result:
         return []
     return [line[1] for line in result if len(line) >= 2]
+
+
+def _merge_overlap(acc: list[str], new: list[str], max_lines: int = 12) -> list[str]:
+    """Append new lines, dropping the prefix already seen in the chunk overlap."""
+    k = min(len(acc), len(new), max_lines)
+    while k > 0 and acc[-k:] != new[:k]:
+        k -= 1
+    return acc + new[k:]
+
+
+def _run_ocr_lines(image_path: Path) -> list[str]:
+    """Run OCR and return recognized text lines (tall images sliced)."""
+    img = cv2.imread(str(image_path))
+    if img is None:
+        # Format cv2 can't decode — let the engine's own loader try
+        with _ocr_lock:
+            return _ocr_image(str(image_path))
+
+    h, w = img.shape[:2]
+    with _ocr_lock:
+        if h <= 2 * w or h <= _SLICE_HEIGHT:
+            return _ocr_image(img)
+        lines: list[str] = []
+        step = _SLICE_HEIGHT - _SLICE_OVERLAP
+        for top in range(0, h, step):
+            chunk = img[top:top + _SLICE_HEIGHT]
+            if chunk.shape[0] < _MIN_TAIL:
+                break
+            lines = _merge_overlap(lines, _ocr_image(chunk))
+        return lines
 
 
 CODE_RE = re.compile(r"\b\d{6}\b")
