@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import re
+import threading
 from pathlib import Path
 
 from rapidocr_onnxruntime import RapidOCR
 
 _ocr_engine: RapidOCR | None = None
+# Engine init and inference are not thread-safe; routes call us via threadpool
+_ocr_lock = threading.Lock()
 
 
 def _get_ocr() -> RapidOCR:
@@ -13,6 +16,15 @@ def _get_ocr() -> RapidOCR:
     if _ocr_engine is None:
         _ocr_engine = RapidOCR()
     return _ocr_engine
+
+
+def _run_ocr_lines(image_path: Path) -> list[str]:
+    """Run OCR once and return recognized text lines."""
+    with _ocr_lock:
+        result, _ = _get_ocr()(str(image_path))
+    if not result:
+        return []
+    return [line[1] for line in result if len(line) >= 2]
 
 
 CODE_RE = re.compile(r"\b\d{6}\b")
@@ -35,11 +47,8 @@ SHARES_RE = re.compile(r"份额[：:]*\s*([\d,.]+)|确认份额[：:]*\s*([\d,.]
 
 
 def extract_fund_codes_from_image(image_path: Path) -> tuple[str, list[str]]:
-    result, _ = _get_ocr()(str(image_path))
-    if not result:
-        return "", []
-
-    raw_text = "\n".join([line[1] for line in result if len(line) >= 2])
+    lines = _run_ocr_lines(image_path)
+    raw_text = "\n".join(lines)
     codes = sorted(set(CODE_RE.findall(raw_text)))
     return raw_text, codes
 
@@ -50,14 +59,19 @@ def extract_funds_with_amounts(image_path: Path) -> tuple[str, list[dict]]:
     Returns (raw_text, matched_funds) where matched_funds is a list of
     {"code": "161725", "amount": 1234.56} dicts. amount may be None.
     """
-    result, _ = _get_ocr()(str(image_path))
-    if not result:
-        return "", []
+    lines = _run_ocr_lines(image_path)
+    return "\n".join(lines), _match_funds_with_amounts(lines)
 
-    # result items: [bbox, text, confidence]
-    lines = [line[1] for line in result if len(line) >= 2]
+
+def scan_fund_image(image_path: Path) -> tuple[str, list[str], list[dict]]:
+    """Single OCR pass returning (raw_text, codes, funds_with_amounts)."""
+    lines = _run_ocr_lines(image_path)
     raw_text = "\n".join(lines)
+    codes = sorted(set(CODE_RE.findall(raw_text)))
+    return raw_text, codes, _match_funds_with_amounts(lines)
 
+
+def _match_funds_with_amounts(lines: list[str]) -> list[dict]:
     matched_funds: list[dict] = []
     seen_codes: set[str] = set()
 
@@ -72,7 +86,7 @@ def extract_funds_with_amounts(image_path: Path) -> tuple[str, list[dict]]:
             amount = _find_nearby_amount(lines, i, window=2)
             matched_funds.append({"code": code, "amount": amount})
 
-    return raw_text, matched_funds
+    return matched_funds
 
 
 def _find_nearby_amount(lines: list[str], center: int, window: int = 2) -> float | None:
@@ -139,11 +153,10 @@ def extract_transaction_from_image(image_path: Path) -> tuple[str, dict]:
     Returns (raw_text, tx_data) where tx_data has keys:
     direction, code, trade_date, nav, shares, amount — all may be None.
     """
-    result, _ = _get_ocr()(str(image_path))
-    if not result:
+    lines = _run_ocr_lines(image_path)
+    if not lines:
         return "", {}
 
-    lines = [line[1] for line in result if len(line) >= 2]
     raw_text = "\n".join(lines)
     full_text = " ".join(lines)
 

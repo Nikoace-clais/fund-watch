@@ -4,31 +4,36 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, File, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from ..core import UPLOAD_DIR
 from ..db import get_conn
 from ..fund_source import search_fund_by_name
 from ..ocr_service import (
-    extract_fund_codes_from_image,
     extract_fund_names_from_text,
-    extract_funds_with_amounts,
     extract_transaction_from_image,
+    scan_fund_image,
 )
 
 router = APIRouter(tags=["ocr"])
 
 
+def _unique_upload_path(filename: str | None, prefix: str) -> Path:
+    suffix = Path(filename or "upload.png").suffix or ".png"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    return UPLOAD_DIR / f"{prefix}_{ts}_{uuid4().hex[:8]}{suffix}"
+
+
 @router.post("/api/ocr/fund-code")
 async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
-    suffix = Path(file.filename or "upload.png").suffix or ".png"
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    path = UPLOAD_DIR / f"ocr_{ts}{suffix}"
+    path = _unique_upload_path(file.filename, "ocr")
     path.write_bytes(await file.read())
 
-    raw_text, codes = extract_fund_codes_from_image(path)
-    _, matched_funds = extract_funds_with_amounts(path)
+    # OCR inference is CPU-heavy and synchronous — keep it off the event loop
+    raw_text, codes, matched_funds = await run_in_threadpool(scan_fund_image, path)
 
     # If no codes found, try to extract fund names and search for codes
     name_matches: list[dict] = []
@@ -73,12 +78,10 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
 
 @router.post("/api/ocr/transaction")
 async def ocr_transaction(file: UploadFile = File(...)) -> dict:
-    suffix = Path(file.filename or "upload.png").suffix or ".png"
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    path = UPLOAD_DIR / f"ocr_tx_{ts}{suffix}"
+    path = _unique_upload_path(file.filename, "ocr_tx")
     path.write_bytes(await file.read())
 
-    raw_text, tx_data = extract_transaction_from_image(path)
+    raw_text, tx_data = await run_in_threadpool(extract_transaction_from_image, path)
 
     return {
         "ok": True,
