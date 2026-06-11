@@ -209,7 +209,8 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                     updates.append("sector=?"); params.append(sector)
                 amt = amounts.get(code)
                 if amt is not None:
-                    updates.append("amount=?"); params.append(float(amt))
+                    updates.append("amount=?")
+                    params.append(float(amt))
                 if item:
                     if item.holding_amount is not None:
                         updates.append("imported_holding_amount=?")
