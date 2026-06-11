@@ -8,20 +8,20 @@ from pydantic import BaseModel, field_validator
 
 
 class AddFundPayload(BaseModel):
-    amount: float | None = None
+    amount: Decimal | None = None
 
 
 class BatchFundItem(BaseModel):
     code: str | None = None
     name: str | None = None
-    holding_amount: float | None = None
-    cumulative_return: float | None = None
-    holding_return: float | None = None
+    holding_amount: Decimal | None = None
+    cumulative_return: Decimal | None = None
+    holding_return: Decimal | None = None
 
 
 class BatchFundsPayload(BaseModel):
     codes: list[str] = []
-    amounts: dict[str, float] | None = None
+    amounts: dict[str, Decimal] | None = None
     funds: list[BatchFundItem] = []
 
 
@@ -70,6 +70,19 @@ class PatchDcaPlanPayload(BaseModel):
     day_of_month: int | None = None
     end_date: str | None = None
     is_active: int | None = None
+
+    @field_validator("amount")
+    @classmethod
+    def amount_must_be_positive(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            d = Decimal(v)
+        except InvalidOperation:
+            raise ValueError("amount must be a valid decimal number")
+        if d <= 0:
+            raise ValueError("amount must be positive")
+        return v
 
 
 class AddDcaRecordPayload(BaseModel):

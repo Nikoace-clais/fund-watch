@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 # ── Simple in-process TTL cache for NAV history (avoids re-fetching on range changes) ──
@@ -408,38 +409,41 @@ def _parse_sina_hq_response(text: str) -> list[dict[str, Any]]:
                 # parts[7] = change, parts[8] = change_percent
                 if len(parts) < 9:
                     continue
-                current = float(parts[6]) if parts[6] else 0
-                change = float(parts[7]) if parts[7] else 0
-                change_percent = float(parts[8]) if parts[8] else 0
+                current = Decimal(parts[6] or "0")
+                change = Decimal(parts[7] or "0")
+                change_percent = Decimal(parts[8] or "0")
             elif code.startswith("gb_"):
                 # US format: parts[1] = current, parts[2] = change_percent,
                 # parts[4] = change
-                current = float(parts[1]) if parts[1] else 0
-                change_percent = float(parts[2]) if parts[2] else 0
-                change = float(parts[4]) if parts[4] else 0
+                current = Decimal(parts[1] or "0")
+                change_percent = Decimal(parts[2] or "0")
+                change = Decimal(parts[4] or "0")
             elif code.startswith("b_"):
                 # Nikkei format: parts[1] = current, parts[2] = change,
                 # parts[3] = change_percent
-                current = float(parts[1]) if parts[1] else 0
-                change = float(parts[2]) if parts[2] else 0
-                change_percent = float(parts[3]) if parts[3] else 0
+                current = Decimal(parts[1] or "0")
+                change = Decimal(parts[2] or "0")
+                change_percent = Decimal(parts[3] or "0")
             else:
                 # A-share format: parts[1] = previous_close, parts[3] = current
-                previous_close = float(parts[1]) if parts[1] else 0
-                current = float(parts[3]) if parts[3] else 0
-                change = current - previous_close if previous_close else 0
-                change_percent = (change / previous_close * 100) if previous_close else 0
-        except ValueError:
+                previous_close = Decimal(parts[1] or "0")
+                current = Decimal(parts[3] or "0")
+                change = current - previous_close if previous_close else Decimal("0")
+                change_percent = (
+                    (change / previous_close * 100) if previous_close else Decimal("0")
+                )
+        except (ValueError, InvalidOperation):
             logger.warning("skip unparsable index line: %s", code)
             continue
 
+        _cent = Decimal("0.01")
         results.append({
             "code": index_info["code"],
             "name": index_info["name"],
             "region": index_info["region"],
-            "value": round(current, 2),
-            "change": round(change, 2),
-            "change_percent": round(change_percent, 2),
+            "value": float(current.quantize(_cent, rounding=ROUND_HALF_UP)),
+            "change": float(change.quantize(_cent, rounding=ROUND_HALF_UP)),
+            "change_percent": float(change_percent.quantize(_cent, rounding=ROUND_HALF_UP)),
         })
 
     return results
