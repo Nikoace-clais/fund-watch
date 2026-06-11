@@ -359,16 +359,21 @@ FUND_SEARCH_URL = "https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAP
 SINA_HQ_URL = "https://hq.sinajs.cn/list={codes}"
 
 _SINA_INDICES = {
-    "sh000001": {"name": "上证指数", "code": "000001"},
-    "sz399001": {"name": "深证成指", "code": "399001"},
-    "sz399006": {"name": "创业板指", "code": "399006"},
-    "sh000300": {"name": "沪深300", "code": "000300"},
-    "sh000016": {"name": "上证50", "code": "000016"},
-    "sh000905": {"name": "中证500", "code": "000905"},
-    "hkHSI": {"name": "恒生指数", "code": "HSI"},
+    "sh000001": {"name": "上证指数", "code": "000001", "region": "domestic"},
+    "sz399001": {"name": "深证成指", "code": "399001", "region": "domestic"},
+    "sz399006": {"name": "创业板指", "code": "399006", "region": "domestic"},
+    "sh000300": {"name": "沪深300", "code": "000300", "region": "domestic"},
+    "sh000016": {"name": "上证50", "code": "000016", "region": "domestic"},
+    "sh000905": {"name": "中证500", "code": "000905", "region": "domestic"},
+    "hkHSI": {"name": "恒生指数", "code": "HSI", "region": "international"},
+    "gb_$dji": {"name": "道琼斯", "code": "DJI", "region": "international"},
+    "gb_$inx": {"name": "标普500", "code": "SPX", "region": "international"},
+    "gb_ixic": {"name": "纳斯达克", "code": "IXIC", "region": "international"},
+    "b_NKY": {"name": "日经225", "code": "N225", "region": "international"},
 }
 
-_SINA_HQ_RE = re.compile(r'var hq_str_(\w+)="([^"]*)";')
+# Note: [\w$]+ because US index vars contain "$" (e.g. hq_str_gb_$dji)
+_SINA_HQ_RE = re.compile(r'var hq_str_([\w$]+)="([^"]*)";')
 
 
 def _parse_sina_hq_response(text: str) -> list[dict[str, Any]]:
@@ -379,6 +384,12 @@ def _parse_sina_hq_response(text: str) -> list[dict[str, Any]]:
 
     HK stock format (hk prefix):
     var hq_str_hkHSI="HSI,name,previous_close,open,high,low,current,change,change_percent,...";
+
+    US index format (gb_ prefix):
+    var hq_str_gb_$dji="name,current,change_percent,datetime,change,...";
+
+    Nikkei format (b_NKY):
+    var hq_str_b_NKY="name,current,change,change_percent,...";
     """
     results = []
     for code, data in _SINA_HQ_RE.findall(text):
@@ -391,24 +402,41 @@ def _parse_sina_hq_response(text: str) -> list[dict[str, Any]]:
 
         index_info = _SINA_INDICES[code]
 
-        if code.startswith("hk"):
-            # HK format: parts[2] = previous_close, parts[6] = current,
-            # parts[7] = change, parts[8] = change_percent
-            if len(parts) < 9:
-                continue
-            current = float(parts[6]) if parts[6] else 0
-            change = float(parts[7]) if parts[7] else 0
-            change_percent = float(parts[8]) if parts[8] else 0
-        else:
-            # A-share format: parts[1] = previous_close, parts[3] = current
-            previous_close = float(parts[1]) if parts[1] else 0
-            current = float(parts[3]) if parts[3] else 0
-            change = current - previous_close if previous_close else 0
-            change_percent = (change / previous_close * 100) if previous_close else 0
+        try:
+            if code.startswith("hk"):
+                # HK format: parts[2] = previous_close, parts[6] = current,
+                # parts[7] = change, parts[8] = change_percent
+                if len(parts) < 9:
+                    continue
+                current = float(parts[6]) if parts[6] else 0
+                change = float(parts[7]) if parts[7] else 0
+                change_percent = float(parts[8]) if parts[8] else 0
+            elif code.startswith("gb_"):
+                # US format: parts[1] = current, parts[2] = change_percent,
+                # parts[4] = change
+                current = float(parts[1]) if parts[1] else 0
+                change_percent = float(parts[2]) if parts[2] else 0
+                change = float(parts[4]) if parts[4] else 0
+            elif code.startswith("b_"):
+                # Nikkei format: parts[1] = current, parts[2] = change,
+                # parts[3] = change_percent
+                current = float(parts[1]) if parts[1] else 0
+                change = float(parts[2]) if parts[2] else 0
+                change_percent = float(parts[3]) if parts[3] else 0
+            else:
+                # A-share format: parts[1] = previous_close, parts[3] = current
+                previous_close = float(parts[1]) if parts[1] else 0
+                current = float(parts[3]) if parts[3] else 0
+                change = current - previous_close if previous_close else 0
+                change_percent = (change / previous_close * 100) if previous_close else 0
+        except ValueError:
+            logger.warning("skip unparsable index line: %s", code)
+            continue
 
         results.append({
             "code": index_info["code"],
             "name": index_info["name"],
+            "region": index_info["region"],
             "value": round(current, 2),
             "change": round(change, 2),
             "change_percent": round(change_percent, 2),

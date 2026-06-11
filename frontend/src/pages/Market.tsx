@@ -4,14 +4,10 @@ import { BarChart3, Globe, RefreshCw, AlertCircle } from 'lucide-react'
 import { useMarketIndices } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
+import type { MarketIndex } from '@/lib/api'
 
 /* ---------- types ---------- */
-type IndexData = {
-  code: string
-  name: string
-  value: number
-  change: number
-  change_percent: number
+type IndexData = MarketIndex & {
   sparkline: { v: number }[]
 }
 
@@ -30,9 +26,6 @@ function generateSparkline(current: number, changePercent: number, points = 20):
   data[points - 1] = { v: current }
   return data
 }
-
-/* ---------- domestic / overseas split ---------- */
-const DOMESTIC_CODES = new Set(['000001', '399001', '399006', '399300', '000016', '000905'])
 
 /* ---------- index card ---------- */
 function IndexCard({ data }: { data: IndexData }) {
@@ -109,8 +102,8 @@ export function Market() {
     [data],
   )
 
-  const domestic = items.filter((i) => DOMESTIC_CODES.has(i.code))
-  const international = items.filter((i) => !DOMESTIC_CODES.has(i.code))
+  const domestic = items.filter((i) => i.region === 'domestic')
+  const international = items.filter((i) => i.region === 'international')
 
   return (
     <div className="space-y-8">
@@ -122,7 +115,7 @@ export function Market() {
             行情数据
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            全球主要市场指数行情 · 数据来源：东方财富
+            全球主要市场指数行情 · 数据来源：新浪财经
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -177,7 +170,7 @@ export function Market() {
       </section>
 
       <p className="text-xs text-slate-400 text-center pt-4">
-        数据来源：东方财富 push2 API · 海外市场非交易时段显示最近收盘价
+        数据来源：新浪财经 · 海外市场非交易时段显示最近收盘价
       </p>
     </div>
   )

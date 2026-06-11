@@ -86,6 +86,7 @@ export type Quote = {
 export type MarketIndex = {
   code: string
   name: string
+  region: 'domestic' | 'international'
   value: number
   change: number
   change_percent: number
