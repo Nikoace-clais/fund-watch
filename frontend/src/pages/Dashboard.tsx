@@ -1,60 +1,32 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { TrendingUp, ArrowRight, BarChart3, Briefcase } from 'lucide-react'
-import { fetchFundsOverview, fetchPortfolioSummary, fetchMarketIndices } from '@/lib/api'
+import { TrendingUp, ArrowRight, BarChart3, Briefcase, Camera, Activity } from 'lucide-react'
+import { useFundsOverview, useMarketIndices, usePortfolioSummary } from '@/lib/queries'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
-
-/* ---------- types ---------- */
-type OverviewItem = {
-  fund: { code: string; name?: string; sector?: string }
-  latest?: { gsz?: number; gszzl?: number; name?: string; dwjz?: number; gztime?: string } | null
-}
-
-type PortfolioSummary = {
-  total_current: string
-  total_daily_return: string
-  fund_count: number
-}
+import { PageState } from '@/components/PageState'
 
 /* ---------- A-share display codes for header badges ---------- */
 const BADGE_CODES = ['000001', '399001', '399006']
 
-type IndexBadge = { code: string; name: string; value: number; change_percent: number }
-
 /* ---------- component ---------- */
 export function Dashboard() {
-  const { colorFor } = useColor()
-  const [overview, setOverview] = useState<OverviewItem[]>([])
-  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
-  const [indices, setIndices] = useState<IndexBadge[]>([])
-  const [loading, setLoading] = useState(true)
+  const { colorFor, badgeClassFor } = useColor()
+  const { data: overview = [], isLoading: loading } = useFundsOverview()
+  const { data: portfolio } = usePortfolioSummary()
+  const { data: allIndices = [], isLoading: indicesLoading } = useMarketIndices()
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [ov, ps, idx] = await Promise.allSettled([
-          fetchFundsOverview(),
-          fetchPortfolioSummary(),
-          fetchMarketIndices(),
-        ])
-        if (ov.status === 'fulfilled') setOverview(ov.value.items)
-        if (ps.status === 'fulfilled') setPortfolio(ps.value)
-        if (idx.status === 'fulfilled') {
-          setIndices(
-            idx.value.items
-              .filter((i) => BADGE_CODES.includes(i.code))
-              .sort((a, b) => BADGE_CODES.indexOf(a.code) - BADGE_CODES.indexOf(b.code))
-          )
-        }
-      } finally {
-        setLoading(false)
-      }
-    }
-    load()
-  }, [])
+  const indices = allIndices
+    .filter((i) => BADGE_CODES.includes(i.code))
+    .sort((a, b) => BADGE_CODES.indexOf(a.code) - BADGE_CODES.indexOf(b.code))
 
   const topFunds = overview.slice(0, 4)
+
+  /* 自选涨跌分布(基于盘中估算涨跌幅) */
+  const changes = overview
+    .map((it) => it.latest?.gszzl)
+    .filter((v): v is number => v != null)
+  const upCount = changes.filter((v) => v > 0).length
+  const downCount = changes.filter((v) => v < 0).length
 
   /* helpers */
   const hasCurrency = (v: string | undefined) => v && parseFloat(v) !== 0
@@ -72,17 +44,12 @@ export function Dashboard() {
         <div className="flex gap-3 flex-wrap">
           {indices.map((idx) => {
             const up = idx.change_percent > 0
-            const zero = idx.change_percent === 0
             return (
               <span
                 key={idx.code}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border',
-                  zero
-                    ? 'bg-gray-50 text-gray-600 border-gray-200'
-                    : colorFor(idx.change_percent).includes('red')
-                      ? 'bg-red-50 text-red-600 border-red-200'
-                      : 'bg-green-50 text-green-600 border-green-200',
+                  badgeClassFor(idx.change_percent),
                 )}
               >
                 {idx.name}
@@ -91,7 +58,7 @@ export function Dashboard() {
               </span>
             )
           })}
-          {indices.length === 0 && !loading && (
+          {indices.length === 0 && !indicesLoading && (
             <span className="text-xs text-slate-400">指数数据暂不可用</span>
           )}
         </div>
@@ -132,7 +99,44 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* market heat — placeholder, hidden until real signal is implemented */}
+        {/* watchlist up/down distribution */}
+        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center gap-2 text-slate-500 text-sm mb-2">
+            <Activity className="h-4 w-4" />
+            自选涨跌分布(估算)
+          </div>
+          {changes.length > 0 ? (
+            <div className="flex items-baseline gap-4">
+              <p className="text-2xl font-bold">
+                <span className={colorFor(1)}>{upCount}</span>
+                <span className="text-sm font-medium text-slate-400 ml-1">涨</span>
+              </p>
+              <p className="text-2xl font-bold">
+                <span className={colorFor(-1)}>{downCount}</span>
+                <span className="text-sm font-medium text-slate-400 ml-1">跌</span>
+              </p>
+              {changes.length - upCount - downCount > 0 && (
+                <p className="text-2xl font-bold">
+                  <span className="text-gray-500">{changes.length - upCount - downCount}</span>
+                  <span className="text-sm font-medium text-slate-400 ml-1">平</span>
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-2xl font-bold text-slate-900">—</p>
+          )}
+        </div>
+      </div>
+
+      {/* ---- Quick actions ---- */}
+      <div className="flex gap-3">
+        <Link
+          to="/import"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+        >
+          <Camera className="h-4 w-4" />
+          截图导入基金
+        </Link>
       </div>
 
       {/* ---- Hot funds section ---- */}
@@ -150,22 +154,28 @@ export function Dashboard() {
           </Link>
         </div>
 
-        {loading ? (
-          <div className="text-center py-16 text-slate-400">加载中...</div>
-        ) : topFunds.length === 0 ? (
-          <div className="text-center py-16 text-slate-400">
-            暂无自选基金，
-            <Link to="/portfolio" className="text-blue-600 hover:underline">
-              去添加
-            </Link>
-          </div>
-        ) : (
+        <PageState
+          loading={loading}
+          empty={topFunds.length === 0}
+          className="py-16"
+          emptyContent={
+            <span>
+              暂无自选基金，
+              <Link to="/portfolio" className="text-blue-600 hover:underline">
+                去添加
+              </Link>
+            </span>
+          }
+        />
+        {!loading && topFunds.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {topFunds.map(({ fund, latest }) => {
               const name = latest?.name || fund.name || fund.code
               const gsz = latest?.gsz
               const gszzl = latest?.gszzl
               const dwjz = latest?.dwjz
+              // dwjz 缺失时回退到盘中估算值,必须明确标注为估算
+              const isEstimate = dwjz == null && gsz != null
 
               return (
                 <Link
@@ -186,7 +196,17 @@ export function Dashboard() {
                   {/* nav */}
                   <div className="mt-4 flex items-baseline justify-between">
                     <div>
-                      <p className="text-xs text-slate-400">单位净值</p>
+                      <p className="text-xs text-slate-400 flex items-center gap-1">
+                        单位净值
+                        {isEstimate && (
+                          <span
+                            className="inline-flex items-center px-1 rounded bg-blue-50 text-blue-600 border border-blue-200 text-[10px] leading-4 cursor-help"
+                            title={latest?.gztime ? `盘中估算值 · ${latest.gztime}` : '盘中估算值'}
+                          >
+                            估
+                          </span>
+                        )}
+                      </p>
                       <p className="text-lg font-bold text-slate-800">
                         {dwjz != null ? dwjz.toFixed(4) : gsz != null ? gsz.toFixed(4) : '—'}
                       </p>

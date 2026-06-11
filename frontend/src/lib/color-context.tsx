@@ -7,6 +7,8 @@ type ColorContextValue = {
   setScheme: (s: ColorScheme) => void
   /** Tailwind text color class for a return value */
   colorFor: (value: number) => string
+  /** Tailwind badge classes (bg + text + border) for a return value */
+  badgeClassFor: (value: number) => string
   /** Chart stroke + fill colors for a return value */
   chartColorFor: (value: number) => { stroke: string; fill: string }
 }
@@ -43,6 +45,18 @@ export function ColorProvider({ children }: { children: ReactNode }) {
     [scheme],
   )
 
+  const badgeClassFor = useCallback(
+    (value: number) => {
+      if (value === 0) return 'bg-gray-50 text-gray-600 border-gray-200'
+      const isUp = value > 0
+      const red = 'bg-red-50 text-red-600 border-red-200'
+      const green = 'bg-green-50 text-green-600 border-green-200'
+      if (scheme === 'red-up') return isUp ? red : green
+      return isUp ? green : red
+    },
+    [scheme],
+  )
+
   const chartColorFor = useCallback(
     (value: number) => {
       if (value === 0) return { stroke: '#94a3b8', fill: '#e2e8f0' }
@@ -60,7 +74,7 @@ export function ColorProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <ColorContext.Provider value={{ scheme, setScheme, colorFor, chartColorFor }}>
+    <ColorContext.Provider value={{ scheme, setScheme, colorFor, badgeClassFor, chartColorFor }}>
       {children}
     </ColorContext.Provider>
   )
