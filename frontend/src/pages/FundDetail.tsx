@@ -28,7 +28,7 @@ export function FundDetail() {
   const { data: transactions = [] } = useTransactions(code)
   const invalidatePortfolio = useInvalidatePortfolio()
 
-  const [addMsg, setAddMsg] = useState('')
+  const [addMsg, setAddMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [showAddTx, setShowAddTx] = useState(false)
 
   const detail = detailQ.data
@@ -43,11 +43,11 @@ export function FundDetail() {
     try {
       await addFund(code)
       invalidatePortfolio()
-      setAddMsg('已加入自选')
-      setTimeout(() => setAddMsg(''), 3000)
+      setAddMsg({ text: '已加入自选', ok: true })
+      setTimeout(() => setAddMsg(null), 3000)
     } catch {
-      setAddMsg('加入失败')
-      setTimeout(() => setAddMsg(''), 3000)
+      setAddMsg({ text: '加入失败', ok: false })
+      setTimeout(() => setAddMsg(null), 3000)
     }
   }
 
@@ -99,7 +99,9 @@ export function FundDetail() {
             <Plus className="h-4 w-4" /> 加入自选
           </button>
           {addMsg && (
-            <span className="text-sm text-green-600 font-medium">{addMsg}</span>
+            <span className={cn('text-sm font-medium', addMsg.ok ? 'text-green-600' : 'text-red-600')}>
+              {addMsg.text}
+            </span>
           )}
         </div>
       </div>

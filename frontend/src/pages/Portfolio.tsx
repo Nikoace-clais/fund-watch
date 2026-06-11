@@ -58,9 +58,14 @@ export function Portfolio() {
       if (!confirm(`确认删除选中的 ${codes.length} 只基金？此操作不可撤销。`)) return
       setBatchDeleting(true)
       try {
-        await Promise.all(codes.map((c) => deleteFund(c)))
+        const results = await Promise.allSettled(codes.map((c) => deleteFund(c)))
         invalidatePortfolio()
-        clearSelection()
+        const failed = results.filter((r) => r.status === 'rejected').length
+        if (failed > 0) {
+          alert(`${failed} 只基金删除失败，请稍后重试`)
+        } else {
+          clearSelection()
+        }
       } finally {
         setBatchDeleting(false)
       }

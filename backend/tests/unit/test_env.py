@@ -3,10 +3,9 @@ import pytest
 
 
 def test_uv_environment():
-    """Verify we're running in uv environment."""
+    """Verify we're running in a virtual environment (uv-managed)."""
     import sys
-    # Check that we're using the venv Python
-    assert ".venv" in sys.executable or "virtualenvs" in sys.executable
+    assert sys.prefix != sys.base_prefix
 
 
 def test_imports_work():

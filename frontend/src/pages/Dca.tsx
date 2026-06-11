@@ -7,8 +7,9 @@ import { PageState } from '@/components/PageState'
 
 export function Dca() {
   const { colorFor } = useColor()
-  const { data: plans = [], isLoading: loading } = useDcaPlans()
-  const { data: statsMap = new Map() } = useAllDcaStats()
+  const { data: plans = [], isLoading: plansLoading } = useDcaPlans()
+  const { data: statsMap = new Map(), isLoading: statsLoading } = useAllDcaStats()
+  const loading = plansLoading || statsLoading
 
   const allStats = [...statsMap.values()]
   const totalInvested = allStats.reduce((s, r) => s + parseFloat(r.total_invested), 0)

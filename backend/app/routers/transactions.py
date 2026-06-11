@@ -36,6 +36,10 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
         raise HTTPException(status_code=400, detail="direction must be 'buy' or 'sell'")
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", payload.trade_date):
         raise HTTPException(status_code=400, detail="trade_date must be YYYY-MM-DD")
+    try:
+        datetime.strptime(payload.trade_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="trade_date 不是有效日期")
 
     try:
         nav_d = Decimal(payload.nav)

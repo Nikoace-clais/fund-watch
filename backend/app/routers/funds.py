@@ -84,7 +84,10 @@ async def search_funds(q: str = "") -> dict:
         return {"results": []}
     if len(q) > 50:
         raise HTTPException(status_code=400, detail="搜索词过长（最多 50 个字符）")
-    results = await search_fund_by_name(q, limit=10)
+    try:
+        results = await search_fund_by_name(q, limit=10)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"基金搜索源（eastmoney）请求失败: {exc}")
     return {"results": results}
 
 
@@ -293,6 +296,8 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
             if sector and not conn.execute("SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL", (code,)).fetchone():
                 conn.execute("UPDATE funds SET sector=?, name=? WHERE code=?", (sector, name, code))
         else:
+            if name is None:
+                raise HTTPException(status_code=400, detail="无法获取基金信息，请确认基金代码有效后重试")
             conn.execute(
                 "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
                 (code, name, sector, amount, now),
@@ -305,15 +310,20 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
 def update_fund(code: str, payload: UpdateFundPayload) -> dict:
     code = validate_code(code)
     with get_conn() as conn:
+        if not conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone():
+            raise HTTPException(status_code=404, detail="fund not found")
+
         # If has transactions, reject manual shares edit
         if payload.holding_shares is not None:
             tx_count = conn.execute("SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)).fetchone()["c"]
             if tx_count > 0:
                 raise HTTPException(status_code=400, detail="有交易记录时不可手动编辑份额")
             try:
-                Decimal(payload.holding_shares)
+                shares_d = Decimal(payload.holding_shares)
             except InvalidOperation:
                 raise HTTPException(status_code=400, detail="无效的份额数值")
+            if shares_d < 0:
+                raise HTTPException(status_code=400, detail="份额不能为负数")
 
         updates = []
         params: list = []
@@ -383,6 +393,10 @@ async def get_nav_history(code: str, limit: int = 365) -> dict:
 async def get_nav_on_date(code: str, date: str) -> dict:
     """Return the NAV for a specific date (YYYY-MM-DD)."""
     code = validate_code(code)
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date 必须是有效的 YYYY-MM-DD 日期")
     try:
         nav = await fetch_nav_on_date(code, date)
     except Exception as exc:

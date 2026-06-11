@@ -227,8 +227,8 @@ main() {
     echo ""
 
     # 清理旧日志
-    > "$BACKEND_LOG"
-    > "$FRONTEND_LOG"
+    : > "$BACKEND_LOG"
+    : > "$FRONTEND_LOG"
 
     # 启动服务
     start_backend || exit 1

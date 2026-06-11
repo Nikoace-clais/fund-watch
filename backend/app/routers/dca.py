@@ -20,14 +20,14 @@ router = APIRouter(tags=["dca"])
 
 @router.post("/api/dca/plans")
 def create_dca_plan(payload: CreateDcaPlanPayload) -> dict:
-    validate_code(payload.code)
+    code = validate_code(payload.code)
     now = datetime.now(CST).isoformat()
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO dca_plans(code,name,amount,frequency,day_of_week,day_of_month,
                start_date,end_date,is_active,created_at)
                VALUES(?,?,?,?,?,?,?,?,1,?)""",
-            (payload.code, payload.name, payload.amount, payload.frequency,
+            (code, payload.name, payload.amount, payload.frequency,
              payload.day_of_week, payload.day_of_month,
              payload.start_date, payload.end_date, now),
         )
@@ -138,6 +138,15 @@ def patch_dca_record(record_id: int, payload: PatchDcaRecordPayload) -> dict:
         raise HTTPException(status_code=400, detail="status must be success or failed")
     set_clause = ", ".join(f"{k}=?" for k in updates)
     with get_conn() as conn:
+        # Re-enforce the create-time constraint: success requires a transaction_id
+        if updates.get("status") == "success" and not updates.get("transaction_id"):
+            row = conn.execute(
+                "SELECT transaction_id FROM dca_records WHERE id=?", (record_id,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="record not found")
+            if row["transaction_id"] is None:
+                raise HTTPException(status_code=400, detail="success record requires transaction_id")
         cur = conn.execute(
             f"UPDATE dca_records SET {set_clause} WHERE id=?",
             (*updates.values(), record_id),
