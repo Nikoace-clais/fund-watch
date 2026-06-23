@@ -116,6 +116,30 @@ bun run dev
 
 Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: `http://127.0.0.1:8010/docs`
 
+### Tests & Lint
+
+```bash
+# 后端测试
+cd /home/niko/hobby/fund-watch/fund-watch/backend
+uv run pytest                          # 全量
+uv run pytest tests/unit/             # 单元
+uv run pytest tests/integration/      # 集成
+
+# 后端 lint
+uv run ruff check .
+uv run mypy .
+
+# 前端类型检查
+cd /home/niko/hobby/fund-watch/fund-watch/frontend
+bun run lint                           # tsc --noEmit
+```
+
+## 环境要求
+
+- Python >=3.12（`uv` 管理）
+- bun 1.3.10+（`bun install` 自动安装依赖）
+- 可选环境变量：`FUND_WATCH_DB=<path>` 覆盖 SQLite 路径（默认 `backend/data/fund_watch.db`）
+
 ---
 
 ## API Contract (current)
@@ -203,14 +227,16 @@ When extending APIs:
 - ✅ eastmoney 基金详情/NAV 历史/重仓股票/资产配置
 - ✅ 天天基金搜索 API 适配
 - ✅ 前端全新 UI（Tailwind v4 + React Router + Recharts）
-- ✅ Dashboard / FundExplorer / FundDetail / Portfolio 四大页面
+- ✅ 六大页面：Dashboard / FundDetail / Portfolio / Market / Dca / Import
 - ✅ 端到端流程可用
+- ✅ 截图 OCR 导入（ImportPage + rapidocr + 基金名回退搜索）
+- ✅ 定投计划/记录/统计（DCA）
+- ✅ 大盘指数（新浪源 + 降级容错）
 
 ### Next Priorities
-1. **AI 导入页面** — 前端粘贴 JSON → 批量添加
-2. **定时拉取** — pull_quotes.py 完善 + cron 配置
-3. **提醒规则** — 涨跌阈值 + 冷却时间 + 降噪
-4. **用户维度** — 多人使用 + 分享权限
+1. **提醒规则** — 涨跌阈值 + 冷却时间 + 降噪
+2. **定时拉取完善** — pull_quotes.py + cron 配置文档化
+3. **用户维度** — 多人使用 + 分享权限
 
 ---
 
