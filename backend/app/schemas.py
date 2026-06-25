@@ -1,10 +1,9 @@
 """Request payload models."""
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
-from typing import Literal
+from decimal import Decimal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 
 class AddFundPayload(BaseModel):
@@ -40,59 +39,6 @@ class AddTransactionPayload(BaseModel):
     source: str = "manual"
 
 
-class CreateDcaPlanPayload(BaseModel):
-    code: str
-    name: str | None = None
-    amount: str
-    frequency: Literal["daily", "weekly", "biweekly", "monthly"]
-    day_of_week: int | None = None
-    day_of_month: int | None = None
-    start_date: str
-    end_date: str | None = None
-
-    @field_validator("amount")
-    @classmethod
-    def amount_must_be_positive(cls, v: str) -> str:
-        try:
-            d = Decimal(v)
-        except InvalidOperation:
-            raise ValueError("amount must be a valid decimal number")
-        if d <= 0:
-            raise ValueError("amount must be positive")
-        return v
-
-
-class PatchDcaPlanPayload(BaseModel):
-    name: str | None = None
-    amount: str | None = None
-    frequency: Literal["daily", "weekly", "biweekly", "monthly"] | None = None
-    day_of_week: int | None = None
-    day_of_month: int | None = None
-    end_date: str | None = None
-    is_active: int | None = None
-
-    @field_validator("amount")
-    @classmethod
-    def amount_must_be_positive(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        try:
-            d = Decimal(v)
-        except InvalidOperation:
-            raise ValueError("amount must be a valid decimal number")
-        if d <= 0:
-            raise ValueError("amount must be positive")
-        return v
-
-
-class AddDcaRecordPayload(BaseModel):
-    scheduled_date: str
-    status: str  # 'success' or 'failed'
-    transaction_id: int | None = None
-    note: str | None = None
-
-
-class PatchDcaRecordPayload(BaseModel):
-    status: str | None = None
-    transaction_id: int | None = None
-    note: str | None = None
+class AiSelectPayload(BaseModel):
+    theme: str
+    emphasis: str

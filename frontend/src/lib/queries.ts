@@ -1,11 +1,8 @@
 import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
+import { isTradingHours } from './utils'
 import {
-  fetchAllDcaStats,
   fetchCronStatus,
-  fetchDcaPlans,
-  fetchDcaPlanStats,
-  fetchDcaRecords,
   fetchFundDetail,
   fetchFundHoldings,
   fetchFundsOverview,
@@ -15,15 +12,17 @@ import {
   fetchPortfolioSummary,
   fetchQuote,
   fetchTransactions,
-  type DcaStats,
 } from './api'
+
+// ponytail: refetchInterval callback — stops polling outside trading hours to save requests
+const tradingRefetch = () => (isTradingHours() ? 60_000 : false)
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
       retry: 1,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,
     },
   },
 })
@@ -40,10 +39,6 @@ export const keys = {
   fundHoldings: (code: string) => ['fund', code, 'holdings'] as const,
   quote: (code: string) => ['fund', code, 'quote'] as const,
   transactions: (code: string) => ['fund', code, 'transactions'] as const,
-  dcaPlans: ['dca', 'plans'] as const,
-  dcaAllStats: ['dca', 'stats'] as const,
-  dcaPlanStats: (planId: number) => ['dca', 'plan', planId, 'stats'] as const,
-  dcaPlanRecords: (planId: number) => ['dca', 'plan', planId, 'records'] as const,
 }
 
 /* ---------- hooks ---------- */
@@ -52,11 +47,16 @@ export function useFundsOverview() {
     queryKey: keys.fundsOverview,
     queryFn: fetchFundsOverview,
     select: (r) => r.items,
+    refetchInterval: tradingRefetch,
   })
 }
 
 export function usePortfolioSummary() {
-  return useQuery({ queryKey: keys.portfolioSummary, queryFn: fetchPortfolioSummary })
+  return useQuery({
+    queryKey: keys.portfolioSummary,
+    queryFn: fetchPortfolioSummary,
+    refetchInterval: tradingRefetch,
+  })
 }
 
 export function usePortfolioHistory(limit: number) {
@@ -72,6 +72,7 @@ export function useMarketIndices() {
     queryKey: keys.marketIndices,
     queryFn: fetchMarketIndices,
     select: (r) => r.items,
+    refetchInterval: tradingRefetch,
   })
 }
 
@@ -114,6 +115,7 @@ export function useQuote(code: string | undefined) {
     queryKey: keys.quote(code ?? ''),
     queryFn: () => fetchQuote(code!),
     enabled: !!code,
+    refetchInterval: tradingRefetch,
   })
 }
 
@@ -123,42 +125,6 @@ export function useTransactions(code: string | undefined, enabled = true) {
     queryFn: () => fetchTransactions(code!),
     select: (r) => r.items,
     enabled: !!code && enabled,
-  })
-}
-
-export function useDcaPlans(code?: string) {
-  return useQuery({
-    queryKey: keys.dcaPlans,
-    queryFn: fetchDcaPlans,
-    select: (r) => (code ? r.items.filter((p) => p.code === code) : r.items),
-  })
-}
-
-export function useAllDcaStats() {
-  return useQuery({
-    queryKey: keys.dcaAllStats,
-    queryFn: fetchAllDcaStats,
-    select: (r) => {
-      const m = new Map<number, DcaStats>()
-      r.items.forEach((s) => m.set(s.plan_id, s))
-      return m
-    },
-  })
-}
-
-export function useDcaPlanStats(planId: number) {
-  return useQuery({
-    queryKey: keys.dcaPlanStats(planId),
-    queryFn: () => fetchDcaPlanStats(planId),
-  })
-}
-
-export function useDcaPlanRecords(planId: number, enabled: boolean) {
-  return useQuery({
-    queryKey: keys.dcaPlanRecords(planId),
-    queryFn: () => fetchDcaRecords(planId),
-    select: (r) => r.items,
-    enabled,
   })
 }
 

@@ -41,8 +41,8 @@ export const router = createBrowserRouter([
         lazy: async () => ({ Component: (await import('./pages/Market')).Market }),
       },
       {
-        path: 'dca',
-        lazy: async () => ({ Component: (await import('./pages/Dca')).Dca }),
+        path: 'ai-select',
+        lazy: async () => ({ Component: (await import('./pages/AiSelect')).AiSelect }),
       },
       {
         path: 'import',

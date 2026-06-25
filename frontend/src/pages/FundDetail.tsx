@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router'
-import { ArrowLeft, Plus, Share2 } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import { addFund } from '@/lib/api'
 import {
   useFundDetail, useFundHoldings, useNavHistory, useQuote, useTransactions,
@@ -12,7 +12,6 @@ import { StageReturns } from '@/components/fund-detail/StageReturns'
 import { AssetAllocationCard } from '@/components/fund-detail/AssetAllocationCard'
 import { TopHoldings } from '@/components/fund-detail/TopHoldings'
 import { TransactionsCard } from '@/components/fund-detail/TransactionsCard'
-import { DcaSection } from '@/components/fund-detail/DcaSection'
 import { useInvalidatePortfolio } from '@/lib/queries'
 import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
@@ -87,11 +86,6 @@ export function FundDetail() {
           <ArrowLeft className="h-4 w-4" /> 返回
         </Link>
         <div className="flex items-center gap-2">
-          <button
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            <Share2 className="h-4 w-4" /> 分享
-          </button>
           <button
             onClick={handleAddFund}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -180,8 +174,6 @@ export function FundDetail() {
       </div>
 
       <TransactionsCard transactions={transactions} onAddTx={() => setShowAddTx(true)} />
-
-      <DcaSection code={code!} name={detail.name} />
     </div>
   )
 }

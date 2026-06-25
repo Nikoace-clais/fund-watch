@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .core import UPLOAD_DIR
 from .db import init_db
 from .fund_source import close_shared_client
-from .routers import dca, funds, health, market, ocr, portfolio, quotes, transactions
+from .routers import ai, funds, health, market, ocr, portfolio, quotes, transactions
 from .services.snapshots import snapshot_scheduler
 
 # ── Logging setup ────────────────────────────────────────────────────────────
@@ -75,6 +75,6 @@ app.include_router(funds.router)
 app.include_router(quotes.router)
 app.include_router(portfolio.router)
 app.include_router(transactions.router)
-app.include_router(dca.router)
+app.include_router(ai.router)
 app.include_router(ocr.router)
 app.include_router(market.router)

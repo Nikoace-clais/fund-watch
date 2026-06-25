@@ -1,36 +1,12 @@
-import { useMemo } from 'react'
-import { AreaChart, Area, ResponsiveContainer } from 'recharts'
 import { BarChart3, Globe, RefreshCw, AlertCircle } from 'lucide-react'
 import { useMarketIndices } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 import type { MarketIndex } from '@/lib/api'
 
-/* ---------- types ---------- */
-type IndexData = MarketIndex & {
-  sparkline: { v: number }[]
-}
-
-/* ---------- sparkline generator (decorative, no historical data) ---------- */
-function generateSparkline(current: number, changePercent: number, points = 20): { v: number }[] {
-  const direction = changePercent >= 0 ? 1 : -1
-  const range = current * Math.abs(changePercent) * 0.015
-  const data: { v: number }[] = []
-  for (let i = 0; i < points; i++) {
-    const progress = i / (points - 1)
-    const trend = direction * range * progress
-    const noise = (Math.random() - 0.5) * range * 0.6
-    const v = current - current * (changePercent / 100) + trend + noise
-    data.push({ v: parseFloat(v.toFixed(2)) })
-  }
-  data[points - 1] = { v: current }
-  return data
-}
-
 /* ---------- index card ---------- */
-function IndexCard({ data }: { data: IndexData }) {
-  const { colorFor, chartColorFor } = useColor()
-  const colors = chartColorFor(data.change_percent)
+function IndexCard({ data }: { data: MarketIndex }) {
+  const { colorFor } = useColor()
   const sign = data.change >= 0 ? '+' : ''
 
   return (
@@ -46,26 +22,6 @@ function IndexCard({ data }: { data: IndexData }) {
         <span>{sign}{data.change.toFixed(2)}</span>
         <span>{sign}{data.change_percent.toFixed(2)}%</span>
       </div>
-      <div className="h-12 -mx-1">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data.sparkline} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-            <defs>
-              <linearGradient id={`grad-${data.code}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={colors.fill} stopOpacity={0.6} />
-                <stop offset="100%" stopColor={colors.fill} stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
-            <Area
-              type="monotone"
-              dataKey="v"
-              stroke={colors.stroke}
-              strokeWidth={1.5}
-              fill={`url(#grad-${data.code})`}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
     </div>
   )
 }
@@ -80,7 +36,6 @@ function SkeletonCard() {
       </div>
       <div className="h-8 w-32 bg-slate-100 rounded" />
       <div className="h-4 w-24 bg-slate-100 rounded" />
-      <div className="h-12 bg-slate-50 rounded" />
     </div>
   )
 }
@@ -93,15 +48,7 @@ export function Market() {
   const error = queryError ? (queryError instanceof Error ? queryError.message : '获取行情数据失败') : null
   const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : null
 
-  const items = useMemo<IndexData[]>(
-    () =>
-      (data ?? []).map((item) => ({
-        ...item,
-        sparkline: generateSparkline(item.value, item.change_percent),
-      })),
-    [data],
-  )
-
+  const items = data ?? []
   const domestic = items.filter((i) => i.region === 'domestic')
   const international = items.filter((i) => i.region === 'international')
 

@@ -44,12 +44,32 @@ FUND_GZ_URL = "https://fundgz.1234567.com.cn/js/{code}.js"
 JSONP_RE = re.compile(r"jsonpgz\((.*)\)")
 
 
+async def _get_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    max_retries: int = 3,
+    **kw: Any,
+) -> httpx.Response:
+    """GET with exponential backoff on transient network errors."""
+    last_error: Exception | None = None
+    for attempt in range(max_retries):
+        try:
+            resp = await client.get(url, **kw)
+            resp.raise_for_status()
+            return resp
+        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                await asyncio.sleep(0.5 * (attempt + 1))
+    raise last_error or Exception(f"Failed GET {url}")
+
+
 async def fetch_realtime_estimate(code: str) -> dict[str, Any]:
     url = FUND_GZ_URL.format(code=code)
     t0 = time.perf_counter()
     client = _get_client()
-    resp = await client.get(url)
-    resp.raise_for_status()
+    resp = await _get_with_retry(client, url)
     text = resp.text.strip()
     elapsed = time.perf_counter() - t0
     logger.debug("fetch_realtime_estimate [%s] %.3fs", code, elapsed)
@@ -460,33 +480,13 @@ async def fetch_market_indices() -> list[dict[str, Any]]:
 
     t0 = time.perf_counter()
     client = _get_client()
-
-    max_retries = 3
-    last_error: Exception | None = None
-
-    for attempt in range(max_retries):
-        try:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            # Response is GBK encoded
-            text = resp.content.decode("gbk", errors="ignore")
-            items = _parse_sina_hq_response(text)
-            elapsed = time.perf_counter() - t0
-            logger.debug("fetch_market_indices %.3fs (attempt %d)", elapsed, attempt + 1)
-            return items
-
-        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as e:
-            last_error = e
-            logger.warning("fetch_market_indices attempt %d failed: %s", attempt + 1, e)
-            if attempt < max_retries - 1:
-                await asyncio.sleep(0.5 * (attempt + 1))
-            continue
-        except Exception as e:
-            logger.error("fetch_market_indices unexpected error: %s", e)
-            raise
-
-    logger.error("fetch_market_indices all %d attempts failed", max_retries)
-    raise last_error or Exception("Failed to fetch market indices")
+    resp = await _get_with_retry(client, url, headers=headers)
+    # Response is GBK encoded
+    text = resp.content.decode("gbk", errors="ignore")
+    items = _parse_sina_hq_response(text)
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_market_indices %.3fs", elapsed)
+    return items
 
 
 async def fetch_latest_nav(code: str) -> dict[str, Any] | None:
@@ -527,6 +527,70 @@ async def fetch_nav_on_date(code: str, date: str) -> float | None:
     if items:
         return _to_float(items[0].get("DWJZ"))
     return None
+
+
+RANKING_URL = "https://fund.eastmoney.com/data/rankhandler.aspx"
+_RANKING_HEADERS = {
+    "Referer": "https://fund.eastmoney.com/data/fundranking.html",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+    ),
+}
+
+
+async def fetch_fund_ranking(
+    fund_type: str = "gp", page_size: int = 200
+) -> list[dict[str, Any]]:
+    """Fetch fund ranking from eastmoney.
+
+    fund_type: 'gp' (股票型), 'hh' (混合型), 'zq' (债券型)
+    Returns list of dicts with code, name, one_year_return, three_year_return, fee, size.
+    Sorted by 3-year return descending by the remote API.
+    """
+    from datetime import date, timedelta
+
+    today = date.today()
+    sd = (today - timedelta(days=3 * 365)).isoformat()
+    ed = today.isoformat()
+
+    params = {
+        "op": "ph", "dt": "kf", "ft": fund_type, "rs": "", "gs": "0",
+        "sc": "3yzf", "st": "desc",
+        "sd": sd, "ed": ed,
+        "pi": "1", "pn": str(page_size), "dx": "1",
+        "qdii": "", "tabSubtype": ",,,,,",
+    }
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await _get_with_retry(client, RANKING_URL, params=params, headers=_RANKING_HEADERS)
+    text = resp.text
+    elapsed = time.perf_counter() - t0
+    logger.debug("fetch_fund_ranking [ft=%s, n=%s] %.3fs", fund_type, page_size, elapsed)
+
+    # Extract datas:[...] — each item is a comma-separated string
+    m = re.search(r'datas:\[(.+?)\]', text, re.DOTALL)
+    if not m:
+        return []
+
+    raw_items = re.findall(r'"([^"]+)"', m.group(1))
+    results: list[dict[str, Any]] = []
+    for raw in raw_items:
+        fields = raw.split(",")
+        if len(fields) < 20:
+            continue
+        code = fields[0]
+        if not re.match(r"^\d{6}$", code):
+            continue
+        results.append({
+            "code": code,
+            "name": fields[1],
+            "one_year_return": _to_float(fields[11]),
+            "three_year_return": _to_float(fields[13]),
+            "fee": fields[20] if len(fields) > 20 else None,  # 折扣申购费率
+            "size": _to_float(fields[18]) if len(fields) > 18 else None,  # 规模(亿)
+        })
+    return results
 
 
 async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, Any]]:
