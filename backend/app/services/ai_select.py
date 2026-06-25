@@ -15,6 +15,7 @@ import os
 from typing import Any
 
 import anthropic
+import openai
 from pydantic import BaseModel
 
 from ..fund_source import fetch_fund_detail, fetch_fund_ranking, fetch_nav_history
@@ -40,14 +41,24 @@ class AiSelectResult(BaseModel):
 
 # ── Main entry point ─────────────────────────────────────────────────────────
 
-async def select_funds(theme: str, emphasis: str) -> dict[str, Any]:
+async def select_funds(
+    theme: str,
+    emphasis: str,
+    provider: str = "anthropic",
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> dict[str, Any]:
     """Return AI-ranked fund recommendations for the given theme and emphasis.
 
+    provider: "anthropic" or "openai" (any OpenAI-compatible endpoint).
+    api_key:  falls back to ANTHROPIC_API_KEY env var when provider=="anthropic".
     Raises ValueError for missing API key or no candidates.
     """
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key and provider == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY 未设置，无法调用 AI 选基")
+        raise ValueError("未配置 API Key，请在「AI 配置」中填写")
 
     # ── Step 1: Fetch ranking pool ──────────────────────────────────────────
     ranking = await fetch_fund_ranking(page_size=200)
@@ -97,24 +108,12 @@ async def select_funds(theme: str, emphasis: str) -> dict[str, Any]:
         "每只基金 reason 给出2-3句中文。summary 最后注明「仅供参考，不构成投资建议」。"
     )
 
-    # ── Step 5: Call Claude via tool_use ───────────────────────────────────
-    client = anthropic.AsyncAnthropic(api_key=api_key)
-    result = await client.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=2000,
-        tools=[
-            {
-                "name": "fund_recommendations",
-                "description": "Return ranked fund recommendations with reasoning",
-                "input_schema": AiSelectResult.model_json_schema(),
-            }
-        ],
-        tool_choice={"type": "tool", "name": "fund_recommendations"},
-        messages=[{"role": "user", "content": prompt}],
+    # ── Step 5: Call LLM via tool_use ──────────────────────────────────────
+    ai_result = await (
+        _call_anthropic(prompt, api_key)
+        if provider == "anthropic"
+        else _call_openai(prompt, api_key, base_url, model)
     )
-
-    tool_block = next(b for b in result.content if b.type == "tool_use")
-    ai_result = AiSelectResult(**tool_block.input)  # type: ignore[arg-type]
 
     # ── Step 6: Merge ────────────────────────────────────────────────────────
     enriched_by_code = {c["code"]: c for c in enriched}
@@ -140,7 +139,61 @@ async def select_funds(theme: str, emphasis: str) -> dict[str, Any]:
     return {"summary": ai_result.summary, "recommendations": recs}
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── LLM caller helpers ───────────────────────────────────────────────────────
+
+_TOOL_DEF_ANTHROPIC = {
+    "name": "fund_recommendations",
+    "description": "Return ranked fund recommendations with reasoning",
+    "input_schema": None,  # filled at call time
+}
+
+
+async def _call_anthropic(prompt: str, api_key: str) -> AiSelectResult:
+    schema = AiSelectResult.model_json_schema()
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    resp = await client.messages.create(
+        model="claude-opus-4-8",
+        max_tokens=2000,
+        tools=[{**_TOOL_DEF_ANTHROPIC, "input_schema": schema}],
+        tool_choice={"type": "tool", "name": "fund_recommendations"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    block = next(b for b in resp.content if b.type == "tool_use")
+    return AiSelectResult(**block.input)  # type: ignore[arg-type]
+
+
+async def _call_openai(
+    prompt: str,
+    api_key: str,
+    base_url: str | None,
+    model: str | None,
+) -> AiSelectResult:
+    import json
+
+    schema = AiSelectResult.model_json_schema()
+    kw: dict[str, Any] = {"api_key": api_key}
+    if base_url:
+        kw["base_url"] = base_url
+    client = openai.AsyncOpenAI(**kw)
+    resp = await client.chat.completions.create(
+        model=model or "gpt-4o",
+        max_tokens=2000,
+        tools=[{
+            "type": "function",
+            "function": {
+                "name": "fund_recommendations",
+                "description": "Return ranked fund recommendations with reasoning",
+                "parameters": schema,
+            },
+        }],
+        tool_choice={"type": "function", "function": {"name": "fund_recommendations"}},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    args = resp.choices[0].message.tool_calls[0].function.arguments
+    return AiSelectResult(**json.loads(args))
+
+
+# ── Enrichment + formatting ───────────────────────────────────────────────────
 
 async def _enrich(candidate: dict[str, Any]) -> dict[str, Any]:
     code = candidate["code"]

@@ -279,10 +279,17 @@ export function fetchAiSectors() {
   return request<{ sectors: string[] }>('/api/ai/sectors')
 }
 
-export function aiSelectFunds(theme: string, emphasis: string) {
+export type AiProviderParams = {
+  provider: string
+  api_key?: string
+  base_url?: string
+  model?: string
+}
+
+export function aiSelectFunds(theme: string, emphasis: string, providerParams: AiProviderParams) {
   return request<AiSelectResponse>('/api/ai/select', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ theme, emphasis }),
+    body: JSON.stringify({ theme, emphasis, ...providerParams }),
   })
 }

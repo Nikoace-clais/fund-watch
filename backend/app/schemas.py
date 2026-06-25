@@ -42,3 +42,7 @@ class AddTransactionPayload(BaseModel):
 class AiSelectPayload(BaseModel):
     theme: str
     emphasis: str
+    provider: str = "anthropic"  # "anthropic" | "openai"
+    api_key: str | None = None   # falls back to ANTHROPIC_API_KEY env var if omitted
+    base_url: str | None = None  # openai-compatible endpoint, e.g. https://api.openai.com/v1
+    model: str | None = None     # e.g. "gpt-4o"; omit to use per-provider default

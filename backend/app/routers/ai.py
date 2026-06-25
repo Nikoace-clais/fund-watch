@@ -24,7 +24,14 @@ async def ai_select(payload: AiSelectPayload) -> dict:
     Returns ranked recommendations with AI reasoning.
     """
     try:
-        result = await select_funds(payload.theme, payload.emphasis)
+        result = await select_funds(
+            payload.theme,
+            payload.emphasis,
+            provider=payload.provider,
+            api_key=payload.api_key,
+            base_url=payload.base_url,
+            model=payload.model,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

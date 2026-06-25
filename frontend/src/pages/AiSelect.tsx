@@ -5,6 +5,7 @@ import { fetchAiSectors, aiSelectFunds, batchAddFunds } from '@/lib/api'
 import type { AiFundRec } from '@/lib/api'
 import { useQuery } from '@tanstack/react-query'
 import { useInvalidatePortfolio } from '@/lib/queries'
+import { useProviderConfig } from '@/lib/provider-config'
 import { cn } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
@@ -102,6 +103,7 @@ function Metric({ label, value, className }: { label: string; value: string; cla
 
 export function AiSelect() {
   const invalidatePortfolio = useInvalidatePortfolio()
+  const { config: providerConfig, isConfigured } = useProviderConfig()
   const { data: sectorsData } = useQuery({
     queryKey: ['ai', 'sectors'],
     queryFn: fetchAiSectors,
@@ -122,7 +124,12 @@ export function AiSelect() {
     setError(null)
     setResult(null)
     try {
-      const res = await aiSelectFunds(theme, emphasis)
+      const res = await aiSelectFunds(theme, emphasis, {
+        provider: providerConfig.provider,
+        api_key: providerConfig.api_key || undefined,
+        base_url: providerConfig.base_url || undefined,
+        model: providerConfig.model || undefined,
+      })
       setResult(res)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'AI 选基失败，请重试')
@@ -148,6 +155,14 @@ export function AiSelect() {
           选择板块和着重点，AI 从真实数据中为你发现候选、排序、点评
         </p>
       </div>
+
+      {/* Unconfigured warning */}
+      {!isConfigured && (
+        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          尚未配置 API Key。请点击左侧导航底部的「AI 配置」完成设置后再使用。
+        </div>
+      )}
 
       {/* Form card */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
