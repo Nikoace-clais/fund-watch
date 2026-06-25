@@ -290,8 +290,8 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
             power = raw_managers[0].get("power", {})
             result["manager_power_scores"] = power.get("data")
             result["manager_power_categories"] = power.get("categories")
-        except (IndexError, AttributeError):
-            pass
+        except AttributeError as e:
+            logger.debug("manager_power parse failed for %s: %s", code, e)
 
     return result
 
