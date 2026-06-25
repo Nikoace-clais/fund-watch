@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router'
+import { useParams, useNavigate } from 'react-router'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { addFund } from '@/lib/api'
 import {
@@ -17,6 +17,7 @@ import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
 export function FundDetail() {
+  const navigate = useNavigate()
   const { code } = useParams<{ code: string }>()
   const { colorFor } = useColor()
 
@@ -59,9 +60,9 @@ export function FundDetail() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] text-center">
         <p className="text-xl text-slate-500 mb-4">未找到该基金</p>
-        <Link to="/market" className="text-blue-600 hover:underline flex items-center gap-1">
+        <button onClick={() => navigate(-1)} className="text-blue-600 hover:underline flex items-center gap-1">
           <ArrowLeft className="h-4 w-4" /> 返回基金列表
-        </Link>
+        </button>
       </div>
     )
   }
@@ -79,12 +80,12 @@ export function FundDetail() {
 
       {/* ---- Top bar ---- */}
       <div className="flex items-center justify-between">
-        <Link
-          to="/market"
+        <button
+          onClick={() => navigate(-1)}
           className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-blue-600 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" /> 返回
-        </Link>
+        </button>
         <div className="flex items-center gap-2">
           <button
             onClick={handleAddFund}

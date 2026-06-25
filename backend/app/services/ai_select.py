@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 MAX_CANDIDATES = 10  # ponytail: cap to control downstream fetches + token cost
 
+# Themes that map directly to an eastmoney fund type; skip name filter for these
+_THEME_FUND_TYPE: dict[str, str] = {"QDII": "qdii", "债": "zq", "货币": "hb"}
+
 
 # ── Pydantic schema for Claude tool output ────────────────────────────────────
 
@@ -61,10 +64,15 @@ async def select_funds(
         raise ValueError("未配置 API Key，请在「AI 配置」中填写")
 
     # ── Step 1: Fetch ranking pool ──────────────────────────────────────────
-    ranking = await fetch_fund_ranking(page_size=200)
+    fund_type = _THEME_FUND_TYPE.get(theme, "gp")
+    ranking = await fetch_fund_ranking(fund_type=fund_type, page_size=200)
 
     # ── Step 2: Filter by theme keyword ────────────────────────────────────
-    candidates = [f for f in ranking if theme in f["name"]]
+    # For themes that ARE a fund type, the API already filtered; skip name match
+    if theme in _THEME_FUND_TYPE:
+        candidates = ranking
+    else:
+        candidates = [f for f in ranking if theme in f["name"]]
     if not candidates:
         raise ValueError(f"板块「{theme}」无匹配基金，请换一个关键词")
 
@@ -177,7 +185,7 @@ async def _call_openai(
     client = openai.AsyncOpenAI(**kw)
     resp = await client.chat.completions.create(
         model=model or "gpt-4o",
-        max_tokens=2000,
+        max_tokens=8192,  # ponytail: thinking tokens eat into budget fast
         tools=[{
             "type": "function",
             "function": {
@@ -186,11 +194,16 @@ async def _call_openai(
                 "parameters": schema,
             },
         }],
-        tool_choice={"type": "function", "function": {"name": "fund_recommendations"}},
         messages=[{"role": "user", "content": prompt}],
     )
-    args = resp.choices[0].message.tool_calls[0].function.arguments
-    return AiSelectResult(**json.loads(args))
+    msg = resp.choices[0].message
+    if msg.tool_calls:
+        args = msg.tool_calls[0].function.arguments
+        obj, _ = json.JSONDecoder().raw_decode(args.strip())
+        return AiSelectResult(**obj)
+    # ponytail: thinking models may skip tool call and reply in text
+    preview = (msg.content or "")[:200]
+    raise ValueError(f"模型未返回结构化结果，请换用非思考模式模型。原始回复：{preview}")
 
 
 # ── Enrichment + formatting ───────────────────────────────────────────────────

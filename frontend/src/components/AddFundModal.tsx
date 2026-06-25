@@ -7,6 +7,8 @@ type AddFundModalProps = {
   open: boolean
   onClose: () => void
   onAdded: () => void
+  /** Codes already in the watchlist — pre-marks them as added in search results */
+  existingCodes?: string[]
 }
 
 type Tab = 'search' | 'code' | 'batch'
@@ -17,7 +19,7 @@ const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'batch', label: '批量导入', icon: <FileJson className="w-4 h-4" /> },
 ]
 
-export function AddFundModal({ open, onClose, onAdded }: AddFundModalProps) {
+export function AddFundModal({ open, onClose, onAdded, existingCodes = [] }: AddFundModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('search')
 
   // Close on Escape
@@ -72,7 +74,7 @@ export function AddFundModal({ open, onClose, onAdded }: AddFundModalProps) {
 
         {/* Content */}
         <div className="px-6 pb-6 overflow-y-auto flex-1">
-          {activeTab === 'search' && <SearchTab onAdded={onAdded} />}
+          {activeTab === 'search' && <SearchTab onAdded={onAdded} existingCodes={existingCodes} />}
           {activeTab === 'code' && <CodeTab onAdded={onAdded} />}
           {activeTab === 'batch' && <BatchTab onAdded={onAdded} />}
         </div>
@@ -82,11 +84,11 @@ export function AddFundModal({ open, onClose, onAdded }: AddFundModalProps) {
 }
 
 /* ─── Tab 1: Search ─── */
-function SearchTab({ onAdded }: { onAdded: () => void }) {
+function SearchTab({ onAdded, existingCodes }: { onAdded: () => void; existingCodes: string[] }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Array<{ code: string; name: string; type?: string }>>([])
   const [loading, setLoading] = useState(false)
-  const [addedCodes, setAddedCodes] = useState<Set<string>>(new Set())
+  const [addedCodes, setAddedCodes] = useState<Set<string>>(() => new Set(existingCodes))
   const [adding, setAdding] = useState<string | null>(null)
   const [error, setError] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)

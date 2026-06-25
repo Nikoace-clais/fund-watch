@@ -108,7 +108,12 @@ export function Portfolio() {
         </button>
       </div>
 
-      <AddFundModal open={showAddModal} onClose={() => setShowAddModal(false)} onAdded={invalidatePortfolio} />
+      <AddFundModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdded={invalidatePortfolio}
+        existingCodes={overview.map((i) => i.fund.code)}
+      />
       <HoldingEditModal
         open={holdingEdit !== null}
         onClose={() => setHoldingEdit(null)}

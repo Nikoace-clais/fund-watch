@@ -1,9 +1,11 @@
 import { Link } from 'react-router'
-import { TrendingUp, ArrowRight, BarChart3, Briefcase, Camera, Activity } from 'lucide-react'
-import { useFundsOverview, useMarketIndices, usePortfolioSummary } from '@/lib/queries'
+import { useState } from 'react'
+import { TrendingUp, ArrowRight, BarChart3, Briefcase, Camera, Activity, Plus } from 'lucide-react'
+import { useFundsOverview, useMarketIndices, usePortfolioSummary, useInvalidatePortfolio } from '@/lib/queries'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 import { PageState } from '@/components/PageState'
+import { AddFundModal } from '@/components/AddFundModal'
 
 /* ---------- A-share display codes for header badges ---------- */
 const BADGE_CODES = ['000001', '399001', '399006']
@@ -14,6 +16,8 @@ export function Dashboard() {
   const { data: overview = [], isLoading: loading } = useFundsOverview()
   const { data: portfolio } = usePortfolioSummary()
   const { data: allIndices = [], isLoading: indicesLoading } = useMarketIndices()
+  const invalidatePortfolio = useInvalidatePortfolio()
+  const [showAddModal, setShowAddModal] = useState(false)
 
   const indices = allIndices
     .filter((i) => BADGE_CODES.includes(i.code))
@@ -130,14 +134,28 @@ export function Dashboard() {
 
       {/* ---- Quick actions ---- */}
       <div className="flex gap-3">
-        <Link
-          to="/import"
+        <button
+          onClick={() => setShowAddModal(true)}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
         >
+          <Plus className="h-4 w-4" />
+          添加基金
+        </button>
+        <Link
+          to="/import"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+        >
           <Camera className="h-4 w-4" />
-          截图导入基金
+          截图导入
         </Link>
       </div>
+
+      <AddFundModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdded={invalidatePortfolio}
+        existingCodes={overview.map((i) => i.fund.code)}
+      />
 
       {/* ---- Hot funds section ---- */}
       <div>

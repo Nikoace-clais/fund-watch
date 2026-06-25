@@ -85,7 +85,7 @@ async def search_funds(q: str = "") -> dict:
     if len(q) > 50:
         raise HTTPException(status_code=400, detail="搜索词过长（最多 50 个字符）")
     try:
-        results = await search_fund_by_name(q, limit=10)
+        results = await search_fund_by_name(q, limit=20)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"基金搜索源（eastmoney）请求失败: {exc}")
     return {"results": results}
