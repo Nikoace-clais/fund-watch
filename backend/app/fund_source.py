@@ -281,6 +281,18 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
     m = re.search(r'var fund_Rate\s*=\s*"([^"]*)"', text)
     result["subscription_rate_discounted"] = _to_float(m.group(1)) if m else None
 
+    # Manager power scores from Data_currentFundManager
+    raw_managers = _extract_js_array(text, "Data_currentFundManager")
+    result["manager_power_scores"] = None
+    result["manager_power_categories"] = None
+    if raw_managers:
+        try:
+            power = raw_managers[0].get("power", {})
+            result["manager_power_scores"] = power.get("data")
+            result["manager_power_categories"] = power.get("categories")
+        except (IndexError, AttributeError):
+            pass
+
     return result
 
 

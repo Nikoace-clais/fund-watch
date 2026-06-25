@@ -43,6 +43,8 @@ export type FundDetailData = {
   sector?: string
   subscription_rate?: number
   subscription_rate_discounted?: number
+  manager_power_scores?: number[] | null
+  manager_power_categories?: string[] | null
 }
 
 export type NavPoint = { date: string; nav: number; accNav?: number; dailyReturn?: number }
