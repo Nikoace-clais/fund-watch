@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Sparkles, ExternalLink, Plus, Loader2, AlertCircle } from 'lucide-react'
-import { fetchAiSectors, aiSelectFunds, batchAddFunds } from '@/lib/api'
+import { fetchAiSectors, streamAiSelect, batchAddFunds } from '@/lib/api'
 import type { AiFundRec } from '@/lib/api'
 import { useQuery } from '@tanstack/react-query'
 import { useInvalidatePortfolio } from '@/lib/queries'
@@ -115,27 +115,33 @@ export function AiSelect() {
   const [theme, setTheme] = useState('')
   const [emphasis, setEmphasis] = useState(EMPHASIS_OPTIONS[0].value)
   const [loading, setLoading] = useState(false)
+  const [steps, setSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<{ summary: string; recommendations: AiFundRec[] } | null>(null)
 
   async function handleSelect() {
     if (!theme) return
     setLoading(true)
+    setSteps([])
     setError(null)
     setResult(null)
-    try {
-      const res = await aiSelectFunds(theme, emphasis, {
+    await streamAiSelect(
+      theme,
+      emphasis,
+      {
         provider: providerConfig.provider,
         api_key: providerConfig.api_key || undefined,
         base_url: providerConfig.base_url || undefined,
         model: providerConfig.model || undefined,
-      })
-      setResult(res)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'AI 选基失败，请重试')
-    } finally {
-      setLoading(false)
-    }
+        analysis_model: providerConfig.analysis_model || undefined,
+      },
+      {
+        onStep: (text) => setSteps((prev) => [...prev, text]),
+        onResult: (data) => { setResult(data); setSteps([]) },
+        onError: (text) => setError(text),
+      },
+    )
+    setLoading(false)
   }
 
   async function handleAdd(code: string) {
@@ -221,6 +227,22 @@ export function AiSelect() {
           )}
         </button>
       </div>
+
+      {/* Progress steps */}
+      {loading && steps.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-2">
+          {steps.map((s, i) => (
+            <div key={i} className="flex items-center gap-2 text-sm text-slate-600">
+              <span className="text-green-500 shrink-0">✓</span>
+              <span>{s}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2 text-sm text-blue-600">
+            <span className="inline-block animate-spin shrink-0">⟳</span>
+            <span>分析中…</span>
+          </div>
+        </div>
+      )}
 
       {/* Error */}
       {error && (

@@ -284,12 +284,52 @@ export type AiProviderParams = {
   api_key?: string
   base_url?: string
   model?: string
+  analysis_model?: string
 }
 
-export function aiSelectFunds(theme: string, emphasis: string, providerParams: AiProviderParams) {
-  return request<AiSelectResponse>('/api/ai/select', {
+export type AiStreamHandlers = {
+  onStep: (text: string) => void
+  onResult: (data: AiSelectResponse) => void
+  onError: (text: string) => void
+}
+
+/** Stream agentic AI fund selection via SSE. Resolves when the stream ends. */
+export async function streamAiSelect(
+  theme: string,
+  emphasis: string,
+  providerParams: AiProviderParams,
+  handlers: AiStreamHandlers,
+): Promise<void> {
+  const res = await fetch(`${API}/api/ai/select/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ theme, emphasis, ...providerParams }),
   })
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}))
+    handlers.onError(err.detail || `HTTP ${res.status}`)
+    return
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() ?? ''
+    for (const part of parts) {
+      const line = part.trim()
+      if (!line.startsWith('data:')) continue
+      try {
+        const event = JSON.parse(line.slice('data:'.length).trim())
+        if (event.type === 'step')   handlers.onStep(event.text)
+        if (event.type === 'result') handlers.onResult(event.data)
+        if (event.type === 'error')  handlers.onError(event.text)
+      } catch {
+        // malformed chunk, skip
+      }
+    }
+  }
 }

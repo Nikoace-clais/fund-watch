@@ -1,11 +1,12 @@
 """AI-powered fund selection endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 from ..fund_source import _SECTOR_KEYWORDS
 from ..schemas import AiSelectPayload
-from ..services.ai_select import select_funds
+from ..services.ai_agent import agent_loop
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -16,24 +17,25 @@ async def list_sectors() -> dict:
     return {"sectors": list(_SECTOR_KEYWORDS)}
 
 
-@router.post("/select")
-async def ai_select(payload: AiSelectPayload) -> dict:
-    """AI-powered fund selection.
+@router.post("/select/stream")
+async def ai_select_stream(payload: AiSelectPayload) -> StreamingResponse:
+    """Agentic AI fund selection with SSE streaming.
 
-    Body: {"theme": "半导体", "emphasis": "稳健低回撤"}
-    Returns ranked recommendations with AI reasoning.
+    Yields text/event-stream events:
+      {"type":"step",   "text":"..."}      — progress update
+      {"type":"result", "data":{...}}      — final recommendations
+      {"type":"error",  "text":"..."}      — fatal error
     """
-    try:
-        result = await select_funds(
+    return StreamingResponse(
+        agent_loop(
             payload.theme,
             payload.emphasis,
             provider=payload.provider,
             api_key=payload.api_key,
             base_url=payload.base_url,
             model=payload.model,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI 选基失败: {e}")
-    return result
+            analysis_model=payload.analysis_model,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

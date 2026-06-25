@@ -5,15 +5,17 @@ export type AiProvider = 'anthropic' | 'openai'
 export type ProviderConfig = {
   provider: AiProvider
   api_key: string
-  base_url: string  // used only for openai-compatible
-  model: string     // used only for openai-compatible
+  base_url: string        // used only for openai-compatible
+  model: string           // orchestration model (e.g. deepseek-v4-flash)
+  analysis_model: string  // analysis model (e.g. deepseek-v4-pro); empty = same as model
 }
 
 const DEFAULTS: ProviderConfig = {
   provider: 'anthropic',
   api_key: '',
   base_url: 'https://api.openai.com/v1',
-  model: 'gpt-4o',
+  model: 'deepseek-v4-flash',
+  analysis_model: '',
 }
 
 const STORAGE_KEY = 'fund-watch:ai-provider-config'

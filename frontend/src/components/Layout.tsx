@@ -174,12 +174,22 @@ function AiConfigSetting() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">模型</label>
+                <label className="block text-xs text-slate-500 mb-1">编排模型</label>
                 <input
                   type="text"
                   value={draft.model}
                   onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
-                  placeholder="gpt-4o"
+                  placeholder="deepseek-v4-flash"
+                  className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">分析模型（留空=同上）</label>
+                <input
+                  type="text"
+                  value={draft.analysis_model}
+                  onChange={(e) => setDraft((d) => ({ ...d, analysis_model: e.target.value }))}
+                  placeholder="deepseek-v4-pro"
                   className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
