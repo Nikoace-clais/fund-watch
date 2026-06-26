@@ -12,6 +12,8 @@ import { StageReturns } from '@/components/fund-detail/StageReturns'
 import { AssetAllocationCard } from '@/components/fund-detail/AssetAllocationCard'
 import { TopHoldings } from '@/components/fund-detail/TopHoldings'
 import { TransactionsCard } from '@/components/fund-detail/TransactionsCard'
+import { SignalGauge } from '@/components/fund-detail/SignalGauge'
+import { RiskMetrics } from '@/components/fund-detail/RiskMetrics'
 import { useInvalidatePortfolio } from '@/lib/queries'
 import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
@@ -165,10 +167,12 @@ export function FundDetail() {
         <div className="lg:col-span-2 space-y-6">
           <NavChart history={history} transactions={transactions} />
           <StageReturns detail={detail} />
+          <RiskMetrics history={history} detail={detail} />
         </div>
 
         {/* Right column */}
         <div className="space-y-6">
+          <SignalGauge history={history} />
           <AssetAllocationCard detail={detail} />
           <TopHoldings holdings={holdings} />
         </div>

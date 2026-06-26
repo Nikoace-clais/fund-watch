@@ -1,50 +1,5 @@
 import type { NavPoint, FundDetailData } from '@/lib/api'
-
-// ── Computation ──────────────────────────────────────────────────────────────
-
-function computeMetrics(history: NavPoint[]) {
-  // Use last 252 trading days; skip null dailyReturn points
-  const slice = history.slice(-252)
-  const returns = slice
-    .filter(p => p.dailyReturn != null)
-    .map(p => p.dailyReturn! / 100)  // decimal form
-
-  if (returns.length < 30) return null
-
-  // Annualized return from NAV endpoints
-  const navSlice = slice.filter(p => p.nav != null)
-  const startNav = navSlice[0]?.nav
-  const endNav = navSlice[navSlice.length - 1]?.nav
-  const n = returns.length
-  const annualReturn =
-    startNav && endNav
-      ? (Math.pow(endNav / startNav, 252 / n) - 1) * 100
-      : null
-
-  // Annualized volatility
-  const mean = returns.reduce((a, b) => a + b, 0) / n
-  const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / n
-  const annualVol = Math.sqrt(variance * 252) * 100
-
-  // Max drawdown
-  let peak = -Infinity
-  let maxDD = 0
-  for (const p of navSlice) {
-    if (p.nav! > peak) peak = p.nav!
-    const dd = (peak - p.nav!) / peak
-    if (dd > maxDD) maxDD = dd
-  }
-  const maxDrawdown = maxDD * 100
-
-  // Sharpe ratio (risk-free = 2% annual)
-  const RISK_FREE = 2
-  const sharpe =
-    annualReturn != null && annualVol > 0
-      ? (annualReturn - RISK_FREE) / annualVol
-      : null
-
-  return { annualReturn, annualVol, maxDrawdown, sharpe }
-}
+import { computeRiskMetrics } from '@/lib/fund-metrics'
 
 // ── Emoji grading ─────────────────────────────────────────────────────────────
 
@@ -112,7 +67,7 @@ function PowerBar({ label, score }: { label: string; score: number }) {
 }
 
 export function RiskMetrics({ history, detail }: Props) {
-  const metrics = computeMetrics(history)
+  const metrics = computeRiskMetrics(history)
 
   const fmt = (v: number | null, suffix = '%') =>
     v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}${suffix}` : '--'
