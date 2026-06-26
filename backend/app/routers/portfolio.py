@@ -1,4 +1,5 @@
 """Portfolio aggregation: summary and value history."""
+
 from __future__ import annotations
 
 import asyncio
@@ -23,15 +24,23 @@ router = APIRouter(tags=["portfolio"])
 async def portfolio_summary() -> dict:
     """Aggregated portfolio stats: total value, daily return, cumulative return."""
     with get_conn() as conn:
-        funds = [dict(r) for r in conn.execute(
-            "SELECT code, name, holding_shares FROM funds WHERE holding_shares IS NOT NULL ORDER BY created_at DESC"
-        ).fetchall()]
+        funds = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT code, name, holding_shares FROM funds"
+                " WHERE holding_shares IS NOT NULL ORDER BY created_at DESC"
+            ).fetchall()
+        ]
 
     t0 = time.perf_counter()
 
     # I2 fix: batch-compute PnL for all funds in ONE DB connection before async gather
     pnl_map: dict[str, dict] = {}
-    codes = [f["code"] for f in funds if f.get("holding_shares") and Decimal(f["holding_shares"]) > 0]
+    codes = [
+        f["code"]
+        for f in funds
+        if f.get("holding_shares") and Decimal(f["holding_shares"]) > 0
+    ]
     if codes:
         with get_conn() as conn:
             for code in codes:
@@ -51,13 +60,17 @@ async def portfolio_summary() -> dict:
             return None
         daily_change = Decimal(str(q.get("gszzl"))) if q.get("gszzl") else Decimal("0")
         current_value = (shares * nav).quantize(Decimal("0.01"))
-        daily_return_val = (
-            current_value * daily_change / 100
-        ).quantize(Decimal("0.01"))
+        daily_return_val = (current_value * daily_change / 100).quantize(
+            Decimal("0.01")
+        )
         pnl = pnl_map.get(code, {})
         cost = Decimal(pnl.get("total_cost", "0"))
         total_return = current_value - cost
-        return_rate = (total_return / cost * 100).quantize(Decimal("0.01")) if cost > 0 else Decimal("0")
+        return_rate = (
+            (total_return / cost * 100).quantize(Decimal("0.01"))
+            if cost > 0
+            else Decimal("0")
+        )
         return {
             "code": code,
             "name": f["name"] or q.get("name"),
@@ -75,7 +88,11 @@ async def portfolio_summary() -> dict:
         }
 
     results = await asyncio.gather(*[_fetch_fund_item(f) for f in funds])
-    logger.info("portfolio_summary: %d funds fetched in %.3fs", len(funds), time.perf_counter() - t0)
+    logger.info(
+        "portfolio_summary: %d funds fetched in %.3fs",
+        len(funds),
+        time.perf_counter() - t0,
+    )
 
     items: list[dict] = []
     total_current = Decimal("0")
@@ -97,8 +114,10 @@ async def portfolio_summary() -> dict:
     # Funds with no transactions: COALESCE(imported_holding_amount, amount) as base,
     # fetch realtime gszzl to compute today's daily return.
     with get_conn() as conn:
-        notx_funds = [dict(r) for r in conn.execute(
-            """SELECT code, name,
+        notx_funds = [
+            dict(r)
+            for r in conn.execute(
+                """SELECT code, name,
                       COALESCE(imported_holding_amount, amount) AS holding_amount,
                       imported_cumulative_return,
                       imported_holding_return
@@ -106,7 +125,8 @@ async def portfolio_summary() -> dict:
                WHERE holding_shares IS NULL
                  AND COALESCE(imported_holding_amount, amount) > 0
                ORDER BY created_at DESC"""
-        ).fetchall()]
+            ).fetchall()
+        ]
 
     async def _fetch_notx(f: dict) -> dict:
         code = f["code"]
@@ -118,9 +138,9 @@ async def portfolio_summary() -> dict:
             gszzl = q.get("gszzl")
             if gszzl is not None:
                 daily_change = Decimal(str(gszzl))
-                daily_return_val = (
-                    amount * daily_change / 100
-                ).quantize(Decimal("0.01"))
+                daily_return_val = (amount * daily_change / 100).quantize(
+                    Decimal("0.01")
+                )
         except Exception:
             pass
         cum_ret = f.get("imported_cumulative_return")
@@ -136,7 +156,9 @@ async def portfolio_summary() -> dict:
             "total_cost": None,
             "total_return": str(Decimal(str(hold_ret or 0)).quantize(Decimal("0.01"))),
             "return_rate": None,
-            "imported_cumulative_return": str(Decimal(str(cum_ret or 0)).quantize(Decimal("0.01"))),
+            "imported_cumulative_return": str(
+                Decimal(str(cum_ret or 0)).quantize(Decimal("0.01"))
+            ),
             "is_imported": True,
             "_amount_d": amount,
             "_daily_return_d": daily_return_val,
@@ -150,8 +172,12 @@ async def portfolio_summary() -> dict:
 
     # I1 fix: rate uses only tx-based funds (those with known cost basis)
     total_return_rate = (
-        (total_current_with_cost - total_cost) / total_cost * 100
-    ).quantize(Decimal("0.01")) if total_cost > 0 else Decimal("0")
+        ((total_current_with_cost - total_cost) / total_cost * 100).quantize(
+            Decimal("0.01")
+        )
+        if total_cost > 0
+        else Decimal("0")
+    )
 
     return {
         "total_current": str(total_current),
@@ -166,23 +192,26 @@ async def portfolio_summary() -> dict:
 
 @router.get("/api/portfolio/history")
 async def portfolio_history(limit: int = 90) -> dict:
-    """Portfolio value history: holdings at each date × confirmed NAV, plus today's estimate.
+    """Portfolio value history: holdings × NAV per date, plus today's estimate.
 
-    For funds with transactions: per-date shares reconstructed from transaction log × NAV.
-    For imported funds without transactions: implied shares = holding_amount / latest_nav × NAV.
+    Funds with transactions: per-date shares from transaction log × NAV.
+    Imported funds without transactions: implied shares = holding_amount / latest_nav.
     """
     limit = max(1, min(limit, 365))
 
     with get_conn() as conn:
         transactions = [
-            dict(r) for r in conn.execute(
-                "SELECT code, direction, trade_date, shares FROM transactions ORDER BY trade_date ASC"
+            dict(r)
+            for r in conn.execute(
+                "SELECT code, direction, trade_date, shares"
+                " FROM transactions ORDER BY trade_date ASC"
             ).fetchall()
         ]
         current_holdings = {
             r["code"]: Decimal(r["holding_shares"])
             for r in conn.execute(
-                "SELECT code, holding_shares FROM funds WHERE holding_shares IS NOT NULL"
+                "SELECT code, holding_shares FROM funds"
+                " WHERE holding_shares IS NOT NULL"
             ).fetchall()
             if r["holding_shares"] and Decimal(r["holding_shares"]) > 0
         }
@@ -190,10 +219,10 @@ async def portfolio_history(limit: int = 90) -> dict:
         imported_funds: dict[str, Decimal] = {
             r["code"]: Decimal(str(r["holding_amount"]))
             for r in conn.execute(
-                """SELECT code, COALESCE(imported_holding_amount, amount) AS holding_amount
-                   FROM funds
-                   WHERE holding_shares IS NULL
-                     AND COALESCE(imported_holding_amount, amount) > 0"""
+                "SELECT code,"
+                " COALESCE(imported_holding_amount, amount) AS holding_amount"
+                " FROM funds WHERE holding_shares IS NULL"
+                " AND COALESCE(imported_holding_amount, amount) > 0"
             ).fetchall()
         }
 
@@ -250,7 +279,9 @@ async def portfolio_history(limit: int = 90) -> dict:
         else:
             # I6 fix: log and collect codes excluded due to missing NAV data
             excluded_codes.append(code)
-            logger.warning("portfolio_history: no NAV data for %s, excluded from chart", code)
+            logger.warning(
+                "portfolio_history: no NAV data for %s, excluded from chart", code
+            )
 
     all_dates = sorted({d for nd in nav_map.values() for d in nd})
     all_dates = all_dates[-limit:]
@@ -282,9 +313,9 @@ async def portfolio_history(limit: int = 90) -> dict:
         if total > 0:
             date_totals[target_date] = total
 
-    # Today's estimated point using gsz; only insert if date not already in confirmed data
-    CST = timezone(timedelta(hours=8))
-    today = datetime.now(CST).strftime("%Y-%m-%d")
+    # Use gsz for today's estimate; setdefault skips if confirmed NAV already present
+    cst = timezone(timedelta(hours=8))
+    today = datetime.now(cst).strftime("%Y-%m-%d")
     today_total = sum(
         (
             current_holdings[code] * gsz
@@ -313,5 +344,7 @@ async def portfolio_history(limit: int = 90) -> dict:
         ],
     }
     if excluded_codes:
-        result["excluded_codes"] = excluded_codes  # I6: surface missing-NAV funds to caller
+        result["excluded_codes"] = (
+            excluded_codes  # I6: surface missing-NAV funds to caller
+        )
     return result

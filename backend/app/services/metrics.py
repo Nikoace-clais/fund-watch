@@ -1,4 +1,5 @@
 """Simple metric helpers computed from NAV history."""
+
 from __future__ import annotations
 
 

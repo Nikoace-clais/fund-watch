@@ -1,4 +1,5 @@
 """Transaction log endpoints: CRUD, CSV import, and P&L."""
+
 from __future__ import annotations
 
 import csv
@@ -46,10 +47,14 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
         shares_d = Decimal(payload.shares)
         fee_d = Decimal(payload.fee)
     except InvalidOperation:
-        raise HTTPException(status_code=400, detail="invalid numeric value for nav/shares/fee")
+        raise HTTPException(
+            status_code=400, detail="invalid numeric value for nav/shares/fee"
+        )
 
     if nav_d <= 0 or shares_d <= 0 or fee_d < 0:
-        raise HTTPException(status_code=400, detail="nav and shares must be positive, fee non-negative")
+        raise HTTPException(
+            status_code=400, detail="nav and shares must be positive, fee non-negative"
+        )
 
     amount = str((nav_d * shares_d).quantize(Decimal("0.01")))
     now = datetime.now(timezone.utc).isoformat()
@@ -64,17 +69,37 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
             tx_rows = conn.execute(
                 "SELECT direction, shares FROM transactions WHERE code=?", (code,)
             ).fetchall()
-            current_holding = sum(
-                Decimal(r["shares"]) if r["direction"] == "buy" else -Decimal(r["shares"])
-                for r in tx_rows
-            ) if tx_rows else Decimal("0")
+            current_holding = (
+                sum(
+                    Decimal(r["shares"])
+                    if r["direction"] == "buy"
+                    else -Decimal(r["shares"])
+                    for r in tx_rows
+                )
+                if tx_rows
+                else Decimal("0")
+            )
             if shares_d > current_holding:
-                raise HTTPException(status_code=400, detail="insufficient shares to sell")
+                raise HTTPException(
+                    status_code=400, detail="insufficient shares to sell"
+                )
 
         conn.execute(
-            """INSERT INTO transactions(code,direction,trade_date,nav,shares,amount,fee,note,source,created_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (code, payload.direction, payload.trade_date, payload.nav, payload.shares, amount, payload.fee, payload.note, payload.source, now),
+            "INSERT INTO transactions"
+            "(code,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                code,
+                payload.direction,
+                payload.trade_date,
+                payload.nav,
+                payload.shares,
+                amount,
+                payload.fee,
+                payload.note,
+                payload.source,
+                now,
+            ),
         )
         recompute_holding_shares(conn, code)
         conn.commit()
@@ -85,7 +110,9 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
 @router.delete("/api/transactions/{tx_id}")
 def delete_transaction(tx_id: int) -> dict:
     with get_conn() as conn:
-        row = conn.execute("SELECT code, direction, shares FROM transactions WHERE id=?", (tx_id,)).fetchone()
+        row = conn.execute(
+            "SELECT code, direction, shares FROM transactions WHERE id=?", (tx_id,)
+        ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="transaction not found")
         code = row["code"]
@@ -95,13 +122,21 @@ def delete_transaction(tx_id: int) -> dict:
             tx_rows = conn.execute(
                 "SELECT direction, shares FROM transactions WHERE code=?", (code,)
             ).fetchall()
-            current_holding = sum(
-                Decimal(r["shares"]) if r["direction"] == "buy" else -Decimal(r["shares"])
-                for r in tx_rows
-            ) if tx_rows else Decimal("0")
+            current_holding = (
+                sum(
+                    Decimal(r["shares"])
+                    if r["direction"] == "buy"
+                    else -Decimal(r["shares"])
+                    for r in tx_rows
+                )
+                if tx_rows
+                else Decimal("0")
+            )
             after_shares = current_holding - Decimal(row["shares"])
             if after_shares < 0:
-                raise HTTPException(status_code=400, detail="删除失败：会导致持有份额为负")
+                raise HTTPException(
+                    status_code=400, detail="删除失败：会导致持有份额为负"
+                )
 
         conn.execute("DELETE FROM transactions WHERE id=?", (tx_id,))
         recompute_holding_shares(conn, code)
@@ -121,7 +156,9 @@ async def get_pnl(code: str) -> dict:
         pass
 
     with get_conn() as conn:
-        tx_count = conn.execute("SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)).fetchone()["c"]
+        tx_count = conn.execute(
+            "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
+        ).fetchone()["c"]
         if tx_count == 0:
             return {"code": code, "has_transactions": False}
         pnl = compute_pnl(conn, code, current_nav)
@@ -159,18 +196,36 @@ async def import_csv(file: UploadFile = File(...)) -> dict:
 
                 # Dedup check
                 dup = conn.execute(
-                    """SELECT id FROM transactions
-                       WHERE code=? AND direction=? AND trade_date=? AND nav=? AND shares=?""",
-                    (c, direction, row["trade_date"].strip(), str(nav_d), str(shares_d)),
+                    "SELECT id FROM transactions WHERE code=?"
+                    " AND direction=? AND trade_date=? AND nav=? AND shares=?",
+                    (
+                        c,
+                        direction,
+                        row["trade_date"].strip(),
+                        str(nav_d),
+                        str(shares_d),
+                    ),
                 ).fetchone()
                 if dup:
                     skipped += 1
                     continue
 
                 conn.execute(
-                    """INSERT INTO transactions(code,direction,trade_date,nav,shares,amount,fee,note,source,created_at)
-                       VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (c, direction, row["trade_date"].strip(), str(nav_d), str(shares_d), amount, str(fee_d), note or None, "csv", now),
+                    "INSERT INTO transactions"
+                    "(code,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        c,
+                        direction,
+                        row["trade_date"].strip(),
+                        str(nav_d),
+                        str(shares_d),
+                        amount,
+                        str(fee_d),
+                        note or None,
+                        "csv",
+                        now,
+                    ),
                 )
                 affected_codes.add(c)
                 imported += 1

@@ -60,7 +60,7 @@ def _run_ocr_lines(image_path: Path) -> list[str]:
         lines: list[str] = []
         step = _SLICE_HEIGHT - _SLICE_OVERLAP
         for top in range(0, h, step):
-            chunk = img[top:top + _SLICE_HEIGHT]
+            chunk = img[top : top + _SLICE_HEIGHT]
             if chunk.shape[0] < _MIN_TAIL:
                 break
             lines = _merge_overlap(lines, _ocr_image(chunk))
@@ -74,8 +74,8 @@ AMOUNT_RE = re.compile(r"[¥￥]?\s*([\d,]+\.\d{1,2})\s*元?")
 # Common fund name patterns — match Chinese fund names in OCR text
 # e.g. "易方达优质精选混合(QDII)", "招商中证白酒指数A", "广发科技先锋混合"
 FUND_NAME_RE = re.compile(
-    r"([\u4e00-\u9fff]{2,}(?:[\u4e00-\u9fff]+)+"   # 2+ groups of Chinese chars
-    r"(?:\([A-Za-z]+\)|[A-Za-z])?)"                   # optional (QDII) or trailing A/C
+    r"([\u4e00-\u9fff]{2,}(?:[\u4e00-\u9fff]+)+"  # 2+ groups of Chinese chars
+    r"(?:\([A-Za-z]+\)|[A-Za-z])?)"  # optional (QDII) or trailing A/C
 )
 
 # Transaction OCR patterns
@@ -83,7 +83,9 @@ BUY_RE = re.compile(r"买入|申购|定投|认购", re.IGNORECASE)
 SELL_RE = re.compile(r"卖出|赎回|转出", re.IGNORECASE)
 DATE_RE = re.compile(r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})")
 NAV_RE = re.compile(r"净值[：:]*\s*([\d.]+)|单位净值[：:]*\s*([\d.]+)|([\d]\.\d{4})")
-SHARES_RE = re.compile(r"份额[：:]*\s*([\d,.]+)|确认份额[：:]*\s*([\d,.]+)|([\d,]+\.\d{2,4})\s*份")
+SHARES_RE = re.compile(
+    r"份额[：:]*\s*([\d,.]+)|确认份额[：:]*\s*([\d,.]+)|([\d,]+\.\d{2,4})\s*份"
+)
 
 
 def extract_fund_codes_from_image(image_path: Path) -> tuple[str, list[str]]:
@@ -151,11 +153,45 @@ def extract_fund_names_from_text(raw_text: str) -> list[str]:
     Returns deduplicated list of candidate fund name strings.
     """
     # Keywords that indicate a fund name
-    fund_keywords = ("混合", "指数", "债券", "货币", "股票", "增长", "价值", "优选",
-                     "精选", "成长", "稳健", "增强", "量化", "ETF", "LOF", "FOF",
-                     "QDII", "联接", "定开", "定期", "灵活", "配置", "收益", "回报",
-                     "先锋", "科技", "医疗", "消费", "新能源", "半导体", "白酒",
-                     "红利", "养老", "平衡", "主题", "行业", "策略")
+    fund_keywords = (
+        "混合",
+        "指数",
+        "债券",
+        "货币",
+        "股票",
+        "增长",
+        "价值",
+        "优选",
+        "精选",
+        "成长",
+        "稳健",
+        "增强",
+        "量化",
+        "ETF",
+        "LOF",
+        "FOF",
+        "QDII",
+        "联接",
+        "定开",
+        "定期",
+        "灵活",
+        "配置",
+        "收益",
+        "回报",
+        "先锋",
+        "科技",
+        "医疗",
+        "消费",
+        "新能源",
+        "半导体",
+        "白酒",
+        "红利",
+        "养老",
+        "平衡",
+        "主题",
+        "行业",
+        "策略",
+    )
 
     candidates: list[str] = []
     seen: set[str] = set()
@@ -168,7 +204,7 @@ def extract_fund_names_from_text(raw_text: str) -> list[str]:
         has_keyword = any(kw in line for kw in fund_keywords)
         if not has_keyword:
             continue
-        # Extract the name part — take the whole line as candidate if it looks like a fund name
+        # Take the whole line as the name candidate, then clean it up
         # Clean up common prefixes/suffixes
         name = line.strip()
         # Remove leading numbers, dots, punctuation

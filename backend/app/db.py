@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Generator
 
@@ -29,10 +30,9 @@ def get_conn() -> Generator[sqlite3.Connection, None, None]:
 
 def prune_old_snapshots(keep_days: int = 30) -> int:
     """Delete fund_snapshots older than keep_days. Returns number of rows deleted."""
-    cutoff = (
-        __import__("datetime").datetime.utcnow()
-        - __import__("datetime").timedelta(days=keep_days)
-    ).strftime("%Y-%m-%dT%H:%M:%S")
+    cutoff = (datetime.utcnow() - timedelta(days=keep_days)).strftime(
+        "%Y-%m-%dT%H:%M:%S"
+    )
     with get_conn() as conn:
         cur = conn.execute(
             "DELETE FROM fund_snapshots WHERE captured_at < ?", (cutoff,)
@@ -57,7 +57,6 @@ def init_db() -> None:
             ("sector", "TEXT"),
             ("amount", "REAL"),
             ("percentage", "REAL"),
-            ("amount_mode", "TEXT DEFAULT 'manual'"),
             ("holding_shares", "TEXT"),
             ("imported_holding_amount", "REAL"),
             ("imported_cumulative_return", "REAL"),
@@ -85,9 +84,7 @@ def init_db() -> None:
             )
             """
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(code)"
-        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(code)")
 
         conn.execute(
             """
@@ -107,7 +104,8 @@ def init_db() -> None:
             "CREATE INDEX IF NOT EXISTS idx_snapshots_code ON fund_snapshots(code)"
         )
         conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_snapshots_code_id ON fund_snapshots(code, id DESC)"
+            "CREATE INDEX IF NOT EXISTS idx_snapshots_code_id"
+            " ON fund_snapshots(code, id DESC)"
         )
         conn.execute(
             """

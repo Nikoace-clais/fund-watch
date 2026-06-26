@@ -1,4 +1,5 @@
 """Market indices."""
+
 from __future__ import annotations
 
 import logging

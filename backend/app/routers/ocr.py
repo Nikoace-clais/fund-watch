@@ -1,4 +1,5 @@
 """Screenshot OCR endpoints (rapidocr)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -83,18 +84,21 @@ async def ocr_fund_code(file: UploadFile = File(...)) -> dict:
             if r["code"] in seen_codes:
                 continue
             seen_codes.add(r["code"])
-            name_matches.append({
-                "code": r["code"],
-                "name": r.get("name", ""),
-                "matched_keyword": name,
-                "type": r.get("type"),
-            })
+            name_matches.append(
+                {
+                    "code": r["code"],
+                    "name": r.get("name", ""),
+                    "matched_keyword": name,
+                    "type": r.get("type"),
+                }
+            )
     codes = codes + [m["code"] for m in name_matches]
 
     now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO ocr_records(image_name,raw_text,matched_codes,created_at) VALUES(?,?,?,?)",
+            "INSERT INTO ocr_records(image_name,raw_text,matched_codes,created_at)"
+            " VALUES(?,?,?,?)",
             (path.name, raw_text, json.dumps(codes, ensure_ascii=False), now),
         )
         conn.commit()

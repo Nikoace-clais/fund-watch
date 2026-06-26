@@ -1,4 +1,5 @@
 """Snapshot pulling and the in-process trading-hours scheduler."""
+
 from __future__ import annotations
 
 import asyncio
@@ -68,14 +69,19 @@ async def pull_all_snapshots() -> dict:
             inserted += 1
         conn.commit()
 
-    return {"ok": True, "codes": len(codes), "inserted": inserted, "captured_at": captured_at}
+    return {
+        "ok": True,
+        "codes": len(codes),
+        "inserted": inserted,
+        "captured_at": captured_at,
+    }
 
 
 async def snapshot_scheduler() -> None:
     """Background loop: pull snapshots every 5 min during trading hours.
     Also prunes snapshots older than 30 days once per day at startup and at midnight.
     """
-    await asyncio.sleep(15)          # startup buffer
+    await asyncio.sleep(15)  # startup buffer
     logger.info("cron: scheduler started (interval=5min, trading-hours only)")
     last_prune_day: int = -1
     while True:
@@ -97,8 +103,11 @@ async def snapshot_scheduler() -> None:
                 cron_state["last_pull_at"] = datetime.now(timezone.utc).isoformat()
                 cron_state["pull_count"] += 1
                 cron_state["last_error"] = None
-                logger.info("cron: pull done — inserted=%s, total=%d",
-                            result.get("inserted"), cron_state["pull_count"])
+                logger.info(
+                    "cron: pull done — inserted=%s, total=%d",
+                    result.get("inserted"),
+                    cron_state["pull_count"],
+                )
             except Exception as exc:
                 cron_state["last_error"] = str(exc)
                 logger.error("cron: pull failed — %s", exc)

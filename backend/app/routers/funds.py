@@ -1,4 +1,5 @@
 """Fund pool management, search, and per-fund data endpoints."""
+
 from __future__ import annotations
 
 import asyncio
@@ -22,7 +23,12 @@ from ..fund_source import (
     fetch_realtime_estimate,
     search_fund_by_name,
 )
-from ..schemas import AddFundPayload, BatchFundItem, BatchFundsPayload, UpdateFundPayload
+from ..schemas import (
+    AddFundPayload,
+    BatchFundItem,
+    BatchFundsPayload,
+    UpdateFundPayload,
+)
 from ..services.holdings import recompute_holding_shares
 
 logger = logging.getLogger(__name__)
@@ -33,14 +39,23 @@ router = APIRouter(tags=["funds"])
 @router.get("/api/funds")
 def list_funds() -> dict:
     with get_conn() as conn:
-        rows = conn.execute("SELECT code, name, sector, holding_shares, created_at FROM funds ORDER BY created_at DESC").fetchall()
+        rows = conn.execute(
+            "SELECT code, name, sector, holding_shares, created_at"
+            " FROM funds ORDER BY created_at DESC"
+        ).fetchall()
     return {"items": [dict(r) for r in rows]}
 
 
 @router.get("/api/funds/overview")
 async def funds_overview() -> dict:
     with get_conn() as conn:
-        funds = [dict(r) for r in conn.execute("SELECT code, name, sector, holding_shares, created_at FROM funds ORDER BY created_at DESC").fetchall()]
+        funds = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT code, name, sector, holding_shares, created_at"
+                " FROM funds ORDER BY created_at DESC"
+            ).fetchall()
+        ]
 
     t0 = time.perf_counter()
 
@@ -48,10 +63,13 @@ async def funds_overview() -> dict:
         code = f["code"]
         with get_conn() as conn:
             row = conn.execute(
-                "SELECT code,name,gsz,gszzl,gztime,captured_at FROM fund_snapshots WHERE code=? ORDER BY id DESC LIMIT 1",
+                "SELECT code,name,gsz,gszzl,gztime,captured_at"
+                " FROM fund_snapshots WHERE code=? ORDER BY id DESC LIMIT 1",
                 (code,),
             ).fetchone()
-            tx_count = conn.execute("SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)).fetchone()["c"]
+            tx_count = conn.execute(
+                "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
+            ).fetchone()["c"]
 
         latest_snapshot = dict(row) if row else None
 
@@ -72,7 +90,11 @@ async def funds_overview() -> dict:
         return {"fund": f, "latest": latest_snapshot, "has_transactions": tx_count > 0}
 
     items = list(await asyncio.gather(*[_fetch_one(f) for f in funds]))
-    logger.info("funds_overview: %d funds fetched in %.3fs", len(funds), time.perf_counter() - t0)
+    logger.info(
+        "funds_overview: %d funds fetched in %.3fs",
+        len(funds),
+        time.perf_counter() - t0,
+    )
     return {"items": items}
 
 
@@ -87,29 +109,10 @@ async def search_funds(q: str = "") -> dict:
     try:
         results = await search_fund_by_name(q, limit=20)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"基金搜索源（eastmoney）请求失败: {exc}")
-    return {"results": results}
-
-
-@router.post("/api/funds/recalc-percentage")
-def recalc_percentage() -> dict:
-    with get_conn() as conn:
-        rows = conn.execute("SELECT code, amount FROM funds").fetchall()
-        total = sum(
-            (Decimal(str(r["amount"])) for r in rows if r["amount"]), Decimal("0")
+        raise HTTPException(
+            status_code=502, detail=f"基金搜索源（eastmoney）请求失败: {exc}"
         )
-        if total > 0:
-            for r in rows:
-                pct = (
-                    (Decimal(str(r["amount"])) / total * 100).quantize(Decimal("0.01"))
-                    if r["amount"] else None
-                )
-                conn.execute(
-                    "UPDATE funds SET percentage=? WHERE code=?",
-                    (float(pct) if pct is not None else None, r["code"]),
-                )
-        conn.commit()
-    return {"ok": True, "total": float(total)}
+    return {"results": results}
 
 
 @router.post("/api/funds/batch")
@@ -132,9 +135,14 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                 actual_name: str = info.get("name") or ""
                 provided_name: str = item.name.strip()  # type: ignore[union-attr]
                 # Fuzzy check: provided name should be a substring or vice versa
-                if actual_name and provided_name not in actual_name and actual_name not in provided_name:
+                if (
+                    actual_name
+                    and provided_name not in actual_name
+                    and actual_name not in provided_name
+                ):
                     warnings.append(
-                        f"代码 {item.code} 对应基金名称为「{actual_name}」，与提供的「{provided_name}」不一致，已按代码导入"
+                        f"代码 {item.code} 对应名称为「{actual_name}」"
+                        f"，与「{provided_name}」不一致，已按代码导入"
                     )
             except Exception:
                 pass
@@ -147,7 +155,9 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
             try:
                 results = await search_fund_by_name(item.name.strip(), limit=1)  # type: ignore[union-attr]
                 if results:
-                    resolved_items.append(item.model_copy(update={"code": results[0]["code"]}))
+                    resolved_items.append(
+                        item.model_copy(update={"code": results[0]["code"]})
+                    )
                 else:
                     unresolved.append(item.name)  # type: ignore[arg-type]
             except Exception:
@@ -157,7 +167,9 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
             unresolved.append(str(item.code or item.name or "unknown"))
 
     # Merge codes list and funds list into a unified map: code -> extra data
-    extra: dict[str, BatchFundItem] = {item.code.strip(): item for item in resolved_items}  # type: ignore[union-attr]
+    extra: dict[str, BatchFundItem] = {
+        item.code.strip(): item for item in resolved_items
+    }  # type: ignore[union-attr]
     all_codes: list[str] = list(extra.keys())
     for c in payload.codes:
         c = c.strip()
@@ -185,8 +197,14 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
             return code, None, None
 
     info_results = await asyncio.gather(*[_safe_fetch_info(c) for c in valid])
-    fund_info_map: dict[str, tuple[str | None, str | None]] = {r[0]: (r[1], r[2]) for r in info_results}
-    logger.info("add_funds_batch: fetched info for %d codes in %.3fs", len(valid), time.perf_counter() - t_batch)
+    fund_info_map: dict[str, tuple[str | None, str | None]] = {
+        r[0]: (r[1], r[2]) for r in info_results
+    }
+    logger.info(
+        "add_funds_batch: fetched info for %d codes in %.3fs",
+        len(valid),
+        time.perf_counter() - t_batch,
+    )
 
     actually_added: list[str] = []
     with get_conn() as conn:
@@ -195,7 +213,9 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
 
             # Reject codes that don't correspond to a real fund (no name returned)
             item = extra.get(code)
-            existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+            existing = conn.execute(
+                "SELECT code FROM funds WHERE code=?", (code,)
+            ).fetchone()
             if not existing and not name:
                 invalid.append(code)
                 continue
@@ -204,9 +224,11 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                 updates = []
                 params: list = []
                 if name:
-                    updates.append("name=?"); params.append(name)
+                    updates.append("name=?")
+                    params.append(name)
                 if sector:
-                    updates.append("sector=?"); params.append(sector)
+                    updates.append("sector=?")
+                    params.append(sector)
                 amt = amounts.get(code)
                 if amt is not None:
                     updates.append("amount=?")
@@ -223,21 +245,30 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                         params.append(float(item.holding_return))
                 if updates:
                     params.append(code)
-                    conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
+                    conn.execute(
+                        f"UPDATE funds SET {','.join(updates)} WHERE code=?", params
+                    )
             else:
                 conn.execute(
                     """INSERT INTO funds
                        (code,name,sector,amount,imported_holding_amount,imported_cumulative_return,imported_holding_return,created_at)
                        VALUES(?,?,?,?,?,?,?,?)""",
-                    (code, name, sector,
-                     float(amounts[code]) if code in amounts else None,
-                     float(item.holding_amount)
-                     if item and item.holding_amount is not None else None,
-                     float(item.cumulative_return)
-                     if item and item.cumulative_return is not None else None,
-                     float(item.holding_return)
-                     if item and item.holding_return is not None else None,
-                     now),
+                    (
+                        code,
+                        name,
+                        sector,
+                        float(amounts[code]) if code in amounts else None,
+                        float(item.holding_amount)
+                        if item and item.holding_amount is not None
+                        else None,
+                        float(item.cumulative_return)
+                        if item and item.cumulative_return is not None
+                        else None,
+                        float(item.holding_return)
+                        if item and item.holding_return is not None
+                        else None,
+                        now,
+                    ),
                 )
         conn.commit()
 
@@ -271,10 +302,20 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
             amount_val = (nav_val * shares_val).quantize(Decimal("0.01"))
             with get_conn() as conn:
                 conn.execute(
-                    """INSERT INTO transactions(code,direction,trade_date,nav,shares,amount,fee,source,created_at)
-                       VALUES(?,?,?,?,?,?,?,?,?)""",
-                    (code, "buy", latest["date"], str(nav_val), str(shares_val),
-                     str(amount_val), "0", "import", tx_now),
+                    "INSERT INTO transactions"
+                    "(code,direction,trade_date,nav,shares,amount,fee,source,created_at)"
+                    " VALUES(?,?,?,?,?,?,?,?,?)",
+                    (
+                        code,
+                        "buy",
+                        latest["date"],
+                        str(nav_val),
+                        str(shares_val),
+                        str(amount_val),
+                        "0",
+                        "import",
+                        tx_now,
+                    ),
                 )
                 recompute_holding_shares(conn, code)
                 conn.commit()
@@ -284,7 +325,12 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     if nav_skipped:
         warnings.extend(nav_skipped)
 
-    return {"ok": True, "added": actually_added, "invalid": invalid, "warnings": warnings}
+    return {
+        "ok": True,
+        "added": actually_added,
+        "invalid": invalid,
+        "warnings": warnings,
+    }
 
 
 @router.post("/api/funds/{code}")
@@ -305,17 +351,31 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     amount = float(payload.amount) if payload and payload.amount is not None else None
 
     with get_conn() as conn:
-        existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+        existing = conn.execute(
+            "SELECT code FROM funds WHERE code=?", (code,)
+        ).fetchone()
         if existing:
             if amount is not None:
                 conn.execute("UPDATE funds SET amount=? WHERE code=?", (amount, code))
-            if sector and not conn.execute("SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL", (code,)).fetchone():
-                conn.execute("UPDATE funds SET sector=?, name=? WHERE code=?", (sector, name, code))
+            if (
+                sector
+                and not conn.execute(
+                    "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
+                    (code,),
+                ).fetchone()
+            ):
+                conn.execute(
+                    "UPDATE funds SET sector=?, name=? WHERE code=?",
+                    (sector, name, code),
+                )
         else:
             if name is None:
-                raise HTTPException(status_code=400, detail="无法获取基金信息，请确认基金代码有效后重试")
+                raise HTTPException(
+                    status_code=400, detail="无法获取基金信息，请确认基金代码有效后重试"
+                )
             conn.execute(
-                "INSERT INTO funds(code,name,sector,amount,created_at) VALUES(?,?,?,?,?)",
+                "INSERT INTO funds(code,name,sector,amount,created_at)"
+                " VALUES(?,?,?,?,?)",
                 (code, name, sector, amount, now),
             )
         conn.commit()
@@ -331,9 +391,13 @@ def update_fund(code: str, payload: UpdateFundPayload) -> dict:
 
         # If has transactions, reject manual shares edit
         if payload.holding_shares is not None:
-            tx_count = conn.execute("SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)).fetchone()["c"]
+            tx_count = conn.execute(
+                "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
+            ).fetchone()["c"]
             if tx_count > 0:
-                raise HTTPException(status_code=400, detail="有交易记录时不可手动编辑份额")
+                raise HTTPException(
+                    status_code=400, detail="有交易记录时不可手动编辑份额"
+                )
             try:
                 shares_d = Decimal(payload.holding_shares)
             except InvalidOperation:
@@ -362,7 +426,9 @@ def delete_fund(code: str) -> dict:
     """Remove a fund from the watchlist."""
     code = validate_code(code)
     with get_conn() as conn:
-        existing = conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone()
+        existing = conn.execute(
+            "SELECT code FROM funds WHERE code=?", (code,)
+        ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="fund not found")
         conn.execute("DELETE FROM fund_snapshots WHERE code=?", (code,))

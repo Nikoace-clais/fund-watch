@@ -1,4 +1,5 @@
 """Realtime quotes, intraday snapshots, and scheduler status."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
