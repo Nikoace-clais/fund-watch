@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Sparkles, ExternalLink, Plus, Loader2, AlertCircle } from 'lucide-react'
-import { fetchAiSectors, streamAiSelect, batchAddFunds } from '@/lib/api'
+import { streamAiSelect, batchAddFunds } from '@/lib/api'
 import type { AiFundRec } from '@/lib/api'
-import { useQuery } from '@tanstack/react-query'
 import { useInvalidatePortfolio } from '@/lib/queries'
 import { useProviderConfig } from '@/lib/provider-config'
 import { cn } from '@/lib/utils'
@@ -14,6 +13,18 @@ const EMPHASIS_OPTIONS = [
   { value: '进攻高收益', label: '进攻高收益', desc: '追求长期高弹性收益' },
   { value: '低费率', label: '低费率', desc: '降低买入成本' },
   { value: '老将经理', label: '老将经理', desc: '偏好经验丰富的基金经理' },
+]
+
+// ponytail: 静态分组，合并了相近板块（医疗/医药、芯片/半导体、光伏/新能源等）
+// 被合并的词仍可通过下方自由输入框命中后端子串匹配
+const SECTOR_GROUPS = [
+  { group: '消费医药', items: ['白酒', '食品饮料', '消费', '医药', '农业'] },
+  { group: '科技成长', items: ['半导体', '科技', '互联网', '传媒', '新能源', '汽车'] },
+  { group: '金融周期', items: ['银行', '证券', '金融', '地产', '煤炭', '钢铁', '有色', '化工', '电力'] },
+  { group: '主题策略', items: ['军工', '环保', '养老', '红利'] },
+  { group: '宽基指数', items: ['沪深300', '中证500', '中证1000', '创业板', '科创'] },
+  { group: '海外 / QDII', items: ['港股', '纳斯达克', '标普', 'QDII'] },
+  { group: '固收 / 货币', items: ['债', '货币'] },
 ]
 
 function RecCard({ rec, onAdd }: { rec: AiFundRec; onAdd: (code: string) => Promise<void> }) {
@@ -104,13 +115,6 @@ function Metric({ label, value, className }: { label: string; value: string; cla
 export function AiSelect() {
   const invalidatePortfolio = useInvalidatePortfolio()
   const { config: providerConfig, isConfigured } = useProviderConfig()
-  const { data: sectorsData } = useQuery({
-    queryKey: ['ai', 'sectors'],
-    queryFn: fetchAiSectors,
-    select: (r) => r.sectors,
-    staleTime: Infinity,
-  })
-  const sectors = sectorsData ?? []
 
   const [theme, setTheme] = useState('')
   const [emphasis, setEmphasis] = useState(EMPHASIS_OPTIONS[0].value)
@@ -149,6 +153,13 @@ export function AiSelect() {
     invalidatePortfolio()
   }
 
+  function handleReset() {
+    setResult(null)
+    setError(null)
+  }
+
+  const collapsed = loading || !!result
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -170,67 +181,101 @@ export function AiSelect() {
         </div>
       )}
 
-      {/* Form card */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
-        {/* Theme selector */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">板块 / 主题</label>
-          <select
-            value={theme}
-            onChange={(e) => setTheme(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="">请选择板块…</option>
-            {sectors.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Emphasis selector */}
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">着重点</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {EMPHASIS_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setEmphasis(opt.value)}
-                className={cn(
-                  'flex flex-col items-start p-3 rounded-lg border text-left transition-colors text-sm',
-                  emphasis === opt.value
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 hover:border-slate-300 text-slate-700',
-                )}
-              >
-                <span className="font-medium">{opt.label}</span>
-                <span className="text-[11px] mt-0.5 opacity-70">{opt.desc}</span>
-              </button>
-            ))}
+      {/* Form card — collapsed to summary strip while loading/showing results */}
+      {collapsed ? (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-3 flex items-center justify-between gap-4">
+          <div className="text-sm text-slate-600 min-w-0">
+            <span className="text-slate-400">板块：</span>
+            <span className="font-medium text-slate-800">{theme}</span>
+            <span className="mx-2 text-slate-300">·</span>
+            <span className="text-slate-400">着重点：</span>
+            <span className="font-medium text-slate-800">{emphasis}</span>
           </div>
-        </div>
-
-        <button
-          onClick={handleSelect}
-          disabled={!theme || loading}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
           {loading ? (
-            <>
+            <div className="flex items-center gap-1.5 shrink-0 text-sm text-blue-600">
               <Loader2 className="h-4 w-4 animate-spin" />
-              AI 分析中，约 10-30 秒…
-            </>
+              分析中…
+            </div>
           ) : (
-            <>
-              <Sparkles className="h-4 w-4" />
-              开始 AI 选基
-            </>
+            <button
+              onClick={handleReset}
+              className="shrink-0 text-sm text-slate-500 hover:text-slate-800 transition-colors"
+            >
+              重新选择
+            </button>
           )}
-        </button>
-      </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+          {/* Theme selector */}
+          <div className="space-y-3">
+            <label className="block text-sm font-medium text-slate-700">板块 / 主题</label>
+            {SECTOR_GROUPS.map(({ group, items }) => (
+              <div key={group}>
+                <p className="text-[11px] text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{group}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {items.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      onClick={() => setTheme(theme === item ? '' : item)}
+                      className={cn(
+                        'px-3 py-1 rounded-full text-sm border transition-colors',
+                        theme === item
+                          ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+                          : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                      )}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <input
+              value={theme}
+              onChange={(e) => setTheme(e.target.value)}
+              placeholder="或输入自定义主题，如：人工智能、黄金、医疗…"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Emphasis selector */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">着重点</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {EMPHASIS_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setEmphasis(opt.value)}
+                  className={cn(
+                    'flex flex-col items-start p-3 rounded-lg border text-left transition-colors text-sm',
+                    emphasis === opt.value
+                      ? 'border-blue-500 bg-blue-50 text-blue-700'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-700',
+                  )}
+                >
+                  <span className="font-medium">{opt.label}</span>
+                  <span className="text-[11px] mt-0.5 opacity-70">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={handleSelect}
+            disabled={!theme || loading}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Sparkles className="h-4 w-4" />
+            开始 AI 选基
+          </button>
+        </div>
+      )}
 
       {/* Progress steps */}
       {loading && steps.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-2">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-2 max-h-60 overflow-y-auto">
           {steps.map((s, i) => (
             <div key={i} className="flex items-center gap-2 text-sm text-slate-600">
               <span className="text-green-500 shrink-0">✓</span>
@@ -238,7 +283,7 @@ export function AiSelect() {
             </div>
           ))}
           <div className="flex items-center gap-2 text-sm text-blue-600">
-            <span className="inline-block animate-spin shrink-0">⟳</span>
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
             <span>分析中…</span>
           </div>
         </div>

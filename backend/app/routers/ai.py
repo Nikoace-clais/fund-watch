@@ -1,20 +1,14 @@
 """AI-powered fund selection endpoints."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from ..fund_source import _SECTOR_KEYWORDS
 from ..schemas import AiSelectPayload
 from ..services.ai_agent import agent_loop
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
-
-
-@router.get("/sectors")
-async def list_sectors() -> dict:
-    """Return the list of supported sector keywords."""
-    return {"sectors": list(_SECTOR_KEYWORDS)}
 
 
 @router.post("/select/stream")

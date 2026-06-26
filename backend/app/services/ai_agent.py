@@ -242,68 +242,33 @@ _P_REC: dict[str, Any] = {
     "required": ["rankings", "summary"],
 }
 
+
+def _oai_tool(name: str, desc: str, params: dict) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "function": {"name": name, "description": desc, "parameters": params},
+    }
+
+
+def _ant_tool(name: str, desc: str, params: dict) -> dict[str, Any]:
+    return {"name": name, "description": desc, "input_schema": params}
+
+
 # Phase 1 orchestration tools (no fund_recommendations — ranking is NOT done here)
-_ORCH_OAI: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_funds",
-            "description": "搜索板块候选基金，返回代码/名称/近1年收益",
-            "parameters": _P_SEARCH,
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_fund_metrics",
-            "description": "获取单只基金的最大回撤、经理、规模、费率",
-            "parameters": _P_METRICS,
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "finish_research",
-            "description": "数据收集完成，结束收集阶段",
-            "parameters": _P_FINISH,
-        },
-    },
+_ORCH_DEFS = [
+    ("search_funds", "搜索板块候选基金，返回代码/名称/近1年收益", _P_SEARCH),
+    ("get_fund_metrics", "获取单只基金的最大回撤、经理、规模、费率", _P_METRICS),
+    ("finish_research", "数据收集完成，结束收集阶段", _P_FINISH),
 ]
-_ORCH_ANT: list[dict[str, Any]] = [
-    {
-        "name": "search_funds",
-        "description": "搜索板块候选基金，返回代码/名称/近1年收益",
-        "input_schema": _P_SEARCH,
-    },
-    {
-        "name": "get_fund_metrics",
-        "description": "获取单只基金的最大回撤、经理、规模、费率",
-        "input_schema": _P_METRICS,
-    },
-    {
-        "name": "finish_research",
-        "description": "数据收集完成，结束收集阶段",
-        "input_schema": _P_FINISH,
-    },
-]
+_ORCH_OAI: list[dict[str, Any]] = [_oai_tool(*t) for t in _ORCH_DEFS]
+_ORCH_ANT: list[dict[str, Any]] = [_ant_tool(*t) for t in _ORCH_DEFS]
 
 # Phase 2/3 analysis tools (ranking only)
 _ANALYSIS_OAI: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "fund_recommendations",
-            "description": "输出排名推荐结果",
-            "parameters": _P_REC,
-        },
-    },
+    _oai_tool("fund_recommendations", "输出排名推荐结果", _P_REC)
 ]
 _ANALYSIS_ANT: list[dict[str, Any]] = [
-    {
-        "name": "fund_recommendations",
-        "description": "输出排名推荐结果",
-        "input_schema": _P_REC,
-    },
+    _ant_tool("fund_recommendations", "输出排名推荐结果", _P_REC)
 ]
 
 
@@ -352,6 +317,15 @@ async def _call_oai(
         messages=messages,
     )
     msg = resp.choices[0].message
+    u = resp.usage
+    logger.debug(
+        "[oai] cache_hit=%s cache_miss=%s output=%s content=%s tool_calls=%s",
+        getattr(u, "prompt_cache_hit_tokens", None),
+        getattr(u, "prompt_cache_miss_tokens", None),
+        u.completion_tokens if u else None,
+        msg.content,
+        [tc.function.name for tc in (msg.tool_calls or [])],
+    )
     tcs = [
         _TC(id=tc.id, name=tc.function.name, args=_parse(tc.function.arguments))
         for tc in (msg.tool_calls or [])
@@ -389,6 +363,7 @@ async def _call_ant(
     if system:
         kw["system"] = system
     resp = await client.messages.create(**kw)
+    logger.debug("[ant] stop_reason=%s content=%s", resp.stop_reason, resp.content)
     tcs = [
         _TC(id=b.id, name=b.name, args=dict(b.input))
         for b in resp.content
@@ -436,7 +411,8 @@ def _system_orch(theme: str, emphasis: str) -> str:
         "你是一位专业的A股公募基金研究助手，负责数据收集。\n"
         f"用户需要「{theme}」板块、着重「{emphasis}」的基金推荐。\n\n"
         "工具使用规范：\n"
-        "1. 先调用 search_funds 找候选基金；\n"
+        f"1. 先调用 search_funds 找候选基金"
+        f"（theme 只能是「{theme}」，禁止搜索其他板块）；\n"
         "2. 对最值得关注的候选逐一调用 get_fund_metrics 获取详细指标；\n"
         "3. 收集足够数据后，调用 finish_research 结束收集阶段。\n"
         "注意：你只负责数据收集，最终排名由专门的分析模型完成。"
@@ -475,6 +451,30 @@ def _review_msg(initial: dict[str, Any]) -> str:
         "无需再调用其他工具，直接用 fund_recommendations 输出最终结果。\n\n"
         + json.dumps(initial, ensure_ascii=False, indent=2)
     )
+
+
+# ── One-shot LLM call (phases 2 & 3 share this pattern) ──────────────────────
+
+
+async def _single_call(
+    system: str,
+    user: str,
+    tools: list,
+    is_oai: bool,
+    api_key: str,
+    base_url: str | None,
+    model: str | None,
+) -> list[_TC]:
+    if is_oai:
+        msgs: list[Any] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ]
+        _, tcs = await _call_oai(msgs, tools, api_key, base_url, model)
+    else:
+        msgs = [{"role": "user", "content": user}]
+        _, tcs = await _call_ant(msgs, tools, api_key, model, system=system)
+    return tcs
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -551,6 +551,10 @@ async def _agent_loop_inner(
             )
             return
 
+        # Lock theme to user's selection — LLM must not search other sectors
+        for tc in tcs:
+            if tc.name == "search_funds":
+                tc.args["theme"] = theme
         results = await asyncio.gather(*[_dispatch(tc, store) for tc in tcs])
 
         finished = False
@@ -579,20 +583,9 @@ async def _agent_loop_inner(
     table = _store_to_table(store)
     anlys_sys = _system_analysis(theme, emphasis)
     anlys_user = _user_analysis(table, theme, emphasis)
-
-    if is_oai:
-        anlys_msgs: list[Any] = [
-            {"role": "system", "content": anlys_sys},
-            {"role": "user", "content": anlys_user},
-        ]
-        _, anlys_tcs = await _call_oai(
-            anlys_msgs, anlys_tools, api_key, base_url, a_model
-        )
-    else:
-        anlys_msgs = [{"role": "user", "content": anlys_user}]
-        _, anlys_tcs = await _call_ant(
-            anlys_msgs, anlys_tools, api_key, a_model, system=anlys_sys
-        )
+    anlys_tcs = await _single_call(
+        anlys_sys, anlys_user, anlys_tools, is_oai, api_key, base_url, a_model
+    )
 
     initial_args: dict[str, Any] = {}
     for tc in anlys_tcs:
@@ -616,18 +609,15 @@ async def _agent_loop_inner(
         "recommendations": merged_initial,
     }
     rev_sys = "你是基金推荐审核员，核查排名与用户着重点的一致性后输出最终结果。"
-
-    if is_oai:
-        rev_msgs: list[Any] = [
-            {"role": "system", "content": rev_sys},
-            {"role": "user", "content": _review_msg(initial_data)},
-        ]
-        _, rev_tcs = await _call_oai(rev_msgs, anlys_tools, api_key, base_url, a_model)
-    else:
-        rev_msgs = [{"role": "user", "content": _review_msg(initial_data)}]
-        _, rev_tcs = await _call_ant(
-            rev_msgs, anlys_tools, api_key, a_model, system=rev_sys
-        )
+    rev_tcs = await _single_call(
+        rev_sys,
+        _review_msg(initial_data),
+        anlys_tools,
+        is_oai,
+        api_key,
+        base_url,
+        a_model,
+    )
 
     for tc in rev_tcs:
         if tc.name == "fund_recommendations":
