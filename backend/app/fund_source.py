@@ -5,14 +5,15 @@ import json
 import logging
 import re
 import time
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
-# ── Simple in-process TTL cache for NAV history (avoids re-fetching on range changes) ──
+import httpx
+
+# In-process TTL cache for NAV history (avoids re-fetching on range changes)
 _nav_history_cache: dict[str, tuple[float, list]] = {}  # code -> (fetched_at, data)
 _NAV_CACHE_TTL = 600  # 10 minutes
-
-import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -101,12 +102,47 @@ PINGZHONG_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
 
 # Common fund sector keywords to extract from fund name
 _SECTOR_KEYWORDS = [
-    "白酒", "医药", "医疗", "新能源", "光伏", "半导体", "芯片", "科技",
-    "消费", "食品饮料", "军工", "国防", "银行", "证券", "金融", "地产",
-    "房地产", "互联网", "传媒", "农业", "煤炭", "钢铁", "有色",
-    "化工", "汽车", "电力", "环保", "养老", "红利", "沪深300",
-    "中证500", "中证1000", "创业板", "科创", "恒生", "港股", "纳斯达克",
-    "标普", "QDII", "债", "货币",
+    "白酒",
+    "医药",
+    "医疗",
+    "新能源",
+    "光伏",
+    "半导体",
+    "芯片",
+    "科技",
+    "消费",
+    "食品饮料",
+    "军工",
+    "国防",
+    "银行",
+    "证券",
+    "金融",
+    "地产",
+    "房地产",
+    "互联网",
+    "传媒",
+    "农业",
+    "煤炭",
+    "钢铁",
+    "有色",
+    "化工",
+    "汽车",
+    "电力",
+    "环保",
+    "养老",
+    "红利",
+    "沪深300",
+    "中证500",
+    "中证1000",
+    "创业板",
+    "科创",
+    "恒生",
+    "港股",
+    "纳斯达克",
+    "标普",
+    "QDII",
+    "债",
+    "货币",
 ]
 
 
@@ -140,15 +176,15 @@ async def fetch_fund_info(code: str) -> dict[str, Any]:
 
 HOLDINGS_URL = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10"
 
-# Parse: <td>序号</td><td>股票代码</td><td>股票名称</td>...<td>占净值比例</td>...<td>持仓市值(万元)</td>
+# Parse: 序号 / 股票代码 / 股票名称 / 占净值比例 / 持股数 / 持仓市值
 _HOLDING_ROW_RE = re.compile(
-    r"<tr><td>\d+</td>"                         # 序号
-    r"<td>.*?>([\d]{6})</a></td>"                # 股票代码
-    r"<td class='tol'>.*?>([^<]+)</a></td>"      # 股票名称
+    r"<tr><td>\d+</td>"  # 序号
+    r"<td>.*?>([\d]{6})</a></td>"  # 股票代码
+    r"<td class='tol'>.*?>([^<]+)</a></td>"  # 股票名称
     r".*?"
-    r"<td class='tor'>([\d.]+)%</td>"            # 占净值比例
-    r"<td class='tor'>([\d,.]+)</td>"             # 持股数(万股)
-    r"<td class='tor'>([\d,.]+)</td></tr>",       # 持仓市值(万元)
+    r"<td class='tor'>([\d.]+)%</td>"  # 占净值比例
+    r"<td class='tor'>([\d,.]+)</td>"  # 持股数(万股)
+    r"<td class='tor'>([\d,.]+)</td></tr>",  # 持仓市值(万元)
     re.DOTALL,
 )
 
@@ -172,13 +208,15 @@ async def fetch_fund_holdings(code: str) -> list[dict[str, Any]]:
         if stock_code in seen:
             break  # Hit second quarter data, stop
         seen.add(stock_code)
-        holdings.append({
-            "stock_code": stock_code,
-            "stock_name": stock_name,
-            "percentage": _to_float(pct_str),
-            "shares_wan": _to_float(shares_str.replace(",", "")),
-            "value_wan": _to_float(value_str.replace(",", "")),
-        })
+        holdings.append(
+            {
+                "stock_code": stock_code,
+                "stock_name": stock_name,
+                "percentage": _to_float(pct_str),
+                "shares_wan": _to_float(shares_str.replace(",", "")),
+                "value_wan": _to_float(value_str.replace(",", "")),
+            }
+        )
     return holdings
 
 
@@ -212,13 +250,16 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
     result["fund_type"] = m.group(1) if m else None
 
     # Manager — extract name from the first manager entry
-    m = re.search(r'"name":"([^"]*)"', text[text.find("Data_currentFundManager"):] if "Data_currentFundManager" in text else "")
+    m = re.search(
+        r'"name":"([^"]*)"',
+        text[text.find("Data_currentFundManager") :]
+        if "Data_currentFundManager" in text
+        else "",
+    )
     result["manager"] = m.group(1) if m else None
 
     # Fund size (亿) from fluctuation scale: series is [{y:374.98, mom:"..."}, ...]
-    m = re.search(r'var Data_fluctuationScale\s*=\s*(\{.*?\});\s*var', text, re.DOTALL)
-    if not m:
-        m = re.search(r'var Data_fluctuationScale\s*=\s*(\{.*?\});', text, re.DOTALL)
+    m = re.search(r"var Data_fluctuationScale\s*=\s*(\{.*?\});", text, re.DOTALL)
     if m:
         try:
             scale_data = json.loads(m.group(1))
@@ -246,15 +287,14 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
     ]:
         m = re.search(rf'var {var_name}\s*=\s*"([^"]*)"', text)
         if not m:
-            m = re.search(rf'var {var_name}\s*=\s*([^;]*);', text)
+            m = re.search(rf"var {var_name}\s*=\s*([^;]*);", text)
         result[key] = _to_float(m.group(1).strip('"')) if m else None
 
     # Asset allocation: Data_assetAllocation
-    m = re.search(r'var Data_assetAllocation\s*=\s*(\{.*?\});', text, re.DOTALL)
+    m = re.search(r"var Data_assetAllocation\s*=\s*(\{.*?\});", text, re.DOTALL)
     if m:
         try:
             alloc_data = json.loads(m.group(1))
-            categories = alloc_data.get("categories", [])
             series = alloc_data.get("series", [])
             # Build allocation: each series item is {name, data: [...]}
             # data aligns with categories (dates), take latest value
@@ -305,7 +345,7 @@ def _extract_js_array(text: str, var_name: str) -> list | None:
     eq_idx = sub.find("=")
     if eq_idx < 0:
         return None
-    rest = sub[eq_idx + 1:].strip()
+    rest = sub[eq_idx + 1 :].strip()
     if not rest.startswith("["):
         return None
     depth = 0
@@ -358,11 +398,13 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
         for item in raw[-limit:]:
             ts = item.get("x", 0)
             date_str = dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
-            history.append({
-                "date": date_str,
-                "nav": item.get("y"),
-                "dailyReturn": item.get("equityReturn"),
-            })
+            history.append(
+                {
+                    "date": date_str,
+                    "nav": item.get("y"),
+                    "dailyReturn": item.get("equityReturn"),
+                }
+            )
 
     # Data_ACWorthTrend = [[timestamp, accNav], ...]
     acc_map: dict[str, float] = {}
@@ -371,7 +413,9 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
         for item in raw_acc[-limit:]:
             try:
                 ts, acc = item[0], item[1]
-                date_str = dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
+                date_str = (
+                    dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
+                )
                 if date_str:
                     acc_map[date_str] = acc
             except (IndexError, TypeError):
@@ -416,7 +460,7 @@ def _parse_sina_hq_response(text: str) -> list[dict[str, Any]]:
     var hq_str_sh000001="上证指数,previous_close,open,current,high,low,...";
 
     HK stock format (hk prefix):
-    var hq_str_hkHSI="HSI,name,previous_close,open,high,low,current,change,change_percent,...";
+    var hq_str_hkHSI="HSI,name,prev_close,open,high,low,current,change,change_pct,...";
 
     US index format (gb_ prefix):
     var hq_str_gb_$dji="name,current,change_percent,datetime,change,...";
@@ -469,14 +513,18 @@ def _parse_sina_hq_response(text: str) -> list[dict[str, Any]]:
             continue
 
         _cent = Decimal("0.01")
-        results.append({
-            "code": index_info["code"],
-            "name": index_info["name"],
-            "region": index_info["region"],
-            "value": float(current.quantize(_cent, rounding=ROUND_HALF_UP)),
-            "change": float(change.quantize(_cent, rounding=ROUND_HALF_UP)),
-            "change_percent": float(change_percent.quantize(_cent, rounding=ROUND_HALF_UP)),
-        })
+        results.append(
+            {
+                "code": index_info["code"],
+                "name": index_info["name"],
+                "region": index_info["region"],
+                "value": float(current.quantize(_cent, rounding=ROUND_HALF_UP)),
+                "change": float(change.quantize(_cent, rounding=ROUND_HALF_UP)),
+                "change_percent": float(
+                    change_percent.quantize(_cent, rounding=ROUND_HALF_UP)
+                ),
+            }
+        )
 
     return results
 
@@ -542,13 +590,79 @@ async def fetch_nav_on_date(code: str, date: str) -> float | None:
 
 
 RANKING_URL = "https://fund.eastmoney.com/data/rankhandler.aspx"
+_MOBILE_RANKING_URL = "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNRank"
+_MOBILE_RANKING_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 Chrome/91.0",
+}
+# mobile API 不支持按类型过滤，对特殊板块做名称兜底
+_MOBILE_TYPE_KW = {"qdii": "QDII", "zq": "债", "hb": "货币"}
 _RANKING_HEADERS = {
     "Referer": "https://fund.eastmoney.com/data/fundranking.html",
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
     ),
+    "Accept": "text/javascript, application/javascript, */*; q=0.01",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "X-Requested-With": "XMLHttpRequest",
 }
+
+
+async def _fetch_ranking_mobile(fund_type: str, page_size: int) -> list[dict[str, Any]]:
+    """Fallback ranking via eastmoney mobile API (FundMNRank).
+
+    Limitations vs primary source:
+    - Returns at most ~30 results regardless of page_size (API cap).
+    - Does not support fund_type filtering; for qdii/zq/hb we filter by name,
+      which may return 0 if none appear in the top results.
+    - fee field is not available (None).
+    - size is derived from ENDNAV (元 ÷ 1e8 → 亿).
+    """
+    params = {
+        "pageIndex": "1",
+        "pageSize": str(page_size),
+        "plat": "Android",
+        "appType": "ttjj",
+        "product": "EFund",
+        "Version": "6.3.8",
+        "deviceid": "fwefwef123",
+        "SortColumn": "SYL_1N",
+        "Sort": "desc",
+    }
+    t0 = time.perf_counter()
+    client = _get_client()
+    resp = await _get_with_retry(
+        client, _MOBILE_RANKING_URL, params=params, headers=_MOBILE_RANKING_HEADERS
+    )
+    data = resp.json()
+    elapsed = time.perf_counter() - t0
+    logger.debug(
+        "_fetch_ranking_mobile [ft=%s, n=%s] %.3fs", fund_type, page_size, elapsed
+    )
+
+    datas: list[dict] = data.get("Datas") or []
+    kw = _MOBILE_TYPE_KW.get(fund_type)
+    if kw:
+        datas = [f for f in datas if kw in f.get("SHORTNAME", "")]
+
+    results: list[dict[str, Any]] = []
+    for f in datas:
+        code = f.get("FCODE", "")
+        if not re.match(r"^\d{6}$", code):
+            continue
+        end_nav = _to_float(f.get("ENDNAV"))
+        results.append(
+            {
+                "code": code,
+                "name": f.get("SHORTNAME", ""),
+                "one_year_return": _to_float(f.get("SYL_1N")),
+                "three_year_return": _to_float(f.get("SYL_3N")),
+                "fee": None,
+                "size": end_nav / 1e8 if end_nav else None,
+            }
+        )
+    return results
 
 
 async def fetch_fund_ranking(
@@ -557,8 +671,8 @@ async def fetch_fund_ranking(
     """Fetch fund ranking from eastmoney.
 
     fund_type: 'gp' (股票型), 'hh' (混合型), 'zq' (债券型)
-    Returns list of dicts with code, name, one_year_return, three_year_return, fee, size.
-    Sorted by 3-year return descending by the remote API.
+    Returns list of dicts: code, name, one_year_return, three_year_return, fee, size.
+    Falls back to mobile API if primary source returns -999 or empty.
     """
     from datetime import date, timedelta
 
@@ -567,48 +681,192 @@ async def fetch_fund_ranking(
     ed = today.isoformat()
 
     params = {
-        "op": "ph", "dt": "kf", "ft": fund_type, "rs": "", "gs": "0",
-        "sc": "3yzf", "st": "desc",
-        "sd": sd, "ed": ed,
-        "pi": "1", "pn": str(page_size), "dx": "1",
-        "qdii": "", "tabSubtype": ",,,,,",
+        "op": "ph",
+        "dt": "kf",
+        "ft": fund_type,
+        "rs": "",
+        "gs": "0",
+        "sc": "3yzf",
+        "st": "desc",
+        "sd": sd,
+        "ed": ed,
+        "pi": "1",
+        "pn": str(page_size),
+        "dx": "1",
+        "qdii": "",
+        "tabSubtype": ",,,,,",
     }
-    t0 = time.perf_counter()
+    try:
+        t0 = time.perf_counter()
+        client = _get_client()
+        resp = await _get_with_retry(
+            client, RANKING_URL, params=params, headers=_RANKING_HEADERS
+        )
+        text = resp.text
+        elapsed = time.perf_counter() - t0
+        logger.debug(
+            "fetch_fund_ranking [ft=%s, n=%s] %.3fs", fund_type, page_size, elapsed
+        )
+
+        if "ErrCode:-999" in text or "无访问权限" in text:
+            raise ValueError("rankhandler returned -999")
+
+        m = re.search(r"datas:\[(.+?)\]", text, re.DOTALL)
+        if not m:
+            raise ValueError("rankhandler: datas block not found")
+
+        raw_items = re.findall(r'"([^"]+)"', m.group(1))
+        results: list[dict[str, Any]] = []
+        for raw in raw_items:
+            fields = raw.split(",")
+            if len(fields) < 20:
+                continue
+            code = fields[0]
+            if not re.match(r"^\d{6}$", code):
+                continue
+            results.append(
+                {
+                    "code": code,
+                    "name": fields[1],
+                    "one_year_return": _to_float(fields[11]),
+                    "three_year_return": _to_float(fields[13]),
+                    "fee": fields[20] if len(fields) > 20 else None,
+                    "size": _to_float(fields[18]) if len(fields) > 18 else None,
+                }
+            )
+        if results:
+            return results
+        raise ValueError("rankhandler: parsed 0 results")
+
+    except Exception as exc:
+        logger.warning(
+            "fetch_fund_ranking primary failed (%s), falling back to mobile", exc
+        )
+        return await _fetch_ranking_mobile(fund_type, page_size)
+
+
+_EASTMONEY_DC = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+_DC_HEADERS = {"Referer": "https://data.eastmoney.com/"}
+
+
+def _recent_quarter_ends(n: int = 4) -> list[str]:
+    """Return last n quarter-end dates (YYYY-MM-DD) from newest to oldest."""
+    # ponytail: 最多试 n 个季度,避免硬编码报告期
+    today = date.today()
+    ends = []
+    # Enumerate candidate quarter ends backwards from today
+    y, m = today.year, today.month
+    for _ in range(n * 2):  # extra headroom; break when we have n
+        if m > 9:
+            qend = date(y, 12, 31)
+        elif m > 6:
+            qend = date(y, 9, 30)
+        elif m > 3:
+            qend = date(y, 6, 30)
+        else:
+            qend = date(y, 3, 31)
+        if qend < today and qend.strftime("%Y-%m-%d") not in ends:
+            ends.append(qend.strftime("%Y-%m-%d"))
+        # step back one quarter
+        if m <= 3:
+            y -= 1
+            m = 12
+        elif m <= 6:
+            m = 3
+        elif m <= 9:
+            m = 6
+        else:
+            m = 9
+        if len(ends) >= n:
+            break
+    return ends
+
+
+async def fetch_funds_holding_stock(
+    stock_code: str, limit: int = 50
+) -> dict[str, Any]:
+    """Return public funds holding *stock_code*, sorted by position value desc.
+
+    Queries eastmoney datacenter (RPT_MAINDATA_MAIN_POSITIONDETAILS) with
+    ORG_TYPE_CODE=1 (公募基金 only).  Tries recent quarter-ends newest-first;
+    falls back to the previous quarter when data is not yet published.
+
+    Returns:
+        {stock_code, stock_name, report_date, count, items[]}
+        Each item: {code, name, hold_market_cap, shares, netasset_ratio, company}
+    """
     client = _get_client()
-    resp = await _get_with_retry(client, RANKING_URL, params=params, headers=_RANKING_HEADERS)
-    text = resp.text
-    elapsed = time.perf_counter() - t0
-    logger.debug("fetch_fund_ranking [ft=%s, n=%s] %.3fs", fund_type, page_size, elapsed)
+    quarters = _recent_quarter_ends(4)
+    for qdate in quarters:
+        params = {
+            "sortColumns": "HOLD_MARKET_CAP",
+            "sortTypes": "-1",
+            "pageSize": str(limit),
+            "pageNumber": "1",
+            "reportName": "RPT_MAINDATA_MAIN_POSITIONDETAILS",
+            "columns": (
+                "SECURITY_CODE,SECURITY_NAME_ABBR,REPORT_DATE,"
+                "HOLDER_CODE,HOLDER_NAME,HOLD_MARKET_CAP,"
+                "TOTAL_SHARES,NETASSET_RATIO,PARENT_ORG_NAME"
+            ),
+            "filter": (
+                f'(SECURITY_CODE="{stock_code}")'
+                f"(REPORT_DATE='{qdate}')"
+                "(ORG_TYPE_CODE=\"1\")"
+            ),
+            "source": "WEB",
+            "client": "WEB",
+        }
+        t0 = time.perf_counter()
+        resp = await _get_with_retry(
+            client, _EASTMONEY_DC, params=params, headers=_DC_HEADERS
+        )
+        elapsed = time.perf_counter() - t0
+        logger.debug(
+            "fetch_funds_holding_stock [%s] %s %.3fs", stock_code, qdate, elapsed
+        )
+        data = resp.json()
+        result = data.get("result") or {}
+        if not result.get("count"):
+            continue  # try previous quarter
 
-    # Extract datas:[...] — each item is a comma-separated string
-    m = re.search(r'datas:\[(.+?)\]', text, re.DOTALL)
-    if not m:
-        return []
+        stock_name = None
+        items = []
+        for row in result.get("data") or []:
+            if stock_name is None:
+                stock_name = row.get("SECURITY_NAME_ABBR")
+            items.append(
+                {
+                    "code": row.get("HOLDER_CODE", ""),
+                    "name": row.get("HOLDER_NAME", ""),
+                    "hold_market_cap": row.get("HOLD_MARKET_CAP"),
+                    "shares": row.get("TOTAL_SHARES"),
+                    "netasset_ratio": row.get("NETASSET_RATIO"),
+                    "company": row.get("PARENT_ORG_NAME"),
+                }
+            )
+        return {
+            "stock_code": stock_code,
+            "stock_name": stock_name,
+            "report_date": qdate,
+            "count": result["count"],
+            "items": items,
+        }
 
-    raw_items = re.findall(r'"([^"]+)"', m.group(1))
-    results: list[dict[str, Any]] = []
-    for raw in raw_items:
-        fields = raw.split(",")
-        if len(fields) < 20:
-            continue
-        code = fields[0]
-        if not re.match(r"^\d{6}$", code):
-            continue
-        results.append({
-            "code": code,
-            "name": fields[1],
-            "one_year_return": _to_float(fields[11]),
-            "three_year_return": _to_float(fields[13]),
-            "fee": fields[20] if len(fields) > 20 else None,  # 折扣申购费率
-            "size": _to_float(fields[18]) if len(fields) > 18 else None,  # 规模(亿)
-        })
-    return results
+    # All quarters returned empty
+    return {
+        "stock_code": stock_code,
+        "stock_name": None,
+        "report_date": None,
+        "count": 0,
+        "items": [],
+    }
 
 
 async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, Any]]:
     """Search funds by name/keyword via eastmoney suggest API.
 
-    Returns list of {"code": "110011", "name": "易方达优质精选混合(QDII)", "type": "QDII-混合偏股"}.
+    Returns list of {"code": "110011", "name": "易方达优质精选(QDII)", "type": "QDII"}.
     """
     params = {"callback": "cb", "m": "1", "key": keyword}
     t0 = time.perf_counter()

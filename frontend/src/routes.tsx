@@ -48,6 +48,10 @@ export const router = createBrowserRouter([
         path: 'import',
         lazy: async () => ({ Component: (await import('./pages/ImportPage')).ImportPage }),
       },
+      {
+        path: 'stock-funds',
+        lazy: async () => ({ Component: (await import('./pages/StockFunds')).StockFunds }),
+      },
     ],
   },
 ])

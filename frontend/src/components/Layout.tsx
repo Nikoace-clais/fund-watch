@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router'
-import { LineChart, PieChart, TrendingUp, Home, Menu, X, Settings, Sparkles, Camera, Bot } from 'lucide-react'
+import { LineChart, PieChart, TrendingUp, Home, Menu, X, Settings, Sparkles, Camera, Bot, Search } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { useColor, type ColorScheme } from '@/lib/color-context'
@@ -12,6 +12,7 @@ const navigation = [
   { name: '行情数据', href: '/market', icon: TrendingUp },
   { name: 'AI 选基', href: '/ai-select', icon: Sparkles },
   { name: '截图导入', href: '/import', icon: Camera },
+  { name: '持仓反查', href: '/stock-funds', icon: Search },
 ]
 
 function ColorSchemeSetting() {

@@ -3,6 +3,7 @@
 Routes live in app/routers/*, business logic in app/services/*,
 request payload models in app/schemas.py.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,7 +17,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from .core import UPLOAD_DIR
 from .db import init_db
 from .fund_source import close_shared_client
-from .routers import ai, funds, health, market, ocr, portfolio, quotes, transactions
+from .routers import (
+    ai,
+    funds,
+    health,
+    market,
+    ocr,
+    portfolio,
+    quotes,
+    stocks,
+    transactions,
+)
 from .services.snapshots import snapshot_scheduler
 
 # ── Logging setup ────────────────────────────────────────────────────────────
@@ -28,6 +39,7 @@ logging.basicConfig(
 # Show DEBUG logs from fund_source so per-request timings are visible
 logging.getLogger("app.fund_source").setLevel(logging.DEBUG)
 logging.getLogger(__name__).setLevel(logging.DEBUG)
+logging.getLogger("app.services.ai_agent").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +63,12 @@ app = FastAPI(title="Fund Watch API", version="0.2.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:5174", "http://localhost:5174"],
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:5174",
+        "http://localhost:5174",
+    ],
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
@@ -63,7 +80,14 @@ async def log_requests(request: Request, call_next):
     response = await call_next(request)
     elapsed = time.perf_counter() - t0
     level = logging.WARNING if elapsed > 3.0 else logging.INFO
-    logger.log(level, "%s %s -> %d  %.3fs", request.method, request.url.path, response.status_code, elapsed)
+    logger.log(
+        level,
+        "%s %s -> %d  %.3fs",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed,
+    )
     return response
 
 
@@ -78,3 +102,4 @@ app.include_router(transactions.router)
 app.include_router(ai.router)
 app.include_router(ocr.router)
 app.include_router(market.router)
+app.include_router(stocks.router)

@@ -277,9 +277,6 @@ export type AiSelectResponse = {
   recommendations: AiFundRec[]
 }
 
-export function fetchAiSectors() {
-  return request<{ sectors: string[] }>('/api/ai/sectors')
-}
 
 export type AiProviderParams = {
   provider: string
@@ -334,4 +331,29 @@ export async function streamAiSelect(
       }
     }
   }
+}
+
+// ── Stock → Funds reverse lookup ────────────────────────────────────────────
+
+export type FundHolderItem = {
+  code: string
+  name: string
+  hold_market_cap: number | null
+  shares: number | null
+  netasset_ratio: number | null
+  company: string | null
+}
+
+export type StockFundsResult = {
+  stock_code: string
+  stock_name: string | null
+  report_date: string | null
+  count: number
+  items: FundHolderItem[]
+}
+
+export function fetchFundsHoldingStock(stockCode: string, limit = 50) {
+  return request<StockFundsResult>(
+    `/api/stocks/${encodeURIComponent(stockCode)}/funds?limit=${limit}`
+  )
 }
