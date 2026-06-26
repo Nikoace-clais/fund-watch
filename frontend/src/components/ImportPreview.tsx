@@ -1,21 +1,14 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo, type DragEvent, type ChangeEvent, type FC } from 'react';
 import { Upload, FileImage, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { ImportPreviewResult, ImportPreviewItem } from '../services/import';
-import {
-  previewImport,
-  confirmImport,
-  formatConfidence,
-  getConfidenceColor,
-  getConfidenceBadge,
-} from '../services/import';
+import { previewImport, confirmImport, formatConfidence, getConfidenceInfo } from '../services/import';
 
 interface ImportPreviewProps {
   onImport?: (codes: string[]) => void;
   initialData?: ImportPreviewResult;
 }
 
-export const ImportPreview: React.FC<ImportPreviewProps> = ({
+export const ImportPreview: FC<ImportPreviewProps> = ({
   onImport,
   initialData,
 }) => {
@@ -36,38 +29,29 @@ export const ImportPreview: React.FC<ImportPreviewProps> = ({
   });
   const [isConfirming, setIsConfirming] = useState(false);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
-  }, []);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-  }, []);
+  };
 
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      setIsDragging(false);
+  const handleDrop = async (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      await processFile(file);
+    }
+  };
 
-      const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('image/')) {
-        await processFile(file);
-      }
-    },
-    []
-  );
-
-  const handleFileSelect = useCallback(
-    async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        await processFile(file);
-      }
-    },
-    []
-  );
+  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await processFile(file);
+  };
 
   const processFile = async (file: File) => {
     setIsLoading(true);
@@ -332,8 +316,8 @@ interface ImportRowProps {
   onToggle: () => void;
 }
 
-const ImportRow: React.FC<ImportRowProps> = ({ fund, isSelected, onToggle }) => {
-  const badge = getConfidenceBadge(fund.confidence);
+const ImportRow: FC<ImportRowProps> = ({ fund, isSelected, onToggle }) => {
+  const ci = getConfidenceInfo(fund.confidence);
 
   return (
     <tr
@@ -358,22 +342,16 @@ const ImportRow: React.FC<ImportRowProps> = ({ fund, isSelected, onToggle }) => 
       <td className="px-4 py-3 text-sm font-mono text-slate-600">{fund.code}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{fund.type}</td>
       <td className="px-4 py-3">
-        <span className={`text-sm font-medium ${getConfidenceColor(fund.confidence)}`}>
+        <span className={`text-sm font-medium ${ci.color}`}>
           {formatConfidence(fund.confidence)}
         </span>
       </td>
       <td className="px-4 py-3">
-        <span className={`inline-flex items-center px-2 py-1 text-xs rounded-full ${badge.className}`}>
+        <span className={`inline-flex items-center px-2 py-1 text-xs rounded-full ${ci.className}`}>
           {fund.needs_review ? (
-            <>
-              <AlertCircle className="w-3 h-3 mr-1" />
-              {badge.label}
-            </>
+            <><AlertCircle className="w-3 h-3 mr-1" />{ci.label}</>
           ) : (
-            <>
-              <CheckCircle2 className="w-3 h-3 mr-1" />
-              {badge.label}
-            </>
+            <><CheckCircle2 className="w-3 h-3 mr-1" />{ci.label}</>
           )}
         </span>
       </td>

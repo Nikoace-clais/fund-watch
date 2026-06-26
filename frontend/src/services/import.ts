@@ -106,34 +106,12 @@ export async function confirmImport(codes: string[]): Promise<ImportConfirmResul
   }
 }
 
-/**
- * Format confidence as percentage string
- */
 export function formatConfidence(confidence: number): string {
   return `${Math.round(confidence * 100)}%`;
 }
 
-/**
- * Get confidence color based on value
- */
-export function getConfidenceColor(confidence: number): string {
-  if (confidence >= 0.85) return 'text-green-600';
-  if (confidence >= 0.75) return 'text-yellow-600';
-  return 'text-red-600';
-}
-
-/**
- * Get confidence badge variant
- */
-export function getConfidenceBadge(confidence: number): {
-  label: string;
-  className: string;
-} {
-  if (confidence >= 0.85) {
-    return { label: '高置信度', className: 'bg-green-100 text-green-800' };
-  }
-  if (confidence >= 0.75) {
-    return { label: '中置信度', className: 'bg-yellow-100 text-yellow-800' };
-  }
-  return { label: '需确认', className: 'bg-red-100 text-red-800' };
+export function getConfidenceInfo(confidence: number): { color: string; label: string; className: string } {
+  if (confidence >= 0.85) return { color: 'text-green-600', label: '高置信度', className: 'bg-green-100 text-green-800' };
+  if (confidence >= 0.75) return { color: 'text-yellow-600', label: '中置信度', className: 'bg-yellow-100 text-yellow-800' };
+  return { color: 'text-red-600', label: '需确认', className: 'bg-red-100 text-red-800' };
 }
