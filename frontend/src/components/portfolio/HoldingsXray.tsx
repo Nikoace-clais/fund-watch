@@ -1,9 +1,66 @@
 import { Fragment, useMemo, useState } from 'react'
 import { flexRender, useReactTable, getCoreRowModel, getSortedRowModel, createColumnHelper, type SortingState } from '@tanstack/react-table'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { HoldingXrayStock, PortfolioHoldings } from '@/lib/api'
+import type { HoldingXraySector, HoldingXrayStock, PortfolioHoldings } from '@/lib/api'
 import { cn, formatCNY } from '@/lib/utils'
 import { SortHead } from './SortHead'
+
+// ponytail: 横向堆叠条够用，要交互式饼图再说
+const SECTOR_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
+
+type DisplaySector = { name: string; weight_pct: number }
+
+function buildDisplay(sectors: HoldingXraySector[]): DisplaySector[] {
+  const main = sectors.filter((s) => s.weight_pct >= 0.05)
+  const otherPct = sectors.filter((s) => s.weight_pct < 0.05).reduce((sum, s) => sum + s.weight_pct, 0)
+  return otherPct > 0 ? [...main, { name: '其他', weight_pct: otherPct }] : main
+}
+
+function SectorBar({
+  sectors,
+  selected,
+  onSelect,
+}: {
+  sectors: HoldingXraySector[]
+  selected: string | null
+  onSelect: (name: string | null) => void
+}) {
+  if (!sectors.length) return null
+  const display = buildDisplay(sectors)
+  const total = display.reduce((sum, s) => sum + s.weight_pct, 0) || 1
+  return (
+    <div className="mt-3">
+      <div className="flex h-3 rounded overflow-hidden gap-px">
+        {display.map((s, i) => (
+          <div
+            key={s.name}
+            role="button"
+            onClick={() => onSelect(selected === s.name ? null : s.name)}
+            style={{ width: `${(s.weight_pct / total) * 100}%`, backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length] }}
+            title={`${s.name} ${s.weight_pct.toFixed(1)}%`}
+            className={cn('cursor-pointer transition-opacity', selected && selected !== s.name && 'opacity-25')}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5">
+        {display.map((s, i) => (
+          <button
+            key={s.name}
+            onClick={() => onSelect(selected === s.name ? null : s.name)}
+            className={cn(
+              'flex items-center gap-1 text-xs transition-opacity',
+              selected && selected !== s.name ? 'opacity-30' : 'text-slate-500',
+              selected === s.name && 'font-medium text-slate-700',
+            )}
+          >
+            <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: SECTOR_COLORS[i % SECTOR_COLORS.length] }} />
+            {s.name} {s.weight_pct.toFixed(1)}%
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 const helper = createColumnHelper<HoldingXrayStock>()
 
@@ -23,6 +80,22 @@ function ExpandedFunds({ stock }: { stock: HoldingXrayStock }) {
 export function HoldingsXray({ data }: { data: PortfolioHoldings }) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'exposure', desc: true }])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [selectedSector, setSelectedSector] = useState<string | null>(null)
+
+  // Main sector names (those not collapsed into "其他")
+  const mainSectorNames = useMemo(
+    () => new Set((data.sectors ?? []).filter((s) => s.weight_pct >= 0.05).map((s) => s.name)),
+    [data.sectors],
+  )
+
+  const filteredStocks = useMemo(() => {
+    if (!selectedSector) return data.stocks
+    return data.stocks.filter((s) => {
+      const ind = s.industry ?? '未分类'
+      if (selectedSector === '其他') return !mainSectorNames.has(ind)
+      return ind === selectedSector
+    })
+  }, [data.stocks, selectedSector, mainSectorNames])
 
   const toggle = (code: string) =>
     setExpanded((prev) => {
@@ -61,7 +134,14 @@ export function HoldingsXray({ data }: { data: PortfolioHoldings }) {
           return (
             <div>
               <p className="font-medium text-slate-900 leading-snug">{s.stock_name}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{s.stock_code}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-xs text-slate-400">{s.stock_code}</span>
+                {s.industry && (
+                  <span className="inline-block px-1 py-0.5 rounded text-xs bg-slate-100 text-slate-500">
+                    {s.industry}
+                  </span>
+                )}
+              </div>
             </div>
           )
         },
@@ -112,7 +192,7 @@ export function HoldingsXray({ data }: { data: PortfolioHoldings }) {
   )
 
   const table = useReactTable({
-    data: data.stocks,
+    data: filteredStocks,
     columns,
     state: { sorting },
     onSortingChange: setSorting,
@@ -139,6 +219,7 @@ export function HoldingsXray({ data }: { data: PortfolioHoldings }) {
             <span className="ml-2 text-amber-600 font-medium">· {overlapCount} 只股票重叠持仓</span>
           )}
         </p>
+        <SectorBar sectors={data.sectors ?? []} selected={selectedSector} onSelect={setSelectedSector} />
       </div>
 
       <div className="overflow-x-auto">

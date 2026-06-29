@@ -893,3 +893,85 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
             entry["type"] = base["FTYPE"]
         results.append(entry)
     return results
+
+
+# ── Stock industry enrichment ─────────────────────────────────────────────────
+# ponytail: 行业基本不变，落表持久化；要纠正分类改库行，要强制刷新删行重拉
+
+
+def _secid(stock_code: str) -> str:
+    """Eastmoney secid prefix: 1 for Shanghai (6x/9x), 0 for Shenzhen/Beijing."""
+    return "1" if stock_code[0] in "69" else "0"
+
+
+async def fetch_stock_industries(codes: list[str]) -> dict[str, str]:
+    """Return {stock_code: industry} for the given codes.
+
+    Local ``stock_industry`` table is the primary source.  Only codes missing
+    from the table hit the eastmoney API; results are written back so they
+    accumulate across restarts.
+    """
+    if not codes:
+        return {}
+
+    from datetime import datetime, timezone
+
+    from app.db import get_conn
+
+    # 1. Query local table first
+    placeholders = ",".join("?" * len(codes))
+    result: dict[str, str] = {}
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT stock_code, industry FROM stock_industry"
+            f" WHERE stock_code IN ({placeholders})",
+            codes,
+        ).fetchall()
+    for row in rows:
+        if row["industry"]:
+            result[row["stock_code"]] = row["industry"]
+
+    missing = [c for c in codes if c not in result]
+    if not missing:
+        return result
+
+    # 2. Fetch missing from eastmoney, bounded concurrency
+    sem = asyncio.Semaphore(8)
+    client = _get_client()
+    url_tpl = (
+        "https://push2.eastmoney.com/api/qt/stock/get"
+        "?secid={secid}.{code}&fields=f57,f58,f127"
+    )
+
+    async def _one(code: str) -> tuple[str, str | None, str | None]:
+        if len(code) != 6:  # skip non-A-share codes (e.g. HK 5-digit)
+            return code, None, None
+        async with sem:
+            try:
+                resp = await client.get(url_tpl.format(secid=_secid(code), code=code))
+                resp.raise_for_status()
+                data = resp.json().get("data") or {}
+                return code, data.get("f58"), data.get("f127")
+            except Exception:
+                logger.debug("fetch_stock_industries: failed for %s", code)
+                return code, None, None
+
+    fetched = await asyncio.gather(*[_one(c) for c in missing])
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows_to_write = [(c, name, ind, now) for c, name, ind in fetched if ind]
+    if rows_to_write:
+        with get_conn() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO stock_industry"
+                " (stock_code, stock_name, industry, updated_at)"
+                " VALUES (?, ?, ?, ?)",
+                rows_to_write,
+            )
+            conn.commit()
+
+    for c, _name, ind in fetched:
+        if ind:
+            result[c] = ind
+
+    return result

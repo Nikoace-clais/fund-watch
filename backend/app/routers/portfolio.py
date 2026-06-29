@@ -16,6 +16,7 @@ from ..fund_source import (
     fetch_fund_holdings,
     fetch_nav_history,
     fetch_realtime_estimate,
+    fetch_stock_industries,
 )
 from ..services.holdings import compute_pnl
 
@@ -252,12 +253,22 @@ async def portfolio_holdings() -> dict:
 
     total_value = Decimal(str(summary.get("total_current", "0")))
 
+    # Enrich with industry from local table (API fallback for unknowns)
+    ind_map = await fetch_stock_industries(list(agg.keys()))
+
+    # Aggregate exposure by industry (use Decimals from agg, before stringification)
+    sector_agg: dict[str, Decimal] = defaultdict(Decimal)
+    for sc, v in agg.items():
+        industry = ind_map.get(sc) or "未分类"
+        sector_agg[industry] += v["exposure"]
+
     # Build sorted output
     stocks = sorted(
         [
             {
                 "stock_code": v["stock_code"],
                 "stock_name": v["stock_name"],
+                "industry": ind_map.get(v["stock_code"]),
                 "exposure": str(v["exposure"].quantize(Decimal("0.01"))),
                 "weight_pct": (
                     round(float(v["exposure"] / total_value * 100), 2)
@@ -269,17 +280,33 @@ async def portfolio_holdings() -> dict:
             }
             for v in agg.values()
         ],
-        key=lambda x: float(x["exposure"]),
+        key=lambda x: float(x["exposure"]),  # type: ignore[arg-type]
         reverse=True,
     )
 
     # ponytail: cross-fund overlap is an intentional double-count in covered_value
-    covered_value = sum((Decimal(s["exposure"]) for s in stocks), Decimal("0"))
+    covered_value = sum((Decimal(str(s["exposure"])) for s in stocks), Decimal("0"))
+
+    sectors = sorted(
+        [
+            {
+                "name": name,
+                "exposure": str(exp.quantize(Decimal("0.01"))),
+                "weight_pct": (
+                    round(float(exp / total_value * 100), 2) if total_value > 0 else 0.0
+                ),
+            }
+            for name, exp in sector_agg.items()
+        ],
+        key=lambda x: float(x["exposure"]),  # type: ignore[arg-type]
+        reverse=True,
+    )
 
     return {
         "total_value": str(total_value.quantize(Decimal("0.01"))),
         "covered_value": str(covered_value.quantize(Decimal("0.01"))),
         "stocks": stocks,
+        "sectors": sectors,
         "coverage": coverage,
     }
 

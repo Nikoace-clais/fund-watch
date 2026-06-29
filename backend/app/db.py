@@ -118,4 +118,14 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_industry (
+                stock_code TEXT PRIMARY KEY,
+                stock_name TEXT,
+                industry   TEXT,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
