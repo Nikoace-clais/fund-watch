@@ -7,14 +7,16 @@ import { StatsCards } from '@/components/portfolio/StatsCards'
 import { TrendChart } from '@/components/portfolio/TrendChart'
 import { AllocationPie } from '@/components/portfolio/AllocationPie'
 import { HoldingsTable } from '@/components/portfolio/HoldingsTable'
+import { HoldingsXray } from '@/components/portfolio/HoldingsXray'
 import { WatchTable, type WatchOnlyItem } from '@/components/portfolio/WatchTable'
 import { TransactionModal } from '@/components/portfolio/TransactionModal'
 import { deleteFund } from '@/lib/api'
-import { useFundsOverview, useInvalidatePortfolio, usePortfolioSummary } from '@/lib/queries'
+import { useFundsOverview, useInvalidatePortfolio, usePortfolioHoldings, usePortfolioSummary } from '@/lib/queries'
 
 export function Portfolio() {
   const { data: summary, isLoading: summaryLoading } = usePortfolioSummary()
   const { data: overview = [], isLoading: overviewLoading } = useFundsOverview()
+  const { data: portfolioHoldings } = usePortfolioHoldings()
   const invalidatePortfolio = useInvalidatePortfolio()
 
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -168,6 +170,10 @@ export function Portfolio() {
             />
             <AllocationPie items={items} totalCurrent={totalCurrent} fundCount={summary.fund_count} />
           </div>
+
+          {portfolioHoldings && portfolioHoldings.stocks.length > 0 && (
+            <HoldingsXray data={portfolioHoldings} />
+          )}
         </>
       )}
 

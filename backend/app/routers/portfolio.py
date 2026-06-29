@@ -12,7 +12,11 @@ from decimal import Decimal
 from fastapi import APIRouter
 
 from ..db import get_conn
-from ..fund_source import fetch_nav_history, fetch_realtime_estimate
+from ..fund_source import (
+    fetch_fund_holdings,
+    fetch_nav_history,
+    fetch_realtime_estimate,
+)
 from ..services.holdings import compute_pnl
 
 logger = logging.getLogger(__name__)
@@ -187,6 +191,96 @@ async def portfolio_summary() -> dict:
         "total_return_rate": str(total_return_rate),
         "fund_count": len(items),
         "items": items,
+    }
+
+
+@router.get("/api/portfolio/holdings")
+async def portfolio_holdings() -> dict:
+    """Stock-level X-ray: aggregate top-10 holdings across all portfolio funds.
+
+    Returns exposure per stock (fund market-value × holding percentage),
+    sorted descending. Stocks held by ≥2 funds are flagged via fund_count.
+    """
+    summary = await portfolio_summary()
+    items: list[dict] = summary.get("items", [])
+
+    # Only funds with a known current_value can contribute
+    active = [it for it in items if it.get("current_value")]
+
+    async def _fetch(fund: dict) -> tuple[dict, list[dict]]:
+        try:
+            h = await fetch_fund_holdings(fund["code"])
+        except Exception:
+            h = []
+        return fund, h
+
+    pairs = await asyncio.gather(*[_fetch(f) for f in active])
+
+    # Aggregate: stock_code → {exposure, stock_name, funds[], coverage per fund}
+    agg: dict[str, dict] = {}
+    coverage: dict[str, float] = {}
+
+    for fund, holdings in pairs:
+        if not holdings:
+            continue
+        cv = Decimal(str(fund["current_value"]))
+        fund_coverage = 0.0
+        for h in holdings:
+            pct = h.get("percentage")
+            if pct is None:
+                continue
+            contribution = (cv * Decimal(str(pct)) / 100).quantize(Decimal("0.01"))
+            sc = h["stock_code"]
+            if sc not in agg:
+                agg[sc] = {
+                    "stock_code": sc,
+                    "stock_name": h["stock_name"],
+                    "exposure": Decimal("0"),
+                    "funds": [],
+                }
+            agg[sc]["exposure"] += contribution
+            agg[sc]["funds"].append(
+                {
+                    "code": fund["code"],
+                    "name": fund.get("name") or fund["code"],
+                    "percentage": float(pct),
+                    "contribution": str(contribution),
+                }
+            )
+            fund_coverage += float(pct)
+        coverage[fund["code"]] = round(fund_coverage, 2)
+
+    total_value = Decimal(str(summary.get("total_current", "0")))
+
+    # Build sorted output
+    stocks = sorted(
+        [
+            {
+                "stock_code": v["stock_code"],
+                "stock_name": v["stock_name"],
+                "exposure": str(v["exposure"].quantize(Decimal("0.01"))),
+                "weight_pct": (
+                    round(float(v["exposure"] / total_value * 100), 2)
+                    if total_value > 0
+                    else 0.0
+                ),
+                "fund_count": len(v["funds"]),
+                "funds": v["funds"],
+            }
+            for v in agg.values()
+        ],
+        key=lambda x: float(x["exposure"]),
+        reverse=True,
+    )
+
+    # ponytail: cross-fund overlap is an intentional double-count in covered_value
+    covered_value = sum((Decimal(s["exposure"]) for s in stocks), Decimal("0"))
+
+    return {
+        "total_value": str(total_value.quantize(Decimal("0.01"))),
+        "covered_value": str(covered_value.quantize(Decimal("0.01"))),
+        "stocks": stocks,
+        "coverage": coverage,
     }
 
 

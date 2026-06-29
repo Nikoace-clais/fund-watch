@@ -9,6 +9,7 @@ import {
   fetchMarketIndices,
   fetchNavHistory,
   fetchPortfolioHistory,
+  fetchPortfolioHoldings,
   fetchPortfolioSummary,
   fetchQuote,
   fetchTransactions,
@@ -31,6 +32,7 @@ export const queryClient = new QueryClient({
 export const keys = {
   fundsOverview: ['funds', 'overview'] as const,
   portfolioSummary: ['portfolio', 'summary'] as const,
+  portfolioHoldings: ['portfolio', 'holdings'] as const,
   portfolioHistory: (limit: number) => ['portfolio', 'history', limit] as const,
   marketIndices: ['market', 'indices'] as const,
   cronStatus: ['cron', 'status'] as const,
@@ -56,6 +58,13 @@ export function usePortfolioSummary() {
     queryKey: keys.portfolioSummary,
     queryFn: fetchPortfolioSummary,
     refetchInterval: tradingRefetch,
+  })
+}
+
+export function usePortfolioHoldings() {
+  return useQuery({
+    queryKey: keys.portfolioHoldings,
+    queryFn: fetchPortfolioHoldings,
   })
 }
 

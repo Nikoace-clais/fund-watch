@@ -147,6 +147,21 @@ export function fetchPortfolioSummary() {
   return request<PortfolioSummary>('/api/portfolio/summary')
 }
 
+// Portfolio holdings X-ray
+export type HoldingXrayFund = { code: string; name: string; percentage: number | null; contribution: string }
+export type HoldingXrayStock = {
+  stock_code: string; stock_name: string
+  exposure: string; weight_pct: number; fund_count: number
+  funds: HoldingXrayFund[]
+}
+export type PortfolioHoldings = {
+  total_value: string; covered_value: string
+  stocks: HoldingXrayStock[]; coverage: Record<string, number>
+}
+export function fetchPortfolioHoldings() {
+  return request<PortfolioHoldings>('/api/portfolio/holdings')
+}
+
 // Realtime quote
 export function fetchQuote(code: string) {
   return request<Quote>(`/api/quote/${code}`)
