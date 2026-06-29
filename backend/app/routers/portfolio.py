@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from ..db import get_conn
 from ..fund_source import (
@@ -25,21 +25,48 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["portfolio"])
 
 
-@router.get("/api/portfolio/summary")
-async def portfolio_summary() -> dict:
-    """Aggregated portfolio stats: total value, daily return, cumulative return."""
+def _resolve_portfolio(portfolio_id: int | None) -> int:
+    """Return portfolio_id, defaulting to the first portfolio if none given."""
+    if portfolio_id is not None:
+        with get_conn() as conn:
+            row = conn.execute(
+                "SELECT id FROM portfolios WHERE id=?", (portfolio_id,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="组合不存在")
+        return portfolio_id
     with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM portfolios ORDER BY created_at ASC LIMIT 1"
+        ).fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=404, detail="尚无组合，请先导入基金建立组合"
+            )
+    return row["id"]
+
+
+@router.get("/api/portfolio/summary")
+async def portfolio_summary(portfolio_id: int | None = None) -> dict:
+    """Aggregated portfolio stats for a specific portfolio."""
+    pf_id = _resolve_portfolio(portfolio_id)
+
+    with get_conn() as conn:
+        # positions with holding_shares (have transactions)
         funds = [
             dict(r)
             for r in conn.execute(
-                "SELECT code, name, holding_shares FROM funds"
-                " WHERE holding_shares IS NOT NULL ORDER BY created_at DESC"
+                """SELECT pos.code, f.name, pos.holding_shares
+                   FROM positions pos
+                   JOIN funds f ON f.code = pos.code
+                   WHERE pos.portfolio_id=? AND pos.holding_shares IS NOT NULL
+                   ORDER BY pos.created_at DESC""",
+                (pf_id,),
             ).fetchall()
         ]
 
     t0 = time.perf_counter()
 
-    # I2 fix: batch-compute PnL for all funds in ONE DB connection before async gather
     pnl_map: dict[str, dict] = {}
     codes = [
         f["code"]
@@ -49,7 +76,7 @@ async def portfolio_summary() -> dict:
     if codes:
         with get_conn() as conn:
             for code in codes:
-                pnl_map[code] = compute_pnl(conn, code)
+                pnl_map[code] = compute_pnl(conn, pf_id, code)
 
     async def _fetch_fund_item(f: dict) -> dict | None:
         code = f["code"]
@@ -94,7 +121,8 @@ async def portfolio_summary() -> dict:
 
     results = await asyncio.gather(*[_fetch_fund_item(f) for f in funds])
     logger.info(
-        "portfolio_summary: %d funds fetched in %.3fs",
+        "portfolio_summary(pf=%d): %d funds fetched in %.3fs",
+        pf_id,
         len(funds),
         time.perf_counter() - t0,
     )
@@ -102,7 +130,7 @@ async def portfolio_summary() -> dict:
     items: list[dict] = []
     total_current = Decimal("0")
     total_cost = Decimal("0")
-    total_current_with_cost = Decimal("0")  # tx-based funds only, for return rate
+    total_current_with_cost = Decimal("0")
     total_daily_return = Decimal("0")
 
     for r in results:
@@ -116,20 +144,23 @@ async def portfolio_summary() -> dict:
         total_daily_return += r.pop("_daily_return_d")
         items.append(r)
 
-    # Funds with no transactions: COALESCE(imported_holding_amount, amount) as base,
-    # fetch realtime gszzl to compute today's daily return.
+    # Imported positions without transactions: COALESCE(imported_holding_amount, amount)
     with get_conn() as conn:
         notx_funds = [
             dict(r)
             for r in conn.execute(
-                """SELECT code, name,
-                      COALESCE(imported_holding_amount, amount) AS holding_amount,
-                      imported_cumulative_return,
-                      imported_holding_return
-               FROM funds
-               WHERE holding_shares IS NULL
-                 AND COALESCE(imported_holding_amount, amount) > 0
-               ORDER BY created_at DESC"""
+                """SELECT pos.code, f.name,
+                      COALESCE(pos.imported_holding_amount, pos.amount)
+                        AS holding_amount,
+                      pos.imported_cumulative_return,
+                      pos.imported_holding_return
+                   FROM positions pos
+                   JOIN funds f ON f.code = pos.code
+                   WHERE pos.portfolio_id=?
+                     AND pos.holding_shares IS NULL
+                     AND COALESCE(pos.imported_holding_amount, pos.amount) > 0
+                   ORDER BY pos.created_at DESC""",
+                (pf_id,),
             ).fetchall()
         ]
 
@@ -175,7 +206,6 @@ async def portfolio_summary() -> dict:
         total_daily_return += r.pop("_daily_return_d")
         items.append(r)
 
-    # I1 fix: rate uses only tx-based funds (those with known cost basis)
     total_return_rate = (
         ((total_current_with_cost - total_cost) / total_cost * 100).quantize(
             Decimal("0.01")
@@ -185,6 +215,7 @@ async def portfolio_summary() -> dict:
     )
 
     return {
+        "portfolio_id": pf_id,
         "total_current": str(total_current),
         "total_cost": str(total_cost),
         "total_daily_return": str(total_daily_return),
@@ -196,16 +227,12 @@ async def portfolio_summary() -> dict:
 
 
 @router.get("/api/portfolio/holdings")
-async def portfolio_holdings() -> dict:
-    """Stock-level X-ray: aggregate top-10 holdings across all portfolio funds.
-
-    Returns exposure per stock (fund market-value × holding percentage),
-    sorted descending. Stocks held by ≥2 funds are flagged via fund_count.
-    """
-    summary = await portfolio_summary()
+async def portfolio_holdings(portfolio_id: int | None = None) -> dict:
+    """Stock-level X-ray: aggregate top-10 holdings across portfolio funds."""
+    summary = await portfolio_summary(portfolio_id)
+    pf_id = summary["portfolio_id"]
     items: list[dict] = summary.get("items", [])
 
-    # Only funds with a known current_value can contribute
     active = [it for it in items if it.get("current_value")]
 
     async def _fetch(fund: dict) -> tuple[dict, list[dict]]:
@@ -217,7 +244,6 @@ async def portfolio_holdings() -> dict:
 
     pairs = await asyncio.gather(*[_fetch(f) for f in active])
 
-    # Aggregate: stock_code → {exposure, stock_name, funds[], coverage per fund}
     agg: dict[str, dict] = {}
     coverage: dict[str, float] = {}
 
@@ -253,16 +279,13 @@ async def portfolio_holdings() -> dict:
 
     total_value = Decimal(str(summary.get("total_current", "0")))
 
-    # Enrich with industry from local table (API fallback for unknowns)
     ind_map = await fetch_stock_industries(list(agg.keys()))
 
-    # Aggregate exposure by industry (use Decimals from agg, before stringification)
     sector_agg: dict[str, Decimal] = defaultdict(Decimal)
     for sc, v in agg.items():
         industry = ind_map.get(sc) or "未分类"
         sector_agg[industry] += v["exposure"]
 
-    # Build sorted output
     stocks = sorted(
         [
             {
@@ -303,6 +326,7 @@ async def portfolio_holdings() -> dict:
     )
 
     return {
+        "portfolio_id": pf_id,
         "total_value": str(total_value.quantize(Decimal("0.01"))),
         "covered_value": str(covered_value.quantize(Decimal("0.01"))),
         "stocks": stocks,
@@ -312,12 +336,11 @@ async def portfolio_holdings() -> dict:
 
 
 @router.get("/api/portfolio/history")
-async def portfolio_history(limit: int = 90) -> dict:
-    """Portfolio value history: holdings × NAV per date, plus today's estimate.
-
-    Funds with transactions: per-date shares from transaction log × NAV.
-    Imported funds without transactions: implied shares = holding_amount / latest_nav.
-    """
+async def portfolio_history(
+    portfolio_id: int | None = None, limit: int = 90
+) -> dict:
+    """Portfolio value history: holdings × NAV per date, plus today's estimate."""
+    pf_id = _resolve_portfolio(portfolio_id)
     limit = max(1, min(limit, 365))
 
     with get_conn() as conn:
@@ -325,25 +348,27 @@ async def portfolio_history(limit: int = 90) -> dict:
             dict(r)
             for r in conn.execute(
                 "SELECT code, direction, trade_date, shares"
-                " FROM transactions ORDER BY trade_date ASC"
+                " FROM transactions WHERE portfolio_id=? ORDER BY trade_date ASC",
+                (pf_id,),
             ).fetchall()
         ]
         current_holdings = {
             r["code"]: Decimal(r["holding_shares"])
             for r in conn.execute(
-                "SELECT code, holding_shares FROM funds"
-                " WHERE holding_shares IS NOT NULL"
+                "SELECT code, holding_shares FROM positions"
+                " WHERE portfolio_id=? AND holding_shares IS NOT NULL",
+                (pf_id,),
             ).fetchall()
             if r["holding_shares"] and Decimal(r["holding_shares"]) > 0
         }
-        # Imported funds without any transactions: use holding_amount to infer shares
         imported_funds: dict[str, Decimal] = {
             r["code"]: Decimal(str(r["holding_amount"]))
             for r in conn.execute(
-                "SELECT code,"
-                " COALESCE(imported_holding_amount, amount) AS holding_amount"
-                " FROM funds WHERE holding_shares IS NULL"
-                " AND COALESCE(imported_holding_amount, amount) > 0"
+                """SELECT code,
+                      COALESCE(imported_holding_amount, amount) AS holding_amount
+                   FROM positions WHERE portfolio_id=? AND holding_shares IS NULL
+                   AND COALESCE(imported_holding_amount, amount) > 0""",
+                (pf_id,),
             ).fetchall()
         }
 
@@ -356,7 +381,7 @@ async def portfolio_history(limit: int = 90) -> dict:
     all_codes = list(set(tx_codes + imported_codes))
 
     if not all_codes:
-        return {"count": 0, "history": []}
+        return {"portfolio_id": pf_id, "count": 0, "history": []}
 
     async def _fetch_code(code: str) -> tuple[str, dict[str, Decimal], Decimal | None]:
         nav_dict: dict[str, Decimal] = {}
@@ -388,7 +413,6 @@ async def portfolio_history(limit: int = 90) -> dict:
         if gsz:
             gsz_map[code] = gsz
 
-    # Implied shares for imported funds: holding_amount ÷ latest confirmed NAV
     implied_shares: dict[str, Decimal] = {}
     excluded_codes: list[str] = []
     for code, holding_amount in imported_funds.items():
@@ -398,10 +422,11 @@ async def portfolio_history(limit: int = 90) -> dict:
             if latest_nav > 0:
                 implied_shares[code] = holding_amount / latest_nav
         else:
-            # I6 fix: log and collect codes excluded due to missing NAV data
             excluded_codes.append(code)
             logger.warning(
-                "portfolio_history: no NAV data for %s, excluded from chart", code
+                "portfolio_history(pf=%d): no NAV data for %s, excluded",
+                pf_id,
+                code,
             )
 
     all_dates = sorted({d for nd in nav_map.values() for d in nd})
@@ -410,7 +435,6 @@ async def portfolio_history(limit: int = 90) -> dict:
     date_totals: dict[str, Decimal] = {}
     for target_date in all_dates:
         total = Decimal("0")
-        # Funds with transactions: per-date share count from transaction log
         for code in tx_codes:
             shares = Decimal("0")
             for tx in tx_by_code[code]:
@@ -425,7 +449,6 @@ async def portfolio_history(limit: int = 90) -> dict:
             if nav is None:
                 continue
             total += shares * nav
-        # Imported funds without transactions: implied shares × that day's NAV
         for code, imp_shares in implied_shares.items():
             nav = nav_map.get(code, {}).get(target_date)
             if nav is None:
@@ -434,7 +457,6 @@ async def portfolio_history(limit: int = 90) -> dict:
         if total > 0:
             date_totals[target_date] = total
 
-    # Use gsz for today's estimate; setdefault skips if confirmed NAV already present
     cst = timezone(timedelta(hours=8))
     today = datetime.now(cst).strftime("%Y-%m-%d")
     today_total = sum(
@@ -445,19 +467,18 @@ async def portfolio_history(limit: int = 90) -> dict:
         ),
         Decimal("0"),
     )
-    # C1 fix: use implied_shares × gsz (market value) not holding_amount (cost basis)
     for code, imp_shares in implied_shares.items():
         gsz = gsz_map.get(code)
         if gsz:
             today_total += imp_shares * gsz
         else:
-            today_total += imported_funds[code]  # fallback to holding_amount
-    # C2 fix: setdefault — don't overwrite an already-confirmed NAV for today
+            today_total += imported_funds[code]
     if today_total > 0:
         date_totals.setdefault(today, today_total)
 
     sorted_items = sorted(date_totals.items())
     result: dict = {
+        "portfolio_id": pf_id,
         "count": len(sorted_items),
         "history": [
             {"date": date, "total_value": float(value.quantize(Decimal("0.01")))}
@@ -465,7 +486,5 @@ async def portfolio_history(limit: int = 90) -> dict:
         ],
     }
     if excluded_codes:
-        result["excluded_codes"] = (
-            excluded_codes  # I6: surface missing-NAV funds to caller
-        )
+        result["excluded_codes"] = excluded_codes
     return result

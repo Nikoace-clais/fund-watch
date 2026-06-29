@@ -67,6 +67,7 @@ export type PortfolioItem = {
 }
 
 export type PortfolioSummary = {
+  portfolio_id: number
   total_current: string
   total_cost: string
   total_daily_return: string
@@ -74,6 +75,13 @@ export type PortfolioSummary = {
   total_return_rate: string
   fund_count: number
   items: PortfolioItem[]
+}
+
+export type Portfolio = {
+  id: number
+  name: string
+  created_at: string
+  fund_count: number
 }
 
 export type Quote = {
@@ -142,9 +150,35 @@ export function fetchFundHoldings(code: string) {
   )
 }
 
+// Portfolios CRUD
+export function listPortfolios() {
+  return request<{ items: Portfolio[] }>('/api/portfolios')
+}
+
+export function createPortfolio(name: string) {
+  return request<{ ok: boolean; id: number; name: string }>('/api/portfolios', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function renamePortfolio(id: number, name: string) {
+  return request<{ ok: boolean; id: number; name: string }>(`/api/portfolios/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deletePortfolio(id: number) {
+  return request<{ ok: boolean; id: number }>(`/api/portfolios/${id}`, { method: 'DELETE' })
+}
+
 // Portfolio summary
-export function fetchPortfolioSummary() {
-  return request<PortfolioSummary>('/api/portfolio/summary')
+export function fetchPortfolioSummary(portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  return request<PortfolioSummary>(`/api/portfolio/summary${qs}`)
 }
 
 // Portfolio holdings X-ray
@@ -156,11 +190,13 @@ export type HoldingXrayStock = {
 }
 export type HoldingXraySector = { name: string; exposure: string; weight_pct: number }
 export type PortfolioHoldings = {
+  portfolio_id: number
   total_value: string; covered_value: string
   stocks: HoldingXrayStock[]; sectors: HoldingXraySector[]; coverage: Record<string, number>
 }
-export function fetchPortfolioHoldings() {
-  return request<PortfolioHoldings>('/api/portfolio/holdings')
+export function fetchPortfolioHoldings(portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  return request<PortfolioHoldings>(`/api/portfolio/holdings${qs}`)
 }
 
 // Realtime quote
@@ -197,12 +233,24 @@ export type BatchFundItem = {
   holding_return?: number
 }
 
-export function batchAddFunds(codes: string[], funds?: BatchFundItem[]) {
-  return request<{ ok: boolean; added: string[]; invalid: string[]; warnings: string[] }>('/api/funds/batch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ codes, funds: funds ?? [] }),
-  })
+export function batchAddFunds(
+  codes: string[],
+  funds?: BatchFundItem[],
+  opts?: { portfolioId?: number; portfolioName?: string },
+) {
+  return request<{ ok: boolean; portfolio_id: number; added: string[]; invalid: string[]; warnings: string[] }>(
+    '/api/funds/batch',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        codes,
+        funds: funds ?? [],
+        portfolio_id: opts?.portfolioId,
+        portfolio_name: opts?.portfolioName,
+      }),
+    },
+  )
 }
 
 // NAV on a specific date
@@ -227,11 +275,13 @@ export function addTransaction(code: string, payload: {
 }
 
 // Portfolio value history (current holdings × historical NAV)
-export function fetchPortfolioHistory(limit = 90) {
+export function fetchPortfolioHistory(limit = 90, portfolioId?: number) {
+  const qs = portfolioId != null ? `&portfolio_id=${portfolioId}` : ''
   return request<{
+    portfolio_id: number
     count: number
     history: Array<{ date: string; total_value: number }>
-  }>(`/api/portfolio/history?limit=${limit}`)
+  }>(`/api/portfolio/history?limit=${limit}${qs}`)
 }
 
 // Market indices (domestic + overseas)

@@ -24,6 +24,7 @@ from .routers import (
     market,
     ocr,
     portfolio,
+    portfolios,
     quotes,
     stocks,
     transactions,
@@ -95,6 +96,7 @@ async def log_requests(request: Request, call_next):
 # in the funds router) must be registered before parameterized ones
 # (POST /api/funds/{code}); within each router the declaration order preserves this.
 app.include_router(health.router)
+app.include_router(portfolios.router)
 app.include_router(funds.router)
 app.include_router(quotes.router)
 app.include_router(portfolio.router)

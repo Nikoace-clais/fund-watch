@@ -95,14 +95,20 @@ export async function previewImport(file: File): Promise<ImportPreviewResult> {
 
 /**
  * Confirm import of selected funds via /api/funds/batch.
+ * Pass portfolioId to append to an existing portfolio, or portfolioName to create a new one.
+ * Omitting both auto-generates a name like「导入 YYYY-MM-DD」.
  */
-export async function confirmImport(codes: string[]): Promise<ImportConfirmResult> {
-  const res = await batchAddFunds(codes)
+export async function confirmImport(
+  codes: string[],
+  opts?: { portfolioId?: number; portfolioName?: string },
+): Promise<ImportConfirmResult & { portfolio_id?: number }> {
+  const res = await batchAddFunds(codes, [], opts)
   return {
     success: res.ok,
     added: res.added.length,
     total: codes.length,
     invalid: res.invalid,
+    portfolio_id: res.portfolio_id,
   }
 }
 

@@ -5,13 +5,18 @@ from __future__ import annotations
 from decimal import Decimal
 
 
-def recompute_holding_shares(conn, code: str) -> None:
-    """Recompute funds.holding_shares from transactions."""
+def recompute_holding_shares(conn, portfolio_id: int, code: str) -> None:
+    """Recompute positions.holding_shares from transactions for (portfolio_id, code)."""
     rows = conn.execute(
-        "SELECT direction, shares FROM transactions WHERE code=?", (code,)
+        "SELECT direction, shares FROM transactions WHERE portfolio_id=? AND code=?",
+        (portfolio_id, code),
     ).fetchall()
     if not rows:
-        conn.execute("UPDATE funds SET holding_shares=NULL WHERE code=?", (code,))
+        conn.execute(
+            "UPDATE positions SET holding_shares=NULL"
+            " WHERE portfolio_id=? AND code=?",
+            (portfolio_id, code),
+        )
         return
     holding = Decimal("0")
     for r in rows:
@@ -21,17 +26,19 @@ def recompute_holding_shares(conn, code: str) -> None:
         else:
             holding -= s
     conn.execute(
-        "UPDATE funds SET holding_shares=? WHERE code=?",
-        (str(holding), code),
+        "UPDATE positions SET holding_shares=? WHERE portfolio_id=? AND code=?",
+        (str(holding), portfolio_id, code),
     )
 
 
-def compute_pnl(conn, code: str, current_nav: str | None = None) -> dict:
-    """Compute full P&L (realized + unrealized) for a fund."""
+def compute_pnl(
+    conn, portfolio_id: int, code: str, current_nav: str | None = None
+) -> dict:
+    """Compute full P&L (realized + unrealized) for a (portfolio_id, code) position."""
     rows = conn.execute(
         "SELECT direction, nav, shares, amount, fee FROM transactions"
-        " WHERE code=? ORDER BY trade_date",
-        (code,),
+        " WHERE portfolio_id=? AND code=? ORDER BY trade_date",
+        (portfolio_id, code),
     ).fetchall()
 
     buy_shares = Decimal("0")
@@ -63,13 +70,11 @@ def compute_pnl(conn, code: str, current_nav: str | None = None) -> dict:
     )
 
     # Realized P&L: sell proceeds - cost of sold shares - sell fees
-    # Guard: if buy_shares == 0 we have no cost basis; skip to avoid inflated P&L
     realized_pnl = Decimal("0")
     if sell_shares > 0 and buy_shares > 0:
         realized_pnl = sell_amount - sell_shares * avg_cost_nav - sell_fee
     realized_pnl = realized_pnl.quantize(Decimal("0.01"))
 
-    # Unrealized P&L
     unrealized_pnl = None
     total_pnl = None
     total_pnl_rate = None
@@ -86,7 +91,6 @@ def compute_pnl(conn, code: str, current_nav: str | None = None) -> dict:
             else Decimal("0")
         )
     elif current_nav and holding_shares == 0 and sell_shares > 0:
-        # All sold — only realized P&L
         unrealized_pnl = Decimal("0")
         total_pnl = realized_pnl
         total_pnl_rate = (

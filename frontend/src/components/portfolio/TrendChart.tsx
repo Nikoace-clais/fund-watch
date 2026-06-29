@@ -9,9 +9,9 @@ import { cn, formatCNY } from '@/lib/utils'
 const RANGES = [21, 63, 126, 252] as const
 type TrendRange = (typeof RANGES)[number]
 
-export function TrendChart({ totalCost }: { totalCost: number }) {
+export function TrendChart({ totalCost, portfolioId }: { totalCost: number; portfolioId?: number }) {
   const [range, setRange] = useState<TrendRange>(63)
-  const { data: history = [], isLoading } = usePortfolioHistory(range)
+  const { data: history = [], isLoading } = usePortfolioHistory(range, portfolioId)
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">

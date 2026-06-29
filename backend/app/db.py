@@ -69,6 +69,35 @@ def init_db() -> None:
 
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS portfolios (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS positions (
+                id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+                portfolio_id                INTEGER NOT NULL,
+                code                        TEXT NOT NULL,
+                amount                      REAL,
+                holding_shares              TEXT,
+                imported_holding_amount     REAL,
+                imported_cumulative_return  REAL,
+                imported_holding_return     REAL,
+                created_at                  TEXT NOT NULL,
+                UNIQUE(portfolio_id, code)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_positions_pf ON positions(portfolio_id)"
+        )
+
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS transactions (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 code        TEXT NOT NULL,
@@ -84,7 +113,16 @@ def init_db() -> None:
             )
             """
         )
+        # Migration: scope transactions to a portfolio
+        try:
+            conn.execute("ALTER TABLE transactions ADD COLUMN portfolio_id INTEGER")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(code)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tx_pf_code"
+            " ON transactions(portfolio_id, code)"
+        )
 
         conn.execute(
             """
@@ -128,4 +166,57 @@ def init_db() -> None:
             )
             """
         )
+
+        _migrate_single_pool_to_default_portfolio(conn)
         conn.commit()
+
+
+def _migrate_single_pool_to_default_portfolio(conn: sqlite3.Connection) -> None:
+    """One-time: move legacy single-pool holdings/transactions into a default portfolio.
+
+    Idempotent: runs only when no portfolio exists yet AND there is legacy data
+    (a fund with position fields, or any transaction). funds keeps its old
+    position columns unused — positions is the source of truth from now on.
+    """
+    if conn.execute("SELECT 1 FROM portfolios LIMIT 1").fetchone():
+        return  # already migrated / multi-portfolio in use
+
+    legacy_funds = conn.execute(
+        """SELECT code, amount, holding_shares, imported_holding_amount,
+                  imported_cumulative_return, imported_holding_return
+           FROM funds
+           WHERE holding_shares IS NOT NULL OR amount IS NOT NULL
+              OR imported_holding_amount IS NOT NULL
+              OR imported_cumulative_return IS NOT NULL
+              OR imported_holding_return IS NOT NULL"""
+    ).fetchall()
+    has_tx = conn.execute("SELECT 1 FROM transactions LIMIT 1").fetchone()
+    if not legacy_funds and not has_tx:
+        return  # fresh install: let the import flow create the first portfolio
+
+    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+    cur = conn.execute(
+        "INSERT INTO portfolios(name, created_at) VALUES(?, ?)", ("默认组合", now)
+    )
+    default_id = cur.lastrowid
+    for f in legacy_funds:
+        conn.execute(
+            """INSERT INTO positions
+               (portfolio_id, code, amount, holding_shares, imported_holding_amount,
+                imported_cumulative_return, imported_holding_return, created_at)
+               VALUES(?,?,?,?,?,?,?,?)""",
+            (
+                default_id,
+                f["code"],
+                f["amount"],
+                f["holding_shares"],
+                f["imported_holding_amount"],
+                f["imported_cumulative_return"],
+                f["imported_holding_return"],
+                now,
+            ),
+        )
+    conn.execute(
+        "UPDATE transactions SET portfolio_id=? WHERE portfolio_id IS NULL",
+        (default_id,),
+    )

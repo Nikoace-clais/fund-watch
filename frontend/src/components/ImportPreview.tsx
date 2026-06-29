@@ -2,6 +2,7 @@ import { useState, useMemo, type DragEvent, type ChangeEvent, type FC } from 're
 import { Upload, FileImage, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 import type { ImportPreviewResult, ImportPreviewItem } from '../services/import';
 import { previewImport, confirmImport, formatConfidence, getConfidenceInfo } from '../services/import';
+import { usePortfolios } from '@/lib/queries';
 
 interface ImportPreviewProps {
   onImport?: (codes: string[]) => void;
@@ -28,6 +29,11 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
     return new Set();
   });
   const [isConfirming, setIsConfirming] = useState(false);
+  // Portfolio selection for import
+  const { data: portfolios = [] } = usePortfolios();
+  // 'new' = create new portfolio, or a number = existing portfolio id
+  const [importTarget, setImportTarget] = useState<'new' | number>('new');
+  const [newPfName, setNewPfName] = useState('');
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -100,12 +106,16 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
     setIsConfirming(true);
     try {
       const codes = Array.from(selectedCodes);
-      const result = await confirmImport(codes);
+      const opts = importTarget === 'new'
+        ? { portfolioName: newPfName.trim() || undefined }
+        : { portfolioId: importTarget };
+      const result = await confirmImport(codes, opts);
       if (result.success) {
         onImport?.(codes);
-        // Reset state
         setPreview(null);
         setSelectedCodes(new Set());
+        setNewPfName('');
+        setImportTarget('new');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '导入失败');
@@ -227,6 +237,39 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Portfolio selection */}
+        <div className="border-t border-slate-100 pt-4 mt-2">
+          <p className="text-sm font-medium text-slate-700 mb-2">导入到组合</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setImportTarget('new')}
+              className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${importTarget === 'new' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+            >
+              新建组合
+            </button>
+            {portfolios.map((pf) => (
+              <button
+                key={pf.id}
+                type="button"
+                onClick={() => setImportTarget(pf.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${importTarget === pf.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+              >
+                {pf.name}
+              </button>
+            ))}
+          </div>
+          {importTarget === 'new' && (
+            <input
+              type="text"
+              value={newPfName}
+              onChange={(e) => setNewPfName(e.target.value)}
+              placeholder={`组合名称（留空则自动生成）`}
+              className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400"
+            />
+          )}
         </div>
 
         {/* Footer Actions */}

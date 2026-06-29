@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from ..core import validate_code
 from ..db import get_conn
@@ -19,20 +19,52 @@ from ..services.holdings import compute_pnl, recompute_holding_shares
 router = APIRouter(tags=["transactions"])
 
 
+def _resolve_tx_portfolio(portfolio_id: int | None) -> int:
+    """Return the portfolio_id, defaulting to the first existing portfolio.
+    If no portfolios exist yet, auto-create a default one so callers don't 404.
+    """
+    if portfolio_id is not None:
+        with get_conn() as conn:
+            if not conn.execute(
+                "SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)
+            ).fetchone():
+                raise HTTPException(status_code=404, detail="组合不存在")
+        return portfolio_id
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT id FROM portfolios ORDER BY created_at ASC LIMIT 1"
+        ).fetchone()
+        if row:
+            return row["id"]
+        # ponytail: auto-create default portfolio on first transaction
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        cur = conn.execute(
+            "INSERT INTO portfolios(name, created_at) VALUES(?, ?)", ("默认组合", now)
+        )
+        conn.commit()
+        return cur.lastrowid  # type: ignore[return-value]
+
+
 @router.get("/api/funds/{code}/transactions")
-def list_transactions(code: str) -> dict:
+def list_transactions(
+    code: str, portfolio_id: int | None = Query(default=None)
+) -> dict:
     code = validate_code(code)
+    pf_id = _resolve_tx_portfolio(portfolio_id)
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM transactions WHERE code=? ORDER BY trade_date DESC, id DESC",
-            (code,),
+            "SELECT * FROM transactions"
+            " WHERE portfolio_id=? AND code=? ORDER BY trade_date DESC, id DESC",
+            (pf_id, code),
         ).fetchall()
-    return {"code": code, "items": [dict(r) for r in rows]}
+    return {"code": code, "portfolio_id": pf_id, "items": [dict(r) for r in rows]}
 
 
 @router.post("/api/funds/{code}/transactions")
 def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
     code = validate_code(code)
+    pf_id = _resolve_tx_portfolio(payload.portfolio_id)
+
     if payload.direction not in ("buy", "sell"):
         raise HTTPException(status_code=400, detail="direction must be 'buy' or 'sell'")
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", payload.trade_date):
@@ -60,14 +92,22 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
     now = datetime.now(timezone.utc).isoformat()
 
     with get_conn() as conn:
-        # Verify fund exists
+        # Verify fund exists in global registry
         if not conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone():
             raise HTTPException(status_code=404, detail="fund not found")
 
+        # Ensure position row exists for this portfolio+code
+        conn.execute(
+            "INSERT OR IGNORE INTO positions(portfolio_id, code, created_at)"
+            " VALUES(?, ?, ?)",
+            (pf_id, code, now),
+        )
+
         if payload.direction == "sell":
-            # Check sufficient shares using Decimal for precision
             tx_rows = conn.execute(
-                "SELECT direction, shares FROM transactions WHERE code=?", (code,)
+                "SELECT direction, shares FROM transactions"
+                " WHERE portfolio_id=? AND code=?",
+                (pf_id, code),
             ).fetchall()
             current_holding = (
                 sum(
@@ -86,10 +126,11 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
 
         conn.execute(
             "INSERT INTO transactions"
-            "(code,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             (
                 code,
+                pf_id,
                 payload.direction,
                 payload.trade_date,
                 payload.nav,
@@ -101,26 +142,29 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
                 now,
             ),
         )
-        recompute_holding_shares(conn, code)
+        recompute_holding_shares(conn, pf_id, code)
         conn.commit()
 
-    return {"ok": True, "code": code}
+    return {"ok": True, "code": code, "portfolio_id": pf_id}
 
 
 @router.delete("/api/transactions/{tx_id}")
 def delete_transaction(tx_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT code, direction, shares FROM transactions WHERE id=?", (tx_id,)
+            "SELECT code, portfolio_id, direction, shares FROM transactions WHERE id=?",
+            (tx_id,),
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="transaction not found")
         code = row["code"]
+        pf_id = row["portfolio_id"]
 
-        # Simulate post-delete shares using Decimal for precision
         if row["direction"] == "buy":
             tx_rows = conn.execute(
-                "SELECT direction, shares FROM transactions WHERE code=?", (code,)
+                "SELECT direction, shares FROM transactions"
+                " WHERE portfolio_id=? AND code=?",
+                (pf_id, code),
             ).fetchall()
             current_holding = (
                 sum(
@@ -139,15 +183,18 @@ def delete_transaction(tx_id: int) -> dict:
                 )
 
         conn.execute("DELETE FROM transactions WHERE id=?", (tx_id,))
-        recompute_holding_shares(conn, code)
+        if pf_id is not None:
+            recompute_holding_shares(conn, pf_id, code)
         conn.commit()
     return {"ok": True, "deleted": tx_id}
 
 
 @router.get("/api/funds/{code}/pnl")
-async def get_pnl(code: str) -> dict:
+async def get_pnl(
+    code: str, portfolio_id: int | None = Query(default=None)
+) -> dict:
     code = validate_code(code)
-    # Try to get current NAV estimate
+    pf_id = _resolve_tx_portfolio(portfolio_id)
     current_nav = None
     try:
         q = await fetch_realtime_estimate(code)
@@ -157,17 +204,22 @@ async def get_pnl(code: str) -> dict:
 
     with get_conn() as conn:
         tx_count = conn.execute(
-            "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
+            "SELECT COUNT(*) as c FROM transactions WHERE portfolio_id=? AND code=?",
+            (pf_id, code),
         ).fetchone()["c"]
         if tx_count == 0:
-            return {"code": code, "has_transactions": False}
-        pnl = compute_pnl(conn, code, current_nav)
+            return {"code": code, "portfolio_id": pf_id, "has_transactions": False}
+        pnl = compute_pnl(conn, pf_id, code, current_nav)
 
-    return {"code": code, "has_transactions": True, **pnl}
+    return {"code": code, "portfolio_id": pf_id, "has_transactions": True, **pnl}
 
 
 @router.post("/api/transactions/csv")
-async def import_csv(file: UploadFile = File(...)) -> dict:
+async def import_csv(
+    file: UploadFile = File(...),
+    portfolio_id: int | None = Query(default=None),
+) -> dict:
+    pf_id = _resolve_tx_portfolio(portfolio_id)
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
 
@@ -178,7 +230,7 @@ async def import_csv(file: UploadFile = File(...)) -> dict:
     affected_codes: set[str] = set()
 
     with get_conn() as conn:
-        for i, row in enumerate(reader, start=2):  # line 1 is header
+        for i, row in enumerate(reader, start=2):
             try:
                 c = row["code"].strip()
                 if not (c.isdigit() and len(c) == 6):
@@ -194,11 +246,12 @@ async def import_csv(file: UploadFile = File(...)) -> dict:
                 amount = str((nav_d * shares_d).quantize(Decimal("0.01")))
                 note = row.get("note", "").strip()
 
-                # Dedup check
                 dup = conn.execute(
-                    "SELECT id FROM transactions WHERE code=?"
+                    "SELECT id FROM transactions"
+                    " WHERE portfolio_id=? AND code=?"
                     " AND direction=? AND trade_date=? AND nav=? AND shares=?",
                     (
+                        pf_id,
                         c,
                         direction,
                         row["trade_date"].strip(),
@@ -210,12 +263,20 @@ async def import_csv(file: UploadFile = File(...)) -> dict:
                     skipped += 1
                     continue
 
+                # Ensure position row exists
+                conn.execute(
+                    "INSERT OR IGNORE INTO positions(portfolio_id, code, created_at)"
+                    " VALUES(?, ?, ?)",
+                    (pf_id, c, now),
+                )
+
                 conn.execute(
                     "INSERT INTO transactions"
-                    "(code,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         c,
+                        pf_id,
                         direction,
                         row["trade_date"].strip(),
                         str(nav_d),
@@ -233,7 +294,13 @@ async def import_csv(file: UploadFile = File(...)) -> dict:
                 errors.append(f"line {i}: {e}")
 
         for c in affected_codes:
-            recompute_holding_shares(conn, c)
+            recompute_holding_shares(conn, pf_id, c)
         conn.commit()
 
-    return {"ok": True, "imported": imported, "skipped": skipped, "errors": errors}
+    return {
+        "ok": True,
+        "portfolio_id": pf_id,
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+    }

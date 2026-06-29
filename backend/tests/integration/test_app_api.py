@@ -68,6 +68,17 @@ class TestFunds:
         assert resp.status_code == 404
 
 
+def _get_position_shares(code: str, portfolio_id: int) -> str | None:
+    """Helper: read holding_shares directly from positions table."""
+    import app.db as _db
+    with _db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT holding_shares FROM positions WHERE portfolio_id=? AND code=?",
+            (portfolio_id, code),
+        ).fetchone()
+    return row["holding_shares"] if row else None
+
+
 class TestTransactions:
     def test_buy_recomputes_holding_shares(self, app_client):
         _add_fund(app_client)
@@ -76,8 +87,9 @@ class TestTransactions:
             "nav": "1.5000", "shares": "1000", "fee": "1.5",
         })
         assert resp.status_code == 200
-        items = app_client.get("/api/funds").json()["items"]
-        assert items[0]["holding_shares"] == "1000"
+        pf_id = resp.json()["portfolio_id"]
+        # holding_shares is now in positions table, not funds
+        assert _get_position_shares("110011", pf_id) == "1000"
 
         txs = app_client.get("/api/funds/110011/transactions").json()["items"]
         assert len(txs) == 1
@@ -101,14 +113,15 @@ class TestTransactions:
 
     def test_delete_transaction(self, app_client):
         _add_fund(app_client)
-        app_client.post("/api/funds/110011/transactions", json={
+        buy_resp = app_client.post("/api/funds/110011/transactions", json={
             "direction": "buy", "trade_date": "2026-06-01", "nav": "1.5", "shares": "100",
         })
+        pf_id = buy_resp.json()["portfolio_id"]
         tx_id = app_client.get("/api/funds/110011/transactions").json()["items"][0]["id"]
         resp = app_client.delete(f"/api/transactions/{tx_id}")
         assert resp.status_code == 200
-        items = app_client.get("/api/funds").json()["items"]
-        assert items[0]["holding_shares"] is None
+        # After deletion, holding_shares should be NULL in positions
+        assert _get_position_shares("110011", pf_id) is None
 
     def test_csv_import_with_dedup(self, app_client):
         _add_fund(app_client)

@@ -13,6 +13,7 @@ import {
   fetchPortfolioSummary,
   fetchQuote,
   fetchTransactions,
+  listPortfolios,
 } from './api'
 
 // ponytail: refetchInterval callback — stops polling outside trading hours to save requests
@@ -30,10 +31,11 @@ export const queryClient = new QueryClient({
 
 /* ---------- query keys ---------- */
 export const keys = {
+  portfolios: ['portfolios'] as const,
   fundsOverview: ['funds', 'overview'] as const,
-  portfolioSummary: ['portfolio', 'summary'] as const,
-  portfolioHoldings: ['portfolio', 'holdings'] as const,
-  portfolioHistory: (limit: number) => ['portfolio', 'history', limit] as const,
+  portfolioSummary: (pf?: number) => ['portfolio', 'summary', pf ?? null] as const,
+  portfolioHoldings: (pf?: number) => ['portfolio', 'holdings', pf ?? null] as const,
+  portfolioHistory: (limit: number, pf?: number) => ['portfolio', 'history', limit, pf ?? null] as const,
   marketIndices: ['market', 'indices'] as const,
   cronStatus: ['cron', 'status'] as const,
   fundDetail: (code: string) => ['fund', code, 'detail'] as const,
@@ -44,6 +46,14 @@ export const keys = {
 }
 
 /* ---------- hooks ---------- */
+export function usePortfolios() {
+  return useQuery({
+    queryKey: keys.portfolios,
+    queryFn: listPortfolios,
+    select: (r) => r.items,
+  })
+}
+
 export function useFundsOverview() {
   return useQuery({
     queryKey: keys.fundsOverview,
@@ -53,25 +63,25 @@ export function useFundsOverview() {
   })
 }
 
-export function usePortfolioSummary() {
+export function usePortfolioSummary(portfolioId?: number) {
   return useQuery({
-    queryKey: keys.portfolioSummary,
-    queryFn: fetchPortfolioSummary,
+    queryKey: keys.portfolioSummary(portfolioId),
+    queryFn: () => fetchPortfolioSummary(portfolioId),
     refetchInterval: tradingRefetch,
   })
 }
 
-export function usePortfolioHoldings() {
+export function usePortfolioHoldings(portfolioId?: number) {
   return useQuery({
-    queryKey: keys.portfolioHoldings,
-    queryFn: fetchPortfolioHoldings,
+    queryKey: keys.portfolioHoldings(portfolioId),
+    queryFn: () => fetchPortfolioHoldings(portfolioId),
   })
 }
 
-export function usePortfolioHistory(limit: number) {
+export function usePortfolioHistory(limit: number, portfolioId?: number) {
   return useQuery({
-    queryKey: keys.portfolioHistory(limit),
-    queryFn: () => fetchPortfolioHistory(limit),
+    queryKey: keys.portfolioHistory(limit, portfolioId),
+    queryFn: () => fetchPortfolioHistory(limit, portfolioId),
     select: (r) => r.history,
   })
 }
@@ -138,12 +148,14 @@ export function useTransactions(code: string | undefined, enabled = true) {
 }
 
 /** 持仓/交易变动后,使组合相关查询失效(overview、summary、history、各基金交易记录) */
-export function useInvalidatePortfolio() {
+export function useInvalidatePortfolio(portfolioId?: number) {
   const qc = useQueryClient()
   return useCallback(() => {
+    qc.invalidateQueries({ queryKey: keys.portfolios })
     qc.invalidateQueries({ queryKey: keys.fundsOverview })
-    qc.invalidateQueries({ queryKey: keys.portfolioSummary })
+    qc.invalidateQueries({ queryKey: keys.portfolioSummary(portfolioId) })
+    qc.invalidateQueries({ queryKey: keys.portfolioHoldings(portfolioId) })
     qc.invalidateQueries({ queryKey: ['portfolio', 'history'] })
     qc.invalidateQueries({ queryKey: ['fund'] })
-  }, [qc])
+  }, [qc, portfolioId])
 }
