@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .core import UPLOAD_DIR
 from .db import init_db
 from .fund_source import close_shared_client
+from .ocr_service import warm_up as warm_up_ocr
 from .routers import (
     ai,
     funds,
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     init_db()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    warm_up_ocr()  # start PaddleOCR model download in background thread
     task = asyncio.create_task(snapshot_scheduler())
     logger.info("Fund Watch API started")
     yield

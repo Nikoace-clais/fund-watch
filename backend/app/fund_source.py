@@ -883,9 +883,14 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
     data = json.loads(text)
 
     results: list[dict[str, Any]] = []
-    for item in (data.get("Datas") or [])[:limit]:
+    for item in (data.get("Datas") or []):
+        if len(results) >= limit:
+            break
         code = item.get("CODE", "")
         if not re.match(r"^\d{6}$", code):
+            continue
+        # ponytail: CATEGORY==700 = 基金; 100=股票,600=指数 — 过滤掉非基金防污染
+        if item.get("CATEGORY") != 700:
             continue
         entry: dict[str, Any] = {"code": code, "name": item.get("NAME", "")}
         base = item.get("FundBaseInfo") or {}

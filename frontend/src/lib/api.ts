@@ -312,15 +312,80 @@ export function deleteTransaction(txId: number) {
   return request<{ ok: boolean; deleted: number }>(`/api/transactions/${txId}`, { method: 'DELETE' })
 }
 
-export function ocrFundCode(file: File) {
+export function getOcrStatus() {
+  return request<{ ready: boolean }>('/api/ocr/status')
+}
+
+type OcrCfg = { provider?: string; api_key?: string; base_url?: string; model?: string; analysis_model?: string }
+
+export type OcrNameMatch = {
+  code: string
+  name: string
+  type?: string
+  ocr_name: string
+  similarity: number
+  review?: 'confirmed' | 'corrected' | 'unreviewed'
+  corrected_name?: string | null
+  amount?: number | null
+}
+
+export type OcrResult = {
+  matched_codes: string[]
+  matched_funds: { code: string; name: string; amount?: number | null }[]
+  name_matches: OcrNameMatch[]
+  raw_text: string
+}
+
+export type OcrStep = {
+  step: 'ocr' | 'ai_extract' | 'search' | 'pro_identify' | 'pro_review'
+  text: string
+}
+
+export type OcrStreamHandlers = {
+  onStep: (s: OcrStep) => void
+  onResult: (r: OcrResult) => void
+  onError: (msg: string) => void
+}
+
+export async function streamOcrFundCode(
+  files: File[],
+  cfg: OcrCfg | undefined,
+  handlers: OcrStreamHandlers,
+): Promise<void> {
   const form = new FormData()
-  form.append('file', file)
-  return request<{
-    matched_codes: string[]
-    matched_funds: { code: string; name: string }[]
-    name_matches: { code: string; name: string; matched_keyword: string; type?: string }[]
-    raw_text: string
-  }>('/api/ocr/fund-code', { method: 'POST', body: form })
+  files.forEach((f) => form.append('files', f))
+  if (cfg?.provider) form.append('provider', cfg.provider)
+  if (cfg?.api_key) form.append('api_key', cfg.api_key)
+  if (cfg?.base_url) form.append('base_url', cfg.base_url)
+  if (cfg?.model) form.append('model', cfg.model)
+  if (cfg?.analysis_model) form.append('analysis_model', cfg.analysis_model)
+
+  const res = await fetch(`${API}/api/ocr/fund-code`, { method: 'POST', body: form })
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}))
+    handlers.onError(err.detail || `HTTP ${res.status}`)
+    return
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() ?? ''
+    for (const part of parts) {
+      const line = part.trim()
+      if (!line.startsWith('data:')) continue
+      try {
+        const event = JSON.parse(line.slice('data:'.length).trim())
+        if (event.type === 'step')   handlers.onStep({ step: event.step, text: event.text })
+        if (event.type === 'result') handlers.onResult(event.data)
+        if (event.type === 'error')  handlers.onError(event.text)
+      } catch { /* malformed chunk */ }
+    }
+  }
 }
 
 // ── AI Fund Selection ───────────────────────────────────────────────────────
