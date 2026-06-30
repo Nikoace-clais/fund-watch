@@ -38,10 +38,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
     datefmt="%H:%M:%S",
 )
-# Show DEBUG logs from fund_source so per-request timings are visible
-logging.getLogger("app.fund_source").setLevel(logging.DEBUG)
-logging.getLogger(__name__).setLevel(logging.DEBUG)
-logging.getLogger("app.services.ai_agent").setLevel(logging.DEBUG)
+# DEBUG logs from fund_source: enable below for per-request timing diagnostics
+# logging.getLogger("app.fund_source").setLevel(logging.DEBUG)
+# logging.getLogger("app.services.ai_agent").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 

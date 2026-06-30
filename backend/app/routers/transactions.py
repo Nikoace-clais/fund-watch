@@ -21,7 +21,8 @@ router = APIRouter(tags=["transactions"])
 
 def _resolve_tx_portfolio(portfolio_id: int | None) -> int:
     """Return the portfolio_id, defaulting to the first existing portfolio.
-    If no portfolios exist yet, auto-create a default one so callers don't 404.
+
+    Raises 404 when no portfolio exists — create one via POST /api/portfolios first.
     """
     if portfolio_id is not None:
         with get_conn() as conn:
@@ -34,15 +35,9 @@ def _resolve_tx_portfolio(portfolio_id: int | None) -> int:
         row = conn.execute(
             "SELECT id FROM portfolios ORDER BY created_at ASC LIMIT 1"
         ).fetchone()
-        if row:
-            return row["id"]
-        # ponytail: auto-create default portfolio on first transaction
-        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-        cur = conn.execute(
-            "INSERT INTO portfolios(name, created_at) VALUES(?, ?)", ("默认组合", now)
-        )
-        conn.commit()
-        return cur.lastrowid  # type: ignore[return-value]
+    if not row:
+        raise HTTPException(status_code=404, detail="尚无组合，请先导入基金建立组合")
+    return row["id"]
 
 
 @router.get("/api/funds/{code}/transactions")

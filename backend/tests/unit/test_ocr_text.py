@@ -74,11 +74,10 @@ async def test_extract_transaction(monkeypatch):
 
     monkeypatch.setattr(ocr_service, "_text_json", _fake)
 
-    raw, tx = await ocr_service.extract_transaction_from_text("ocr", _CFG)
+    tx = await ocr_service.extract_transaction_from_text("ocr", _CFG)
     assert tx["direction"] == "buy"
     assert tx["code"] == "012414"
     assert tx["trade_date"] == "2024-01-15"
-    assert "012414" in raw
 
 
 @pytest.mark.asyncio
@@ -91,7 +90,7 @@ async def test_extract_transaction_null_fields(monkeypatch):
 
     monkeypatch.setattr(ocr_service, "_text_json", _fake)
 
-    _, tx = await ocr_service.extract_transaction_from_text("ocr", _CFG)
+    tx = await ocr_service.extract_transaction_from_text("ocr", _CFG)
     assert all(v is None for v in tx.values())
 
 

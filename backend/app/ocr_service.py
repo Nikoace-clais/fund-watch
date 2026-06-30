@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 from pathlib import Path
 from typing import Any
@@ -221,8 +220,8 @@ async def extract_funds_from_text(
 async def extract_transaction_from_text(
     text: str,
     cfg: dict[str, Any],
-) -> tuple[str, dict]:
-    """Return (raw_json_str, tx_dict) parsed from OCR text."""
+) -> dict:
+    """Return tx_dict parsed from OCR text."""
     result = await _text_json(
         text,
         _TX_PROMPT,
@@ -231,7 +230,6 @@ async def extract_transaction_from_text(
         base_url=cfg.get("base_url"),
         model=cfg.get("model"),
     )
-    raw_text = json.dumps(result, ensure_ascii=False)
     tx: dict[str, Any] = {
         "direction": None,
         "code": None,
@@ -245,7 +243,7 @@ async def extract_transaction_from_text(
             v = result.get(key)
             if v not in (None, "null", ""):
                 tx[key] = v
-    return raw_text, tx
+    return tx
 
 
 # ── Stage 1.5: Pro model identifies unmatched fund names ─────────────────────

@@ -7,10 +7,6 @@ from decimal import Decimal
 from pydantic import BaseModel
 
 
-class AddFundPayload(BaseModel):
-    amount: Decimal | None = None
-
-
 class BatchFundItem(BaseModel):
     code: str | None = None
     name: str | None = None
@@ -25,11 +21,6 @@ class BatchFundsPayload(BaseModel):
     funds: list[BatchFundItem] = []
     portfolio_id: int | None = None      # attach to existing portfolio
     portfolio_name: str | None = None    # or create a new one with this name
-
-
-class UpdateFundPayload(BaseModel):
-    holding_shares: str | None = None
-    sector: str | None = None
 
 
 class AddTransactionPayload(BaseModel):

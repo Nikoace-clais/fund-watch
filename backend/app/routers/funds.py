@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException
 
@@ -23,12 +23,7 @@ from ..fund_source import (
     fetch_realtime_estimate,
     search_fund_by_name,
 )
-from ..schemas import (
-    AddFundPayload,
-    BatchFundItem,
-    BatchFundsPayload,
-    UpdateFundPayload,
-)
+from ..schemas import BatchFundItem, BatchFundsPayload
 from ..services.holdings import recompute_holding_shares
 
 logger = logging.getLogger(__name__)
@@ -40,8 +35,7 @@ router = APIRouter(tags=["funds"])
 def list_funds() -> dict:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT code, name, sector, holding_shares, created_at"
-            " FROM funds ORDER BY created_at DESC"
+            "SELECT code, name, sector, created_at FROM funds ORDER BY created_at DESC"
         ).fetchall()
     return {"items": [dict(r) for r in rows]}
 
@@ -52,7 +46,7 @@ async def funds_overview() -> dict:
         funds = [
             dict(r)
             for r in conn.execute(
-                "SELECT code, name, sector, holding_shares, created_at"
+                "SELECT code, name, sector, created_at"
                 " FROM funds ORDER BY created_at DESC"
             ).fetchall()
         ]
@@ -374,7 +368,11 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
 
 
 @router.post("/api/funds/{code}")
-async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
+async def add_fund(code: str) -> dict:
+    """Add a fund to the global registry (watchlist).
+
+    Position data lives in /api/funds/batch.
+    """
     code = validate_code(code)
     now = datetime.now(timezone.utc).isoformat()
 
@@ -388,22 +386,15 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     except Exception:
         pass
 
-    amount = float(payload.amount) if payload and payload.amount is not None else None
-
     with get_conn() as conn:
         existing = conn.execute(
             "SELECT code FROM funds WHERE code=?", (code,)
         ).fetchone()
         if existing:
-            if amount is not None:
-                conn.execute("UPDATE funds SET amount=? WHERE code=?", (amount, code))
-            if (
-                sector
-                and not conn.execute(
-                    "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
-                    (code,),
-                ).fetchone()
-            ):
+            if sector and not conn.execute(
+                "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
+                (code,),
+            ).fetchone():
                 conn.execute(
                     "UPDATE funds SET sector=?, name=? WHERE code=?",
                     (sector, name, code),
@@ -414,51 +405,12 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
                     status_code=400, detail="无法获取基金信息，请确认基金代码有效后重试"
                 )
             conn.execute(
-                "INSERT INTO funds(code,name,sector,amount,created_at)"
-                " VALUES(?,?,?,?,?)",
-                (code, name, sector, amount, now),
+                "INSERT INTO funds(code,name,sector,created_at) VALUES(?,?,?,?)",
+                (code, name, sector, now),
             )
         conn.commit()
     return {"ok": True, "code": code, "name": name, "sector": sector}
 
-
-@router.patch("/api/funds/{code}")
-def update_fund(code: str, payload: UpdateFundPayload) -> dict:
-    code = validate_code(code)
-    with get_conn() as conn:
-        if not conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone():
-            raise HTTPException(status_code=404, detail="fund not found")
-
-        # If has transactions, reject manual shares edit
-        if payload.holding_shares is not None:
-            tx_count = conn.execute(
-                "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
-            ).fetchone()["c"]
-            if tx_count > 0:
-                raise HTTPException(
-                    status_code=400, detail="有交易记录时不可手动编辑份额"
-                )
-            try:
-                shares_d = Decimal(payload.holding_shares)
-            except InvalidOperation:
-                raise HTTPException(status_code=400, detail="无效的份额数值")
-            if shares_d < 0:
-                raise HTTPException(status_code=400, detail="份额不能为负数")
-
-        updates = []
-        params: list = []
-        if payload.holding_shares is not None:
-            updates.append("holding_shares=?")
-            params.append(payload.holding_shares)
-        if payload.sector is not None:
-            updates.append("sector=?")
-            params.append(payload.sector)
-        if not updates:
-            raise HTTPException(status_code=400, detail="nothing to update")
-        params.append(code)
-        conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
-        conn.commit()
-    return {"ok": True, "code": code}
 
 
 @router.delete("/api/funds/{code}")
@@ -473,6 +425,7 @@ def delete_fund(code: str) -> dict:
             raise HTTPException(status_code=404, detail="fund not found")
         conn.execute("DELETE FROM fund_snapshots WHERE code=?", (code,))
         conn.execute("DELETE FROM transactions WHERE code=?", (code,))
+        conn.execute("DELETE FROM positions WHERE code=?", (code,))
         conn.execute("DELETE FROM funds WHERE code=?", (code,))
         conn.commit()
     return {"ok": True, "code": code}

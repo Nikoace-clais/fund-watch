@@ -133,8 +133,11 @@ async def _ocr_fund_generator(
     # ── Verify code funds ────────────────────────────────────────────────
     matched_funds: list[dict] = []
     codes: list[str] = []
+    truncated: list[str] = []
     if code_funds:
         yield _sse("step", step="search", text=f"验证基金代码（{len(code_funds)} 个）...")
+        if len(code_funds) > _VERIFY_LIMIT:
+            truncated += [f["code"] for f in code_funds[_VERIFY_LIMIT:]]
         infos = await asyncio.gather(
             *[_resolve_code(f["code"]) for f in code_funds[:_VERIFY_LIMIT]]
         )
@@ -156,6 +159,8 @@ async def _ocr_fund_generator(
 
     if name_funds:
         yield _sse("step", step="search", text=f"搜索基金数据库（{len(name_funds)} 个名称）...")
+        if len(name_funds) > _VERIFY_LIMIT:
+            truncated += [f["name"] for f in name_funds[_VERIFY_LIMIT:]]
         for fund in name_funds[:_VERIFY_LIMIT]:
             if not fund["name"]:
                 continue
@@ -301,7 +306,7 @@ async def _ocr_fund_generator(
         )
         conn.commit()
 
-    yield _sse("result", data={
+    result_data: dict = {
         "ok": True,
         "image": image_names,
         "matched_codes": codes,
@@ -309,7 +314,11 @@ async def _ocr_fund_generator(
         "name_matches": name_matches,
         "raw_text": combined_raw,
         "saved_at": now,
-    })
+    }
+    if truncated:
+        result_data["truncated"] = truncated
+        log.warning("识别结果超过上限 %d,已截断: %s", _VERIFY_LIMIT, truncated)
+    yield _sse("result", data=result_data)
 
 
 @router.post("/api/ocr/fund-code")
@@ -348,7 +357,7 @@ async def ocr_transaction(
     raw_text = await run_in_threadpool(ocr_text, path)
 
     try:
-        _, tx_data = await extract_transaction_from_text(raw_text, cfg)
+        tx_data = await extract_transaction_from_text(raw_text, cfg)
     except Exception as e:
         raise HTTPException(status_code=400, detail=_ai_error(e)) from e
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator
 
@@ -30,9 +30,7 @@ def get_conn() -> Generator[sqlite3.Connection, None, None]:
 
 def prune_old_snapshots(keep_days: int = 30) -> int:
     """Delete fund_snapshots older than keep_days. Returns number of rows deleted."""
-    cutoff = (datetime.utcnow() - timedelta(days=keep_days)).strftime(
-        "%Y-%m-%dT%H:%M:%S"
-    )
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
     with get_conn() as conn:
         cur = conn.execute(
             "DELETE FROM fund_snapshots WHERE captured_at < ?", (cutoff,)
@@ -194,7 +192,7 @@ def _migrate_single_pool_to_default_portfolio(conn: sqlite3.Connection) -> None:
     if not legacy_funds and not has_tx:
         return  # fresh install: let the import flow create the first portfolio
 
-    now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     cur = conn.execute(
         "INSERT INTO portfolios(name, created_at) VALUES(?, ?)", ("默认组合", now)
     )
