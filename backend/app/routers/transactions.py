@@ -41,7 +41,7 @@ def _resolve_tx_portfolio(portfolio_id: int | None) -> int:
 
 
 @router.get("/api/funds/{code}/transactions")
-def list_transactions(
+async def list_transactions(
     code: str, portfolio_id: int | None = Query(default=None)
 ) -> dict:
     code = validate_code(code)
@@ -56,7 +56,7 @@ def list_transactions(
 
 
 @router.post("/api/funds/{code}/transactions")
-def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
+async def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
     code = validate_code(code)
     pf_id = _resolve_tx_portfolio(payload.portfolio_id)
 
@@ -144,7 +144,7 @@ def add_transaction(code: str, payload: AddTransactionPayload) -> dict:
 
 
 @router.delete("/api/transactions/{tx_id}")
-def delete_transaction(tx_id: int) -> dict:
+async def delete_transaction(tx_id: int) -> dict:
     with get_conn() as conn:
         row = conn.execute(
             "SELECT code, portfolio_id, direction, shares FROM transactions WHERE id=?",
@@ -185,9 +185,7 @@ def delete_transaction(tx_id: int) -> dict:
 
 
 @router.get("/api/funds/{code}/pnl")
-async def get_pnl(
-    code: str, portfolio_id: int | None = Query(default=None)
-) -> dict:
+async def get_pnl(code: str, portfolio_id: int | None = Query(default=None)) -> dict:
     code = validate_code(code)
     pf_id = _resolve_tx_portfolio(portfolio_id)
     current_nav = None

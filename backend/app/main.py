@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -44,19 +45,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _is_test_mode() -> bool:
+    return os.environ.get("FUND_WATCH_TEST_MODE") == "1"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    warm_up_ocr()  # start PaddleOCR model download in background thread
-    task = asyncio.create_task(snapshot_scheduler())
+    task: asyncio.Task | None = None
+    if not _is_test_mode():
+        warm_up_ocr()  # start PaddleOCR model download in background thread
+        task = asyncio.create_task(snapshot_scheduler())
     logger.info("Fund Watch API started")
     yield
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await close_shared_client()
     logger.info("Fund Watch API shutdown")
 

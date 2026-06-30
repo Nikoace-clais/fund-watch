@@ -35,7 +35,8 @@ fund-watch/
 ├── PLAN.md                # 功能规划
 ├── README.md
 ├── backend/
-│   ├── requirements.txt
+│   ├── pyproject.toml
+│   ├── uv.lock
 │   ├── pull_quotes.py     # 定时拉取脚本
 │   ├── app/
 │   │   ├── main.py        # FastAPI 入口 + 所有路由

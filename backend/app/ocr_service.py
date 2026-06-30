@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 # ponytail: disable oneDNN — causes RuntimeError: std::exception on WSL2 / some CPUs
-#os.environ.setdefault("FLAGS_use_mkldnn", "0")
+# os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
 log = logging.getLogger(__name__)
 
@@ -130,7 +130,9 @@ async def _text_json(
     try:
         return _parse_json(raw)
     except ValueError:
-        log.warning("AI returned non-JSON (provider=%s model=%s): %r", provider, model, raw)
+        log.warning(
+            "AI returned non-JSON (provider=%s model=%s): %r", provider, model, raw
+        )
         raise
 
 
@@ -300,14 +302,24 @@ async def resolve_unknown_fund_names(
         return {}
 
     out: dict[int, dict] = {}
-    for item in (result.get("items") or [] if isinstance(result, dict) else []):
+    for item in result.get("items") or [] if isinstance(result, dict) else []:
         idx = item.get("index")
         name = (item.get("full_name") or "").strip()
         raw_code = str(item.get("code") or "").strip()
         code = raw_code if (len(raw_code) == 6 and raw_code.isdigit()) else None
         if idx is not None and name:
-            ocr_name = unknown[idx]["name"] if isinstance(idx, int) and idx < len(unknown) else "?"
-            log.info("Pro识别 #%d: 「%s」→ 名称=「%s」代码=%s", idx, ocr_name, name, code or "未知")
+            ocr_name = (
+                unknown[idx]["name"]
+                if isinstance(idx, int) and idx < len(unknown)
+                else "?"
+            )
+            log.info(
+                "Pro识别 #%d: 「%s」→ 名称=「%s」代码=%s",
+                idx,
+                ocr_name,
+                name,
+                code or "未知",
+            )
             out[idx] = {"full_name": name, "code": code}
     return out
 
@@ -315,7 +327,8 @@ async def resolve_unknown_fund_names(
 # ── Stage 2: Pro model review ────────────────────────────────────────────────
 
 _REVIEW_PROMPT = """\
-你是基金信息核查员。以下是从 App 截图 OCR 识别出的文字，以及系统对每条基金的初步匹配结果。
+你是基金信息核查员。以下是从 App 截图 OCR 识别出的文字，
+以及系统对每条基金的初步匹配结果。
 
 请逐条判断：初步匹配的基金是否就是截图里描述的那只基金？
 
@@ -325,7 +338,8 @@ _REVIEW_PROMPT = """\
 
 规则：
 - ok=true：匹配正确，corrected_name 填 null
-- ok=false：匹配错误，corrected_name 填正确基金的**完整中文名称**（不要输出代码，不要输出英文缩写）
+- ok=false：匹配错误，corrected_name 填正确基金的**完整中文名称**
+  （不要输出代码，不要输出英文缩写）
 - 若截图文字不足以判断，填 ok=true（保守策略，不要过度纠正）
 - corrected_name 只输出基金全名，例如「招商中证白酒指数（LOF）A」\
 """
@@ -355,7 +369,8 @@ async def review_fund_matches(
     lines = ["OCR原文：", ocr_text, "", "初步匹配结果："]
     for item in preliminary:
         lines.append(
-            f"#{item['index']} OCR识别名称:「{item['ocr_name']}」→ 匹配为:「{item['name']}」({item['code']})"
+            f"#{item['index']} OCR识别名称:「{item['ocr_name']}」"
+            f"→ 匹配为:「{item['name']}」({item['code']})"
         )
     user_content = "\n".join(lines)
 
@@ -395,7 +410,10 @@ async def review_fund_matches(
                 item["corrected_name"] = corrected
                 log.info(
                     "Pro核对 #%d: ✗ 「%s」(%s) → 纠正为「%s」(待搜索)",
-                    idx, item["name"], item["code"], corrected,
+                    idx,
+                    item["name"],
+                    item["code"],
+                    corrected,
                 )
             else:
                 item["review"] = "confirmed"  # no correction offered → keep

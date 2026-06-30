@@ -1,18 +1,17 @@
 """Tests for stock industry enrichment (fetch_stock_industries)."""
+
 from __future__ import annotations
 
 import os
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from app.fund_source import _secid, fetch_stock_industries
 
-
 # ── secid prefix helper ───────────────────────────────────────────────────────
+
 
 def test_secid_shanghai():
     assert _secid("600519") == "1"  # 贵州茅台
@@ -26,6 +25,7 @@ def test_secid_shenzhen():
 
 
 # ── fetch_stock_industries: hits local table, skips API ──────────────────────
+
 
 @pytest.fixture()
 def tmp_db(tmp_path):

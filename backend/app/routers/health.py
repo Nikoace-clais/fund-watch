@@ -10,5 +10,5 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/api/health")
-def health() -> dict:
+async def health() -> dict:
     return {"ok": True, "time": datetime.now(timezone.utc).isoformat()}

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from app import ocr_service
 
 _CFG = {"provider": "anthropic", "api_key": "test-key", "base_url": None, "model": None}
@@ -24,8 +23,8 @@ async def test_extract_funds_happy(monkeypatch):
 async def test_extract_funds_filters_bad_codes(monkeypatch):
     async def _fake(text, prompt, **kw):
         return [
-            {"code": "123"},        # too short → drop
-            {"code": "abcdef"},     # not digits → drop
+            {"code": "123"},  # too short → drop
+            {"code": "abcdef"},  # not digits → drop
             {"code": "161725", "name": "招商中证白酒", "amount": None},
         ]
 
@@ -39,6 +38,7 @@ async def test_extract_funds_filters_bad_codes(monkeypatch):
 @pytest.mark.asyncio
 async def test_extract_funds_wrapped_object(monkeypatch):
     """json_object mode wraps array in {"funds": [...]}."""
+
     async def _fake(text, prompt, **kw):
         return {"funds": [{"code": "110011", "name": "易方达消费行业", "amount": None}]}
 
@@ -84,8 +84,12 @@ async def test_extract_transaction(monkeypatch):
 async def test_extract_transaction_null_fields(monkeypatch):
     async def _fake(text, prompt, **kw):
         return {
-            "direction": None, "code": None, "trade_date": None,
-            "nav": None, "shares": None, "amount": None,
+            "direction": None,
+            "code": None,
+            "trade_date": None,
+            "nav": None,
+            "shares": None,
+            "amount": None,
         }
 
     monkeypatch.setattr(ocr_service, "_text_json", _fake)

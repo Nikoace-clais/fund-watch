@@ -28,7 +28,7 @@ async def pull_snapshots() -> dict:
 
 
 @router.get("/api/snapshots/{code}")
-def get_snapshots(code: str, limit: int = 50) -> dict:
+async def get_snapshots(code: str, limit: int = 50) -> dict:
     code = validate_code(code)
     limit = max(1, min(limit, 500))
     with get_conn() as conn:
@@ -48,7 +48,7 @@ def get_snapshots(code: str, limit: int = 50) -> dict:
 
 
 @router.get("/api/cron/status")
-def cron_status() -> dict:
+async def cron_status() -> dict:
     """Return the snapshot scheduler state."""
     return {
         "interval_minutes": 5,

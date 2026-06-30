@@ -19,7 +19,8 @@ import app.fund_source as fund_source
 import httpx
 import pytest
 from app.main import app as fastapi_app
-from fastapi.testclient import TestClient
+
+from tests.client import ASGISyncClient
 
 # ── Canned responses ─────────────────────────────────────────────────────────
 
@@ -65,7 +66,7 @@ def stock_client(tmp_path, monkeypatch):
     """TestClient backed by a temp DB; lifespan not started (no scheduler)."""
     monkeypatch.setattr(app_db, "DB_PATH", tmp_path / "test.db")
     app_db.init_db()
-    return TestClient(fastapi_app)
+    return ASGISyncClient(fastapi_app)
 
 
 @pytest.fixture

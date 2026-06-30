@@ -17,7 +17,7 @@ class PortfolioPayload(BaseModel):
 
 
 @router.get("/api/portfolios")
-def list_portfolios() -> dict:
+async def list_portfolios() -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT p.id, p.name, p.created_at,
@@ -30,7 +30,7 @@ def list_portfolios() -> dict:
 
 
 @router.post("/api/portfolios")
-def create_portfolio(payload: PortfolioPayload) -> dict:
+async def create_portfolio(payload: PortfolioPayload) -> dict:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="组合名称不能为空")
@@ -44,7 +44,7 @@ def create_portfolio(payload: PortfolioPayload) -> dict:
 
 
 @router.patch("/api/portfolios/{portfolio_id}")
-def rename_portfolio(portfolio_id: int, payload: PortfolioPayload) -> dict:
+async def rename_portfolio(portfolio_id: int, payload: PortfolioPayload) -> dict:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="组合名称不能为空")
@@ -59,16 +59,14 @@ def rename_portfolio(portfolio_id: int, payload: PortfolioPayload) -> dict:
 
 
 @router.delete("/api/portfolios/{portfolio_id}")
-def delete_portfolio(portfolio_id: int) -> dict:
+async def delete_portfolio(portfolio_id: int) -> dict:
     with get_conn() as conn:
         if not conn.execute(
             "SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)
         ).fetchone():
             raise HTTPException(status_code=404, detail="组合不存在")
         conn.execute("DELETE FROM positions WHERE portfolio_id=?", (portfolio_id,))
-        conn.execute(
-            "DELETE FROM transactions WHERE portfolio_id=?", (portfolio_id,)
-        )
+        conn.execute("DELETE FROM transactions WHERE portfolio_id=?", (portfolio_id,))
         conn.execute("DELETE FROM portfolios WHERE id=?", (portfolio_id,))
         conn.commit()
     return {"ok": True, "id": portfolio_id}

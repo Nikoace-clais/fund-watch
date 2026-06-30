@@ -32,7 +32,7 @@ router = APIRouter(tags=["funds"])
 
 
 @router.get("/api/funds")
-def list_funds() -> dict:
+async def list_funds() -> dict:
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT code, name, sector, created_at FROM funds ORDER BY created_at DESC"
@@ -391,10 +391,13 @@ async def add_fund(code: str) -> dict:
             "SELECT code FROM funds WHERE code=?", (code,)
         ).fetchone()
         if existing:
-            if sector and not conn.execute(
-                "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
-                (code,),
-            ).fetchone():
+            if (
+                sector
+                and not conn.execute(
+                    "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
+                    (code,),
+                ).fetchone()
+            ):
                 conn.execute(
                     "UPDATE funds SET sector=?, name=? WHERE code=?",
                     (sector, name, code),
@@ -412,9 +415,10 @@ async def add_fund(code: str) -> dict:
     return {"ok": True, "code": code, "name": name, "sector": sector}
 
 
-
 @router.delete("/api/funds/{code}")
-def delete_fund(code: str, portfolio_id: int | None = Query(default=None)) -> dict:
+async def delete_fund(
+    code: str, portfolio_id: int | None = Query(default=None)
+) -> dict:
     """Remove a fund from the watchlist."""
     code = validate_code(code)
     with get_conn() as conn:
