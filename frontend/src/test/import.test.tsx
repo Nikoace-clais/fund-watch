@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { ImportPreview } from '../components/ImportPreview';
 import { ProviderConfigProvider } from '../lib/provider-config';
 import type { ImportPreviewResult } from '../services/import';
@@ -16,14 +16,17 @@ function Providers({ children }: { children: ReactNode }) {
   );
 }
 
-function renderWrapped(ui: React.ReactElement) {
+function renderWrapped(ui: ReactElement) {
   return render(ui, { wrapper: Providers });
 }
 
 describe('ImportPreview Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [] }),
+    });
   });
 
   it('should render upload area', () => {
@@ -43,7 +46,12 @@ describe('ImportPreview Component', () => {
     const pendingPromise = new Promise<Response>((resolve) => {
       resolvePromise = () => resolve(new Response());
     });
-    (global.fetch as ReturnType<typeof vi.fn>).mockReturnValue(pendingPromise);
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [] }),
+      })
+      .mockReturnValueOnce(pendingPromise);
 
     renderWrapped(<ImportPreview onImport={() => {}} />);
 

@@ -5,7 +5,7 @@ import os
 import sqlite3
 import tempfile
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -69,7 +69,7 @@ async def test_hits_local_table_no_api(tmp_db):
 @pytest.mark.asyncio
 async def test_unknown_code_skipped_gracefully(tmp_db):
     """Unknown code with failed API → returns partial result, no crash."""
-    mock_resp = AsyncMock()
+    mock_resp = MagicMock()
     mock_resp.raise_for_status = lambda: None
     mock_resp.json.return_value = {"data": None}  # empty/bad response
 

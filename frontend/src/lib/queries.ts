@@ -42,7 +42,7 @@ export const keys = {
   navHistory: (code: string, limit: number) => ['fund', code, 'nav-history', limit] as const,
   fundHoldings: (code: string) => ['fund', code, 'holdings'] as const,
   quote: (code: string) => ['fund', code, 'quote'] as const,
-  transactions: (code: string) => ['fund', code, 'transactions'] as const,
+  transactions: (code: string, pf?: number) => ['fund', code, 'transactions', pf ?? null] as const,
 }
 
 /* ---------- hooks ---------- */
@@ -138,10 +138,10 @@ export function useQuote(code: string | undefined) {
   })
 }
 
-export function useTransactions(code: string | undefined, enabled = true) {
+export function useTransactions(code: string | undefined, portfolioId?: number, enabled = true) {
   return useQuery({
-    queryKey: keys.transactions(code ?? ''),
-    queryFn: () => fetchTransactions(code!),
+    queryKey: keys.transactions(code ?? '', portfolioId),
+    queryFn: () => fetchTransactions(code!, portfolioId),
     select: (r) => r.items,
     enabled: !!code && enabled,
   })

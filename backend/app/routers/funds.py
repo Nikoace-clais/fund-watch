@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..core import validate_code
 from ..db import get_conn
@@ -414,7 +414,7 @@ async def add_fund(code: str) -> dict:
 
 
 @router.delete("/api/funds/{code}")
-def delete_fund(code: str) -> dict:
+def delete_fund(code: str, portfolio_id: int | None = Query(default=None)) -> dict:
     """Remove a fund from the watchlist."""
     code = validate_code(code)
     with get_conn() as conn:
@@ -423,12 +423,33 @@ def delete_fund(code: str) -> dict:
         ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="fund not found")
+        if portfolio_id is not None:
+            portfolio = conn.execute(
+                "SELECT id FROM portfolios WHERE id=?", (portfolio_id,)
+            ).fetchone()
+            if not portfolio:
+                raise HTTPException(status_code=404, detail="portfolio not found")
+            conn.execute(
+                "DELETE FROM transactions WHERE portfolio_id=? AND code=?",
+                (portfolio_id, code),
+            )
+            conn.execute(
+                "DELETE FROM positions WHERE portfolio_id=? AND code=?",
+                (portfolio_id, code),
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "code": code,
+                "portfolio_id": portfolio_id,
+                "scope": "portfolio",
+            }
         conn.execute("DELETE FROM fund_snapshots WHERE code=?", (code,))
         conn.execute("DELETE FROM transactions WHERE code=?", (code,))
         conn.execute("DELETE FROM positions WHERE code=?", (code,))
         conn.execute("DELETE FROM funds WHERE code=?", (code,))
         conn.commit()
-    return {"ok": True, "code": code}
+    return {"ok": True, "code": code, "scope": "global"}
 
 
 @router.get("/api/funds/{code}/holdings")

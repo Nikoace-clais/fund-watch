@@ -5,15 +5,16 @@ import { useInvalidatePortfolio, useTransactions } from '@/lib/queries'
 import { cn, formatCNY } from '@/lib/utils'
 
 export function TransactionModal({
-  code, name, onClose, onAddTx,
+  code, name, portfolioId, onClose, onAddTx,
 }: {
   code: string
   name?: string
+  portfolioId?: number
   onClose: () => void
   onAddTx: () => void
 }) {
-  const { data: items = [], isLoading: loading } = useTransactions(code)
-  const invalidatePortfolio = useInvalidatePortfolio()
+  const { data: items = [], isLoading: loading } = useTransactions(code, portfolioId)
+  const invalidatePortfolio = useInvalidatePortfolio(portfolioId)
   const [deleting, setDeleting] = useState<number | null>(null)
 
   const handleDelete = async (id: number) => {

@@ -113,6 +113,7 @@ export type CronStatus = {
 
 export type Transaction = {
   id: number
+  portfolio_id?: number | null
   direction: 'buy' | 'sell'
   trade_date: string
   nav: string
@@ -210,8 +211,9 @@ export function addFund(code: string) {
 }
 
 // Delete fund
-export function deleteFund(code: string) {
-  return request<{ ok: boolean }>(`/api/funds/${code}`, { method: 'DELETE' })
+export function deleteFund(code: string, portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  return request<{ ok: boolean }>(`/api/funds/${code}${qs}`, { method: 'DELETE' })
 }
 
 // Pull snapshots
@@ -266,6 +268,7 @@ export function addTransaction(code: string, payload: {
   shares: string
   fee?: string
   note?: string
+  portfolio_id?: number
 }) {
   return request<{ ok: boolean; code: string }>(`/api/funds/${code}/transactions`, {
     method: 'POST',
@@ -302,9 +305,10 @@ export function fetchSnapshots(code: string, limit = 200) {
   }>(`/api/snapshots/${code}?limit=${limit}`)
 }
 
-export function fetchTransactions(code: string) {
+export function fetchTransactions(code: string, portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
   return request<{ code: string; items: Transaction[] }>(
-    `/api/funds/${code}/transactions`
+    `/api/funds/${code}/transactions${qs}`
   )
 }
 

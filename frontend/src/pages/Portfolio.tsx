@@ -81,7 +81,41 @@ export function Portfolio() {
       }))
   }, [items, overview])
 
-  const handleDelete = useCallback(
+  const handleDeleteHolding = useCallback(
+    async (code: string, name?: string) => {
+      if (!confirm(`确认删除基金 ${name || code}?`)) return
+      setDeleting(code)
+      try {
+        await deleteFund(code, selectedId)
+        invalidatePortfolio()
+      } finally {
+        setDeleting(null)
+      }
+    },
+    [invalidatePortfolio, selectedId],
+  )
+
+  const handleBatchDeleteHolding = useCallback(
+    async (codes: string[], clearSelection: () => void) => {
+      if (!confirm(`确认删除选中的 ${codes.length} 只基金？此操作不可撤销。`)) return
+      setBatchDeleting(true)
+      try {
+        const results = await Promise.allSettled(codes.map((c) => deleteFund(c, selectedId)))
+        invalidatePortfolio()
+        const failed = results.filter((r) => r.status === 'rejected').length
+        if (failed > 0) {
+          alert(`${failed} 只基金删除失败，请稍后重试`)
+        } else {
+          clearSelection()
+        }
+      } finally {
+        setBatchDeleting(false)
+      }
+    },
+    [invalidatePortfolio, selectedId],
+  )
+
+  const handleDeleteWatch = useCallback(
     async (code: string, name?: string) => {
       if (!confirm(`确认删除基金 ${name || code}?`)) return
       setDeleting(code)
@@ -95,7 +129,7 @@ export function Portfolio() {
     [invalidatePortfolio],
   )
 
-  const handleBatchDelete = useCallback(
+  const handleBatchDeleteWatch = useCallback(
     async (codes: string[], clearSelection: () => void) => {
       if (!confirm(`确认删除选中的 ${codes.length} 只基金？此操作不可撤销。`)) return
       setBatchDeleting(true)
@@ -283,12 +317,14 @@ export function Portfolio() {
         code={holdingEdit?.code ?? ''}
         name={holdingEdit?.name}
         defaultNav={holdingEdit?.nav}
+        portfolioId={selectedId}
       />
 
       {txView && (
         <TransactionModal
           code={txView.code}
           name={txView.name}
+          portfolioId={selectedId}
           onClose={() => setTxView(null)}
           onAddTx={() => { setTxView(null); setHoldingEdit({ code: txView.code, name: txView.name }) }}
         />
@@ -336,8 +372,8 @@ export function Portfolio() {
               batchDeleting={batchDeleting}
               onViewTx={handleViewTx}
               onEditHolding={handleEditHolding}
-              onDelete={handleDelete}
-              onBatchDelete={handleBatchDelete}
+              onDelete={handleDeleteHolding}
+              onBatchDelete={handleBatchDeleteHolding}
             />
             <AllocationPie items={items} totalCurrent={totalCurrent} fundCount={summary.fund_count} />
           </div>
@@ -355,8 +391,8 @@ export function Portfolio() {
           deleting={deleting}
           batchDeleting={batchDeleting}
           onEditHolding={handleEditHolding}
-          onDelete={handleDelete}
-          onBatchDelete={handleBatchDelete}
+          onDelete={handleDeleteWatch}
+          onBatchDelete={handleBatchDeleteWatch}
         />
       )}
     </div>

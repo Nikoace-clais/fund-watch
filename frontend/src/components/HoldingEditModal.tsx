@@ -10,9 +10,10 @@ type Props = {
   code: string
   name?: string
   defaultNav?: number
+  portfolioId?: number
 }
 
-export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNav }: Props) {
+export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNav, portfolioId }: Props) {
   const today = new Date().toISOString().slice(0, 10)
 
   const [direction, setDirection] = useState<'buy' | 'sell'>('buy')
@@ -85,7 +86,7 @@ export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNa
     if (!nav || !shares) { setError('请填写净值和份额'); return }
     setSubmitting(true)
     try {
-      await addTransaction(code, { direction, trade_date: tradeDate, nav, shares, fee })
+      await addTransaction(code, { direction, trade_date: tradeDate, nav, shares, fee, portfolio_id: portfolioId })
       onSaved()
       onClose()
     } catch (err: unknown) {

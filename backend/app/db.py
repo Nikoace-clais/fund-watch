@@ -14,10 +14,15 @@ DB_PATH = Path(
 )
 
 
+def _current_db_path() -> Path:
+    return Path(os.environ.get("FUND_WATCH_DB") or DB_PATH)
+
+
 @contextmanager
 def get_conn() -> Generator[sqlite3.Connection, None, None]:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    db_path = _current_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys = ON")
