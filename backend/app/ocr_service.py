@@ -65,6 +65,8 @@ def ocr_text(image_path: Path) -> str:
 
 def _parse_json(s: str) -> Any:
     s = s.strip()
+    if not s:
+        raise ValueError("模型返回空响应")
     if s.startswith("```"):
         s = s.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
@@ -100,8 +102,13 @@ async def _text_json(
     api_key: str,
     base_url: str | None,
     model: str | None,
+    thinking: bool = False,
 ) -> Any:
-    """Send OCR text + prompt to a text model; return parsed JSON."""
+    """Send OCR text + prompt to a text model; return parsed JSON.
+
+    thinking=True enables deepseek-v4 thinking mode (openai branch only).
+    Final answer is always in content; reasoning_content is discarded.
+    """
     user_msg = f"{prompt}\n\n---\n{text}"
 
     if provider == "anthropic":
@@ -110,7 +117,7 @@ async def _text_json(
         client = anthropic.AsyncAnthropic(api_key=api_key)
         resp = await client.messages.create(
             model=model or "claude-opus-4-8",
-            max_tokens=2048,
+            max_tokens=8192,
             messages=[{"role": "user", "content": user_msg}],
         )
         raw = resp.content[0].text
@@ -118,13 +125,32 @@ async def _text_json(
         import openai
 
         client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
-        resp = await client.chat.completions.create(
-            model=model or "gpt-4o",
-            max_tokens=2048,
-            response_format={"type": "json_object"},
-            messages=[{"role": "user", "content": user_msg}],
-        )
-        raw = resp.choices[0].message.content or ""
+        req: dict[str, Any] = {
+            "model": model or "gpt-4o",
+            "max_tokens": 8192,
+            "response_format": {"type": "json_object"},
+            "messages": [{"role": "user", "content": user_msg}],
+        }
+        if thinking:
+            # ponytail: deepseek thinking mode — final answer still in content,
+            # reasoning_content is discarded; json_object compatible per docs
+            req["extra_body"] = {"thinking": {"type": "enabled"}}
+            req["reasoning_effort"] = "high"
+            log.debug("AI thinking mode enabled (model=%s)", model)
+        resp = await client.chat.completions.create(**req)
+        choice = resp.choices[0]
+        log.debug("AI finish_reason=%s", choice.finish_reason)
+        raw = choice.message.content or ""
+        if not raw:
+            # ponytail: retry once without response_format — some gateways
+            # silently return empty content when json_object isn't supported
+            log.warning(
+                "AI空响应(provider=%s model=%s finish_reason=%s)，去掉json_object重试",
+                provider, model, choice.finish_reason,
+            )
+            req.pop("response_format")
+            resp2 = await client.chat.completions.create(**req)
+            raw = resp2.choices[0].message.content or ""
 
     log.debug("AI raw response (%s chars): %s", len(raw), raw[:300])
     try:
@@ -251,17 +277,18 @@ async def extract_transaction_from_text(
 _IDENTIFY_PROMPT = """\
 以下是从基金 App 截图 OCR 识别出的文字，以及系统未能搜索到的基金名称片段。
 
-请根据 OCR 原文推断每条名称对应的完整基金信息。
+系统会用你给出的 full_name 去天天基金搜索接口确定性查询，因此 full_name 必须是
+能被搜索命中的官方规范名称（品牌+主题关键词），不要带多余后缀。
 
 仅输出 JSON，不要输出任何解释。
 
-格式：{"items":[{"index":序号,"full_name":"完整基金中文名称或null","code":"6位数字基金代码或null"}]}
+格式：{"items":[{"index":序号,"full_name":"官方基金规范名称或null","code":"6位数字基金代码或null"}]}
 
 规则：
-- full_name 输出完整官方基金名称（如「招商中证白酒指数(LOF)A」）
-- code 输出 6 位纯数字基金代码（如「161725」），不确定则填 null
-- 若 OCR 原文中完全找不到对应基金，full_name 和 code 均填 null
-- 不确定份额(A/C/D)时，优先选 A 份额\
+- full_name 输出官方基金名称，保留份额字母(A/C)，例如「广发纳斯达克100ETF联接(QDII)A」
+- 若 OCR 名称本身看起来就是官方名，原样输出即可
+- code 输出 6 位纯数字代码，确定才填，否则填 null（我方会用名称搜索兜底）
+- 若完全找不到对应基金，full_name 和 code 均填 null\
 """
 
 
@@ -294,6 +321,7 @@ async def resolve_unknown_fund_names(
             api_key=cfg["api_key"],
             base_url=cfg.get("base_url"),
             model=review_model,
+            thinking=True,
         )
     except Exception as exc:
         log.warning("Pro未命中识别失败(%s)", exc)
@@ -368,6 +396,7 @@ async def review_fund_matches(
             api_key=cfg["api_key"],
             base_url=cfg.get("base_url"),
             model=review_model,
+            thinking=True,
         )
     except Exception as exc:
         log.warning("Pro核对调用失败(%s)，跳过", exc)
@@ -404,3 +433,20 @@ async def review_fund_matches(
         if "review" not in item:
             item["review"] = "unreviewed"
     return preliminary
+
+
+if __name__ == "__main__":
+    import sys
+
+    # _parse_json self-check
+    try:
+        _parse_json("")
+        assert False, "空串应抛出 ValueError"
+    except ValueError as e:
+        assert "空响应" in str(e), e
+
+    assert _parse_json('{"a":1}') == {"a": 1}
+    assert _parse_json("```json\n[1,2]\n```") == [1, 2]
+    assert _parse_json("prefix {\"x\": 2} suffix") == {"x": 2}
+    print("_parse_json 自检通过")
+    sys.exit(0)
