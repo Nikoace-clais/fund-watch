@@ -28,6 +28,7 @@ from ..ocr_service import (
     resolve_unknown_fund_names,
     review_fund_matches,
 )
+from ..repositories import ocr_repo
 
 router = APIRouter(tags=["ocr"])
 
@@ -369,10 +370,12 @@ async def _ocr_fund_generator(
     now = datetime.now(timezone.utc).isoformat()
     log.info("最终结果: matched_codes=%s name_matches=%d", codes, len(name_matches))
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO ocr_records(image_name,raw_text,matched_codes,created_at)"
-            " VALUES(?,?,?,?)",
-            (image_names, combined_raw, json.dumps(codes, ensure_ascii=False), now),
+        ocr_repo.insert(
+            conn,
+            image_name=image_names,
+            raw_text=combined_raw,
+            matched_codes=json.dumps(codes, ensure_ascii=False),
+            created_at=now,
         )
         conn.commit()
 

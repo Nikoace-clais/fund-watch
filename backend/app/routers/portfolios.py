@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..db import get_conn
+from ..db import get_request_conn
+from ..repositories import portfolios_repo, positions_repo, tx_repo
 
 router = APIRouter(tags=["portfolios"])
 
@@ -17,58 +19,44 @@ class PortfolioPayload(BaseModel):
 
 
 @router.get("/api/portfolios")
-def list_portfolios() -> dict:
-    with get_conn() as conn:
-        rows = conn.execute(
-            """SELECT p.id, p.name, p.created_at,
-                      COUNT(pos.id) AS fund_count
-               FROM portfolios p
-               LEFT JOIN positions pos ON pos.portfolio_id = p.id
-               GROUP BY p.id ORDER BY p.created_at DESC"""
-        ).fetchall()
-    return {"items": [dict(r) for r in rows]}
+def list_portfolios(conn: sqlite3.Connection = Depends(get_request_conn)) -> dict:
+    return {"items": portfolios_repo.list_all(conn)}
 
 
 @router.post("/api/portfolios")
-def create_portfolio(payload: PortfolioPayload) -> dict:
+def create_portfolio(
+    payload: PortfolioPayload, conn: sqlite3.Connection = Depends(get_request_conn)
+) -> dict:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="组合名称不能为空")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    with get_conn() as conn:
-        cur = conn.execute(
-            "INSERT INTO portfolios(name, created_at) VALUES(?, ?)", (name, now)
-        )
-        conn.commit()
-    return {"ok": True, "id": cur.lastrowid, "name": name}
+    new_id = portfolios_repo.create(conn, name, now)
+    return {"ok": True, "id": new_id, "name": name}
 
 
 @router.patch("/api/portfolios/{portfolio_id}")
-def rename_portfolio(portfolio_id: int, payload: PortfolioPayload) -> dict:
+def rename_portfolio(
+    portfolio_id: int,
+    payload: PortfolioPayload,
+    conn: sqlite3.Connection = Depends(get_request_conn),
+) -> dict:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="组合名称不能为空")
-    with get_conn() as conn:
-        if not conn.execute(
-            "SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)
-        ).fetchone():
-            raise HTTPException(status_code=404, detail="组合不存在")
-        conn.execute("UPDATE portfolios SET name=? WHERE id=?", (name, portfolio_id))
-        conn.commit()
+    if not portfolios_repo.exists(conn, portfolio_id):
+        raise HTTPException(status_code=404, detail="组合不存在")
+    portfolios_repo.rename(conn, portfolio_id, name)
     return {"ok": True, "id": portfolio_id, "name": name}
 
 
 @router.delete("/api/portfolios/{portfolio_id}")
-def delete_portfolio(portfolio_id: int) -> dict:
-    with get_conn() as conn:
-        if not conn.execute(
-            "SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)
-        ).fetchone():
-            raise HTTPException(status_code=404, detail="组合不存在")
-        conn.execute("DELETE FROM positions WHERE portfolio_id=?", (portfolio_id,))
-        conn.execute(
-            "DELETE FROM transactions WHERE portfolio_id=?", (portfolio_id,)
-        )
-        conn.execute("DELETE FROM portfolios WHERE id=?", (portfolio_id,))
-        conn.commit()
+def delete_portfolio(
+    portfolio_id: int, conn: sqlite3.Connection = Depends(get_request_conn)
+) -> dict:
+    if not portfolios_repo.exists(conn, portfolio_id):
+        raise HTTPException(status_code=404, detail="组合不存在")
+    positions_repo.delete_all_for_portfolio(conn, portfolio_id)
+    tx_repo.delete_all_for_portfolio(conn, portfolio_id)
+    portfolios_repo.delete(conn, portfolio_id)
     return {"ok": True, "id": portfolio_id}

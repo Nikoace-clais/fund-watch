@@ -5,14 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import sqlite3
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..core import validate_code
-from ..db import get_conn
+from ..db import get_request_conn
 from ..fund_source import (
     fetch_fund_detail,
     fetch_fund_holdings,
@@ -23,6 +24,13 @@ from ..fund_source import (
     fetch_realtime_estimate,
     search_fund_by_name,
 )
+from ..repositories import (
+    funds_repo,
+    portfolios_repo,
+    positions_repo,
+    snapshot_repo,
+    tx_repo,
+)
 from ..schemas import BatchFundItem, BatchFundsPayload
 from ..services.holdings import recompute_holding_shares
 
@@ -32,40 +40,23 @@ router = APIRouter(tags=["funds"])
 
 
 @router.get("/api/funds")
-def list_funds() -> dict:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT code, name, sector, created_at FROM funds ORDER BY created_at DESC"
-        ).fetchall()
-    return {"items": [dict(r) for r in rows]}
+def list_funds(conn: sqlite3.Connection = Depends(get_request_conn)) -> dict:
+    return {"items": funds_repo.list_funds(conn)}
 
 
 @router.get("/api/funds/overview")
-async def funds_overview() -> dict:
-    with get_conn() as conn:
-        funds = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT code, name, sector, created_at"
-                " FROM funds ORDER BY created_at DESC"
-            ).fetchall()
-        ]
+async def funds_overview(conn: sqlite3.Connection = Depends(get_request_conn)) -> dict:
+    funds = funds_repo.list_funds(conn)
+    codes = [f["code"] for f in funds]
 
     t0 = time.perf_counter()
 
+    snapshot_map = snapshot_repo.latest_bulk(conn, codes)
+    tx_count_map = tx_repo.count_bulk_for_codes(conn, codes)
+
     async def _fetch_one(f: dict) -> dict:
         code = f["code"]
-        with get_conn() as conn:
-            row = conn.execute(
-                "SELECT code,name,gsz,gszzl,gztime,captured_at"
-                " FROM fund_snapshots WHERE code=? ORDER BY id DESC LIMIT 1",
-                (code,),
-            ).fetchone()
-            tx_count = conn.execute(
-                "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
-            ).fetchone()["c"]
-
-        latest_snapshot = dict(row) if row else None
+        latest_snapshot = snapshot_map.get(code)
 
         if latest_snapshot is None:
             try:
@@ -81,7 +72,11 @@ async def funds_overview() -> dict:
             except Exception:
                 latest_snapshot = None
 
-        return {"fund": f, "latest": latest_snapshot, "has_transactions": tx_count > 0}
+        return {
+            "fund": f,
+            "latest": latest_snapshot,
+            "has_transactions": tx_count_map.get(code, 0) > 0,
+        }
 
     items = list(await asyncio.gather(*[_fetch_one(f) for f in funds]))
     logger.info(
@@ -110,27 +105,21 @@ async def search_funds(q: str = "") -> dict:
 
 
 @router.post("/api/funds/batch")
-async def add_funds_batch(payload: BatchFundsPayload) -> dict:
+async def add_funds_batch(
+    payload: BatchFundsPayload, conn: sqlite3.Connection = Depends(get_request_conn)
+) -> dict:
     now = datetime.now(timezone.utc).isoformat()
 
     # ── Resolve or create the target portfolio ────────────────────────────────
-    with get_conn() as conn:
-        if payload.portfolio_id is not None:
-            if not conn.execute(
-                "SELECT 1 FROM portfolios WHERE id=?", (payload.portfolio_id,)
-            ).fetchone():
-                raise HTTPException(status_code=404, detail="组合不存在")
-            pf_id: int = payload.portfolio_id
-        else:
-            # Derive name: explicit > auto-date
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            pf_name = (payload.portfolio_name or "").strip() or f"导入 {today}"
-            cur = conn.execute(
-                "INSERT INTO portfolios(name, created_at) VALUES(?, ?)",
-                (pf_name, now),
-            )
-            pf_id = cur.lastrowid  # type: ignore[assignment]
-        conn.commit()
+    if payload.portfolio_id is not None:
+        if not portfolios_repo.exists(conn, payload.portfolio_id):
+            raise HTTPException(status_code=404, detail="组合不存在")
+        pf_id: int = payload.portfolio_id
+    else:
+        # Derive name: explicit > auto-date
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        pf_name = (payload.portfolio_name or "").strip() or f"导入 {today}"
+        pf_id = portfolios_repo.create(conn, pf_name, now)
 
     # ── Resolve items: cross-check code and name when both are provided ───────
     resolved_items: list[BatchFundItem] = []
@@ -218,89 +207,39 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     )
 
     actually_added: list[str] = []
-    with get_conn() as conn:
-        for code in valid:
-            name, sector = fund_info_map.get(code, (None, None))
-            item = extra.get(code)
+    for code in valid:
+        name, sector = fund_info_map.get(code, (None, None))
+        item = extra.get(code)
 
-            # ── Global fund registry (name/sector only) ──
-            existing_fund = conn.execute(
-                "SELECT code FROM funds WHERE code=?", (code,)
-            ).fetchone()
-            if not existing_fund and not name:
-                invalid.append(code)
-                continue
-            if not existing_fund:
-                conn.execute(
-                    "INSERT INTO funds(code, name, sector, created_at) VALUES(?,?,?,?)",
-                    (code, name, sector, now),
-                )
-            elif name or sector:
-                updates, params_u = [], []
-                if name:
-                    updates.append("name=?")
-                    params_u.append(name)
-                if sector:
-                    updates.append("sector=?")
-                    params_u.append(sector)
-                params_u.append(code)
-                conn.execute(
-                    f"UPDATE funds SET {','.join(updates)} WHERE code=?",
-                    params_u,
-                )
+        if not funds_repo.get_fund(conn, code) and not name:
+            invalid.append(code)
+            continue
+        funds_repo.upsert_registry(conn, code, name, sector, now)
 
-            # ── Portfolio-scoped position (upsert) ──
-            amt = amounts.get(code)
-            existing_pos = conn.execute(
-                "SELECT id FROM positions WHERE portfolio_id=? AND code=?",
-                (pf_id, code),
-            ).fetchone()
-            if existing_pos:
-                pos_updates, pos_params = [], []
-                if amt is not None:
-                    pos_updates.append("amount=?")
-                    pos_params.append(float(amt))
-                if item:
-                    if item.holding_amount is not None:
-                        pos_updates.append("imported_holding_amount=?")
-                        pos_params.append(float(item.holding_amount))
-                    if item.cumulative_return is not None:
-                        pos_updates.append("imported_cumulative_return=?")
-                        pos_params.append(float(item.cumulative_return))
-                    if item.holding_return is not None:
-                        pos_updates.append("imported_holding_return=?")
-                        pos_params.append(float(item.holding_return))
-                if pos_updates:
-                    pos_params += [pf_id, code]
-                    conn.execute(
-                        f"UPDATE positions SET {','.join(pos_updates)}"
-                        " WHERE portfolio_id=? AND code=?",
-                        pos_params,
-                    )
-            else:
-                conn.execute(
-                    """INSERT INTO positions
-                       (portfolio_id,code,amount,imported_holding_amount,
-                        imported_cumulative_return,imported_holding_return,created_at)
-                       VALUES(?,?,?,?,?,?,?)""",
-                    (
-                        pf_id,
-                        code,
-                        float(amt) if amt is not None else None,
-                        float(item.holding_amount)
-                        if item and item.holding_amount is not None
-                        else None,
-                        float(item.cumulative_return)
-                        if item and item.cumulative_return is not None
-                        else None,
-                        float(item.holding_return)
-                        if item and item.holding_return is not None
-                        else None,
-                        now,
-                    ),
-                )
-            actually_added.append(code)
-        conn.commit()
+        amt = amounts.get(code)
+        positions_repo.upsert(
+            conn,
+            pf_id,
+            code,
+            now,
+            amount=float(amt) if amt is not None else None,
+            imported_holding_amount=(
+                float(item.holding_amount)
+                if item and item.holding_amount is not None
+                else None
+            ),
+            imported_cumulative_return=(
+                float(item.cumulative_return)
+                if item and item.cumulative_return is not None
+                else None
+            ),
+            imported_holding_return=(
+                float(item.holding_return)
+                if item and item.holding_return is not None
+                else None
+            ),
+        )
+        actually_added.append(code)
 
     # ── Synthetic buy transaction for imported holding amounts ────────────────
     tx_now = datetime.now(timezone.utc).isoformat()
@@ -310,13 +249,7 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
         if not item or item.holding_amount is None or item.holding_amount <= 0:
             continue
         try:
-            with get_conn() as conn:
-                existing_tx = conn.execute(
-                    "SELECT COUNT(*) as c FROM transactions"
-                    " WHERE portfolio_id=? AND code=?",
-                    (pf_id, code),
-                ).fetchone()["c"]
-            if existing_tx > 0:
+            if tx_repo.count_for_portfolio_code(conn, pf_id, code) > 0:
                 nav_skipped.append(f"{code}（已有交易记录，跳过）")
                 continue
 
@@ -332,26 +265,20 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                 continue
 
             amount_val = (nav_val * shares_val).quantize(Decimal("0.01"))
-            with get_conn() as conn:
-                conn.execute(
-                    "INSERT INTO transactions"
-                    "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,source,created_at)"
-                    " VALUES(?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        code,
-                        pf_id,
-                        "buy",
-                        latest["date"],
-                        str(nav_val),
-                        str(shares_val),
-                        str(amount_val),
-                        "0",
-                        "import",
-                        tx_now,
-                    ),
-                )
-                recompute_holding_shares(conn, pf_id, code)
-                conn.commit()
+            tx_repo.insert(
+                conn,
+                code=code,
+                portfolio_id=pf_id,
+                direction="buy",
+                trade_date=latest["date"],
+                nav=str(nav_val),
+                shares=str(shares_val),
+                amount=str(amount_val),
+                fee="0",
+                source="import",
+                created_at=tx_now,
+            )
+            recompute_holding_shares(conn, pf_id, code)
         except Exception as e:
             nav_skipped.append(f"{code}（{e}）")
 
@@ -368,7 +295,9 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
 
 
 @router.post("/api/funds/{code}")
-async def add_fund(code: str) -> dict:
+async def add_fund(
+    code: str, conn: sqlite3.Connection = Depends(get_request_conn)
+) -> dict:
     """Add a fund to the global registry (watchlist).
 
     Position data lives in /api/funds/batch.
@@ -386,69 +315,44 @@ async def add_fund(code: str) -> dict:
     except Exception:
         pass
 
-    with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT code FROM funds WHERE code=?", (code,)
-        ).fetchone()
-        if existing:
-            if sector and not conn.execute(
-                "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
-                (code,),
-            ).fetchone():
-                conn.execute(
-                    "UPDATE funds SET sector=?, name=? WHERE code=?",
-                    (sector, name, code),
-                )
-        else:
-            if name is None:
-                raise HTTPException(
-                    status_code=400, detail="无法获取基金信息，请确认基金代码有效后重试"
-                )
-            conn.execute(
-                "INSERT INTO funds(code,name,sector,created_at) VALUES(?,?,?,?)",
-                (code, name, sector, now),
+    existing = funds_repo.get_fund(conn, code)
+    if existing:
+        if sector and not funds_repo.has_sector(conn, code):
+            funds_repo.upsert_registry(conn, code, name, sector, now)
+    else:
+        if name is None:
+            raise HTTPException(
+                status_code=400, detail="无法获取基金信息，请确认基金代码有效后重试"
             )
-        conn.commit()
+        funds_repo.upsert_registry(conn, code, name, sector, now)
     return {"ok": True, "code": code, "name": name, "sector": sector}
 
 
-
 @router.delete("/api/funds/{code}")
-def delete_fund(code: str, portfolio_id: int | None = Query(default=None)) -> dict:
+def delete_fund(
+    code: str,
+    portfolio_id: int | None = Query(default=None),
+    conn: sqlite3.Connection = Depends(get_request_conn),
+) -> dict:
     """Remove a fund from the watchlist."""
     code = validate_code(code)
-    with get_conn() as conn:
-        existing = conn.execute(
-            "SELECT code FROM funds WHERE code=?", (code,)
-        ).fetchone()
-        if not existing:
-            raise HTTPException(status_code=404, detail="fund not found")
-        if portfolio_id is not None:
-            portfolio = conn.execute(
-                "SELECT id FROM portfolios WHERE id=?", (portfolio_id,)
-            ).fetchone()
-            if not portfolio:
-                raise HTTPException(status_code=404, detail="portfolio not found")
-            conn.execute(
-                "DELETE FROM transactions WHERE portfolio_id=? AND code=?",
-                (portfolio_id, code),
-            )
-            conn.execute(
-                "DELETE FROM positions WHERE portfolio_id=? AND code=?",
-                (portfolio_id, code),
-            )
-            conn.commit()
-            return {
-                "ok": True,
-                "code": code,
-                "portfolio_id": portfolio_id,
-                "scope": "portfolio",
-            }
-        conn.execute("DELETE FROM fund_snapshots WHERE code=?", (code,))
-        conn.execute("DELETE FROM transactions WHERE code=?", (code,))
-        conn.execute("DELETE FROM positions WHERE code=?", (code,))
-        conn.execute("DELETE FROM funds WHERE code=?", (code,))
-        conn.commit()
+    if not funds_repo.get_fund(conn, code):
+        raise HTTPException(status_code=404, detail="fund not found")
+    if portfolio_id is not None:
+        if not portfolios_repo.exists(conn, portfolio_id):
+            raise HTTPException(status_code=404, detail="portfolio not found")
+        tx_repo.delete_scoped(conn, portfolio_id, code)
+        positions_repo.delete_scoped(conn, portfolio_id, code)
+        return {
+            "ok": True,
+            "code": code,
+            "portfolio_id": portfolio_id,
+            "scope": "portfolio",
+        }
+    snapshot_repo.delete_all_for_code(conn, code)
+    tx_repo.delete_all_for_code(conn, code)
+    positions_repo.delete_all_for_code(conn, code)
+    funds_repo.delete(conn, code)
     return {"ok": True, "code": code, "scope": "global"}
 
 

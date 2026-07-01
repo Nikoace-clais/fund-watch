@@ -4,248 +4,58 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
+import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from ..db import get_conn
+from ..db import get_request_conn
 from ..fund_source import (
     fetch_fund_holdings,
     fetch_nav_history,
     fetch_realtime_estimate,
     fetch_stock_industries,
 )
-from ..services.holdings import compute_pnl
+from ..repositories import portfolios_repo, positions_repo, tx_repo
+from ..services.portfolio_service import compute_summary
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["portfolio"])
 
 
-def _resolve_portfolio(portfolio_id: int | None) -> int:
+def _resolve_portfolio(conn: sqlite3.Connection, portfolio_id: int | None) -> int:
     """Return portfolio_id, defaulting to the first portfolio if none given."""
     if portfolio_id is not None:
-        with get_conn() as conn:
-            row = conn.execute(
-                "SELECT id FROM portfolios WHERE id=?", (portfolio_id,)
-            ).fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="组合不存在")
+        if not portfolios_repo.exists(conn, portfolio_id):
+            raise HTTPException(status_code=404, detail="组合不存在")
         return portfolio_id
-    with get_conn() as conn:
-        row = conn.execute(
-            "SELECT id FROM portfolios ORDER BY created_at ASC LIMIT 1"
-        ).fetchone()
-        if not row:
-            raise HTTPException(
-                status_code=404, detail="尚无组合，请先导入基金建立组合"
-            )
-    return row["id"]
+    first_id = portfolios_repo.first_id(conn)
+    if first_id is None:
+        raise HTTPException(status_code=404, detail="尚无组合，请先导入基金建立组合")
+    return first_id
 
 
 @router.get("/api/portfolio/summary")
-async def portfolio_summary(portfolio_id: int | None = None) -> dict:
+async def portfolio_summary(
+    portfolio_id: int | None = None,
+    conn: sqlite3.Connection = Depends(get_request_conn),
+) -> dict:
     """Aggregated portfolio stats for a specific portfolio."""
-    pf_id = _resolve_portfolio(portfolio_id)
-
-    with get_conn() as conn:
-        # positions with holding_shares (have transactions)
-        funds = [
-            dict(r)
-            for r in conn.execute(
-                """SELECT pos.code, f.name, pos.holding_shares
-                   FROM positions pos
-                   JOIN funds f ON f.code = pos.code
-                   WHERE pos.portfolio_id=? AND pos.holding_shares IS NOT NULL
-                   ORDER BY pos.created_at DESC""",
-                (pf_id,),
-            ).fetchall()
-        ]
-
-    t0 = time.perf_counter()
-
-    pnl_map: dict[str, dict] = {}
-    codes = [
-        f["code"]
-        for f in funds
-        if f.get("holding_shares") and Decimal(f["holding_shares"]) > 0
-    ]
-    if codes:
-        with get_conn() as conn:
-            for code in codes:
-                pnl_map[code] = compute_pnl(conn, pf_id, code)
-
-    async def _fetch_fund_item(f: dict) -> dict | None:
-        code = f["code"]
-        shares = Decimal(f["holding_shares"]) if f["holding_shares"] else Decimal("0")
-        if shares <= 0:
-            return None
-        try:
-            q = await fetch_realtime_estimate(code)
-        except Exception:
-            return None
-        nav = Decimal(str(q.get("gsz", 0))) if q.get("gsz") else None
-        if nav is None:
-            return None
-        daily_change = Decimal(str(q.get("gszzl"))) if q.get("gszzl") else Decimal("0")
-        current_value = (shares * nav).quantize(Decimal("0.01"))
-        daily_return_val = (current_value * daily_change / 100).quantize(
-            Decimal("0.01")
-        )
-        pnl = pnl_map.get(code, {})
-        cost = Decimal(pnl.get("total_cost", "0"))
-        total_return = current_value - cost
-        return_rate = (
-            (total_return / cost * 100).quantize(Decimal("0.01"))
-            if cost > 0
-            else Decimal("0")
-        )
-        return {
-            "code": code,
-            "name": f["name"] or q.get("name"),
-            "shares": str(shares),
-            "nav": str(nav),
-            "daily_change": float(daily_change),
-            "current_value": str(current_value),
-            "daily_return": str(daily_return_val),
-            "total_cost": str(cost),
-            "total_return": str(total_return.quantize(Decimal("0.01"))),
-            "return_rate": str(return_rate),
-            "_current_value_d": current_value,
-            "_cost_d": cost,
-            "_daily_return_d": daily_return_val,
-        }
-
-    results = await asyncio.gather(*[_fetch_fund_item(f) for f in funds])
-    logger.info(
-        "portfolio_summary(pf=%d): %d funds fetched in %.3fs",
-        pf_id,
-        len(funds),
-        time.perf_counter() - t0,
-    )
-
-    items: list[dict] = []
-    total_current = Decimal("0")
-    total_cost = Decimal("0")
-    total_current_with_cost = Decimal("0")
-    total_daily_return = Decimal("0")
-
-    for r in results:
-        if r is None:
-            continue
-        cv = r.pop("_current_value_d")
-        cost = r.pop("_cost_d")
-        total_current += cv
-        total_cost += cost
-        total_current_with_cost += cv
-        total_daily_return += r.pop("_daily_return_d")
-        items.append(r)
-
-    # Imported positions without transactions: COALESCE(imported_holding_amount, amount)
-    with get_conn() as conn:
-        notx_funds = [
-            dict(r)
-            for r in conn.execute(
-                """SELECT pos.code, f.name,
-                      COALESCE(pos.imported_holding_amount, pos.amount)
-                        AS holding_amount,
-                      pos.imported_cumulative_return,
-                      pos.imported_holding_return
-                   FROM positions pos
-                   JOIN funds f ON f.code = pos.code
-                   WHERE pos.portfolio_id=?
-                     AND pos.holding_shares IS NULL
-                     AND COALESCE(pos.imported_holding_amount, pos.amount) > 0
-                   ORDER BY pos.created_at DESC""",
-                (pf_id,),
-            ).fetchall()
-        ]
-
-    async def _fetch_notx(f: dict) -> dict:
-        code = f["code"]
-        amount = Decimal(str(f["holding_amount"]))
-        daily_change = Decimal("0")
-        daily_return_val = Decimal("0")
-        try:
-            q = await fetch_realtime_estimate(code)
-            gszzl = q.get("gszzl")
-            if gszzl is not None:
-                daily_change = Decimal(str(gszzl))
-                daily_return_val = (amount * daily_change / 100).quantize(
-                    Decimal("0.01")
-                )
-        except Exception:
-            pass
-        cum_ret = f.get("imported_cumulative_return")
-        hold_ret = f.get("imported_holding_return")
-        return {
-            "code": code,
-            "name": f["name"],
-            "shares": None,
-            "nav": None,
-            "daily_change": float(daily_change),
-            "current_value": str(amount),
-            "daily_return": str(daily_return_val),
-            "total_cost": None,
-            "total_return": str(Decimal(str(hold_ret or 0)).quantize(Decimal("0.01"))),
-            "return_rate": None,
-            "imported_cumulative_return": str(
-                Decimal(str(cum_ret or 0)).quantize(Decimal("0.01"))
-            ),
-            "is_imported": True,
-            "_amount_d": amount,
-            "_daily_return_d": daily_return_val,
-        }
-
-    notx_results = list(await asyncio.gather(*[_fetch_notx(f) for f in notx_funds]))
-    for r in notx_results:
-        total_current += r.pop("_amount_d")
-        total_daily_return += r.pop("_daily_return_d")
-        items.append(r)
-
-    total_return_rate = (
-        ((total_current_with_cost - total_cost) / total_cost * 100).quantize(
-            Decimal("0.01")
-        )
-        if total_cost > 0
-        else Decimal("0")
-    )
-
-    # positions in this portfolio with no holding (watch-only, scoped to this portfolio)
-    with get_conn() as conn:
-        watch_codes = [
-            r["code"]
-            for r in conn.execute(
-                """SELECT pos.code FROM positions pos
-                   WHERE pos.portfolio_id=?
-                     AND pos.holding_shares IS NULL
-                     AND COALESCE(pos.imported_holding_amount, pos.amount, 0) <= 0
-                   ORDER BY pos.created_at DESC""",
-                (pf_id,),
-            ).fetchall()
-        ]
-
-    return {
-        "portfolio_id": pf_id,
-        "total_current": str(total_current),
-        "total_cost": str(total_cost),
-        "total_daily_return": str(total_daily_return),
-        "total_return": str((total_current - total_cost).quantize(Decimal("0.01"))),
-        "total_return_rate": str(total_return_rate),
-        "fund_count": len(items),
-        "items": items,
-        "watch_codes": watch_codes,
-    }
+    pf_id = _resolve_portfolio(conn, portfolio_id)
+    return await compute_summary(conn, pf_id)
 
 
 @router.get("/api/portfolio/holdings")
-async def portfolio_holdings(portfolio_id: int | None = None) -> dict:
+async def portfolio_holdings(
+    portfolio_id: int | None = None,
+    conn: sqlite3.Connection = Depends(get_request_conn),
+) -> dict:
     """Stock-level X-ray: aggregate top-10 holdings across portfolio funds."""
-    summary = await portfolio_summary(portfolio_id)
-    pf_id = summary["portfolio_id"]
+    pf_id = _resolve_portfolio(conn, portfolio_id)
+    summary = await compute_summary(conn, pf_id)
     items: list[dict] = summary.get("items", [])
 
     active = [it for it in items if it.get("current_value")]
@@ -352,40 +162,17 @@ async def portfolio_holdings(portfolio_id: int | None = None) -> dict:
 
 @router.get("/api/portfolio/history")
 async def portfolio_history(
-    portfolio_id: int | None = None, limit: int = 90
+    portfolio_id: int | None = None,
+    limit: int = 90,
+    conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
     """Portfolio value history: holdings × NAV per date, plus today's estimate."""
-    pf_id = _resolve_portfolio(portfolio_id)
+    pf_id = _resolve_portfolio(conn, portfolio_id)
     limit = max(1, min(limit, 365))
 
-    with get_conn() as conn:
-        transactions = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT code, direction, trade_date, shares"
-                " FROM transactions WHERE portfolio_id=? ORDER BY trade_date ASC",
-                (pf_id,),
-            ).fetchall()
-        ]
-        current_holdings = {
-            r["code"]: Decimal(r["holding_shares"])
-            for r in conn.execute(
-                "SELECT code, holding_shares FROM positions"
-                " WHERE portfolio_id=? AND holding_shares IS NOT NULL",
-                (pf_id,),
-            ).fetchall()
-            if r["holding_shares"] and Decimal(r["holding_shares"]) > 0
-        }
-        imported_funds: dict[str, Decimal] = {
-            r["code"]: Decimal(str(r["holding_amount"]))
-            for r in conn.execute(
-                """SELECT code,
-                      COALESCE(imported_holding_amount, amount) AS holding_amount
-                   FROM positions WHERE portfolio_id=? AND holding_shares IS NULL
-                   AND COALESCE(imported_holding_amount, amount) > 0""",
-                (pf_id,),
-            ).fetchall()
-        }
+    transactions = tx_repo.list_for_portfolio(conn, pf_id)
+    current_holdings = positions_repo.current_holdings(conn, pf_id)
+    imported_funds = positions_repo.imported_amounts(conn, pf_id)
 
     tx_by_code: dict[str, list[dict]] = defaultdict(list)
     for tx in transactions:
