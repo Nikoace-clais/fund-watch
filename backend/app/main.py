@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .core import UPLOAD_DIR
 from .db import init_db
 from .fund_source import close_shared_client
+from .ocr_service import warm_up as warm_up_ocr
 from .routers import (
     ai,
     funds,
@@ -24,6 +25,7 @@ from .routers import (
     market,
     ocr,
     portfolio,
+    portfolios,
     quotes,
     stocks,
     transactions,
@@ -36,10 +38,9 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(name)s - %(message)s",
     datefmt="%H:%M:%S",
 )
-# Show DEBUG logs from fund_source so per-request timings are visible
-logging.getLogger("app.fund_source").setLevel(logging.DEBUG)
-logging.getLogger(__name__).setLevel(logging.DEBUG)
-logging.getLogger("app.services.ai_agent").setLevel(logging.DEBUG)
+# DEBUG logs from fund_source: enable below for per-request timing diagnostics
+# logging.getLogger("app.fund_source").setLevel(logging.DEBUG)
+# logging.getLogger("app.services.ai_agent").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +48,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     init_db()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    warm_up_ocr()  # start PaddleOCR model download in background thread
     task = asyncio.create_task(snapshot_scheduler())
     logger.info("Fund Watch API started")
     yield
@@ -95,6 +97,7 @@ async def log_requests(request: Request, call_next):
 # in the funds router) must be registered before parameterized ones
 # (POST /api/funds/{code}); within each router the declaration order preserves this.
 app.include_router(health.router)
+app.include_router(portfolios.router)
 app.include_router(funds.router)
 app.include_router(quotes.router)
 app.include_router(portfolio.router)

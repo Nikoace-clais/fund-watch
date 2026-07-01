@@ -67,6 +67,7 @@ export type PortfolioItem = {
 }
 
 export type PortfolioSummary = {
+  portfolio_id: number
   total_current: string
   total_cost: string
   total_daily_return: string
@@ -74,6 +75,14 @@ export type PortfolioSummary = {
   total_return_rate: string
   fund_count: number
   items: PortfolioItem[]
+  watch_codes: string[]
+}
+
+export type Portfolio = {
+  id: number
+  name: string
+  created_at: string
+  fund_count: number
 }
 
 export type Quote = {
@@ -105,6 +114,7 @@ export type CronStatus = {
 
 export type Transaction = {
   id: number
+  portfolio_id?: number | null
   direction: 'buy' | 'sell'
   trade_date: string
   nav: string
@@ -142,9 +152,53 @@ export function fetchFundHoldings(code: string) {
   )
 }
 
+// Portfolios CRUD
+export function listPortfolios() {
+  return request<{ items: Portfolio[] }>('/api/portfolios')
+}
+
+export function createPortfolio(name: string) {
+  return request<{ ok: boolean; id: number; name: string }>('/api/portfolios', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function renamePortfolio(id: number, name: string) {
+  return request<{ ok: boolean; id: number; name: string }>(`/api/portfolios/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deletePortfolio(id: number) {
+  return request<{ ok: boolean; id: number }>(`/api/portfolios/${id}`, { method: 'DELETE' })
+}
+
 // Portfolio summary
-export function fetchPortfolioSummary() {
-  return request<PortfolioSummary>('/api/portfolio/summary')
+export function fetchPortfolioSummary(portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  return request<PortfolioSummary>(`/api/portfolio/summary${qs}`)
+}
+
+// Portfolio holdings X-ray
+export type HoldingXrayFund = { code: string; name: string; percentage: number | null; contribution: string }
+export type HoldingXrayStock = {
+  stock_code: string; stock_name: string; industry: string | null
+  exposure: string; weight_pct: number; fund_count: number
+  funds: HoldingXrayFund[]
+}
+export type HoldingXraySector = { name: string; exposure: string; weight_pct: number }
+export type PortfolioHoldings = {
+  portfolio_id: number
+  total_value: string; covered_value: string
+  stocks: HoldingXrayStock[]; sectors: HoldingXraySector[]; coverage: Record<string, number>
+}
+export function fetchPortfolioHoldings(portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  return request<PortfolioHoldings>(`/api/portfolio/holdings${qs}`)
 }
 
 // Realtime quote
@@ -158,8 +212,9 @@ export function addFund(code: string) {
 }
 
 // Delete fund
-export function deleteFund(code: string) {
-  return request<{ ok: boolean }>(`/api/funds/${code}`, { method: 'DELETE' })
+export function deleteFund(code: string, portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  return request<{ ok: boolean }>(`/api/funds/${code}${qs}`, { method: 'DELETE' })
 }
 
 // Pull snapshots
@@ -181,12 +236,24 @@ export type BatchFundItem = {
   holding_return?: number
 }
 
-export function batchAddFunds(codes: string[], funds?: BatchFundItem[]) {
-  return request<{ ok: boolean; added: string[]; invalid: string[]; warnings: string[] }>('/api/funds/batch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ codes, funds: funds ?? [] }),
-  })
+export function batchAddFunds(
+  codes: string[],
+  funds?: BatchFundItem[],
+  opts?: { portfolioId?: number; portfolioName?: string },
+) {
+  return request<{ ok: boolean; portfolio_id: number; added: string[]; invalid: string[]; warnings: string[] }>(
+    '/api/funds/batch',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        codes,
+        funds: funds ?? [],
+        portfolio_id: opts?.portfolioId,
+        portfolio_name: opts?.portfolioName,
+      }),
+    },
+  )
 }
 
 // NAV on a specific date
@@ -202,6 +269,7 @@ export function addTransaction(code: string, payload: {
   shares: string
   fee?: string
   note?: string
+  portfolio_id?: number
 }) {
   return request<{ ok: boolean; code: string }>(`/api/funds/${code}/transactions`, {
     method: 'POST',
@@ -211,11 +279,13 @@ export function addTransaction(code: string, payload: {
 }
 
 // Portfolio value history (current holdings × historical NAV)
-export function fetchPortfolioHistory(limit = 90) {
+export function fetchPortfolioHistory(limit = 90, portfolioId?: number) {
+  const qs = portfolioId != null ? `&portfolio_id=${portfolioId}` : ''
   return request<{
+    portfolio_id: number
     count: number
     history: Array<{ date: string; total_value: number }>
-  }>(`/api/portfolio/history?limit=${limit}`)
+  }>(`/api/portfolio/history?limit=${limit}${qs}`)
 }
 
 // Market indices (domestic + overseas)
@@ -236,9 +306,10 @@ export function fetchSnapshots(code: string, limit = 200) {
   }>(`/api/snapshots/${code}?limit=${limit}`)
 }
 
-export function fetchTransactions(code: string) {
+export function fetchTransactions(code: string, portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
   return request<{ code: string; items: Transaction[] }>(
-    `/api/funds/${code}/transactions`
+    `/api/funds/${code}/transactions${qs}`
   )
 }
 
@@ -246,15 +317,80 @@ export function deleteTransaction(txId: number) {
   return request<{ ok: boolean; deleted: number }>(`/api/transactions/${txId}`, { method: 'DELETE' })
 }
 
-export function ocrFundCode(file: File) {
+export function getOcrStatus() {
+  return request<{ ready: boolean }>('/api/ocr/status')
+}
+
+type OcrCfg = { provider?: string; api_key?: string; base_url?: string; model?: string; analysis_model?: string }
+
+export type OcrNameMatch = {
+  code: string
+  name: string
+  type?: string
+  ocr_name: string
+  similarity: number
+  review?: 'confirmed' | 'corrected' | 'unreviewed'
+  corrected_name?: string | null
+  amount?: number | null
+}
+
+export type OcrResult = {
+  matched_codes: string[]
+  matched_funds: { code: string; name: string; amount?: number | null }[]
+  name_matches: OcrNameMatch[]
+  raw_text: string
+}
+
+export type OcrStep = {
+  step: 'ocr' | 'ai_extract' | 'search' | 'pro_identify' | 'pro_review'
+  text: string
+}
+
+export type OcrStreamHandlers = {
+  onStep: (s: OcrStep) => void
+  onResult: (r: OcrResult) => void
+  onError: (msg: string) => void
+}
+
+export async function streamOcrFundCode(
+  files: File[],
+  cfg: OcrCfg | undefined,
+  handlers: OcrStreamHandlers,
+): Promise<void> {
   const form = new FormData()
-  form.append('file', file)
-  return request<{
-    matched_codes: string[]
-    matched_funds: { code: string; name: string }[]
-    name_matches: { code: string; name: string; matched_keyword: string; type?: string }[]
-    raw_text: string
-  }>('/api/ocr/fund-code', { method: 'POST', body: form })
+  files.forEach((f) => form.append('files', f))
+  if (cfg?.provider) form.append('provider', cfg.provider)
+  if (cfg?.api_key) form.append('api_key', cfg.api_key)
+  if (cfg?.base_url) form.append('base_url', cfg.base_url)
+  if (cfg?.model) form.append('model', cfg.model)
+  if (cfg?.analysis_model) form.append('analysis_model', cfg.analysis_model)
+
+  const res = await fetch(`${API}/api/ocr/fund-code`, { method: 'POST', body: form })
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}))
+    handlers.onError(err.detail || `HTTP ${res.status}`)
+    return
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const parts = buf.split('\n\n')
+    buf = parts.pop() ?? ''
+    for (const part of parts) {
+      const line = part.trim()
+      if (!line.startsWith('data:')) continue
+      try {
+        const event = JSON.parse(line.slice('data:'.length).trim())
+        if (event.type === 'step')   handlers.onStep({ step: event.step, text: event.text })
+        if (event.type === 'result') handlers.onResult(event.data)
+        if (event.type === 'error')  handlers.onError(event.text)
+      } catch { /* malformed chunk */ }
+    }
+  }
 }
 
 // ── AI Fund Selection ───────────────────────────────────────────────────────

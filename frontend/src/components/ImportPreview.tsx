@@ -1,7 +1,11 @@
 import { useState, useMemo, type DragEvent, type ChangeEvent, type FC } from 'react';
-import { Upload, FileImage, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
-import type { ImportPreviewResult, ImportPreviewItem } from '../services/import';
+import { Upload, FileImage, AlertCircle, CheckCircle2, Loader2, KeyRound } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import type { ImportPreviewResult, ImportPreviewItem, OcrStep } from '../services/import';
 import { previewImport, confirmImport, formatConfidence, getConfidenceInfo } from '../services/import';
+import { usePortfolios } from '@/lib/queries';
+import { useProviderConfig } from '@/lib/provider-config';
+import { getOcrStatus } from '@/lib/api';
 
 interface ImportPreviewProps {
   onImport?: (codes: string[]) => void;
@@ -14,6 +18,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState<OcrStep | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreviewResult | null>(initialData || null);
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(() => {
@@ -28,6 +33,18 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
     return new Set();
   });
   const [isConfirming, setIsConfirming] = useState(false);
+  // Portfolio selection for import
+  const { data: portfolios = [] } = usePortfolios();
+  const { config: providerConfig, isConfigured } = useProviderConfig();
+  const { data: ocrStatus } = useQuery({
+    queryKey: ['ocr-status'],
+    queryFn: getOcrStatus,
+    refetchInterval: (q) => (q.state.data?.ready ? false : 2000),
+  });
+  const ocrReady = ocrStatus?.ready ?? false;
+  // 'new' = create new portfolio, or a number = existing portfolio id
+  const [importTarget, setImportTarget] = useState<'new' | number>('new');
+  const [newPfName, setNewPfName] = useState('');
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -42,23 +59,26 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   const handleDrop = async (e: DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      await processFile(file);
-    }
+    const imgs = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+    if (imgs.length) await processFiles(imgs);
   };
 
   const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) await processFile(file);
+    const imgs = Array.from(e.target.files || []);
+    if (imgs.length) await processFiles(imgs);
   };
 
-  const processFile = async (file: File) => {
+  const processFiles = async (imgs: File[]) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const result = await previewImport(file);
+      const result = await previewImport(
+        imgs,
+        isConfigured ? providerConfig : undefined,
+        setCurrentStep,
+      );
+      setCurrentStep(null);
       setPreview(result);
       // Auto-select high confidence funds
       const autoSelected = new Set(
@@ -66,6 +86,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
       );
       setSelectedCodes(autoSelected);
     } catch (err) {
+      setCurrentStep(null);
       setError(err instanceof Error ? err.message : '处理失败');
     } finally {
       setIsLoading(false);
@@ -99,13 +120,19 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
 
     setIsConfirming(true);
     try {
-      const codes = Array.from(selectedCodes);
-      const result = await confirmImport(codes);
+      const items = (preview?.funds ?? [])
+        .filter((f) => selectedCodes.has(f.code))
+        .map((f) => ({ code: f.code, amount: f.amount }));
+      const opts = importTarget === 'new'
+        ? { portfolioName: newPfName.trim() || undefined }
+        : { portfolioId: importTarget };
+      const result = await confirmImport(items, opts);
       if (result.success) {
-        onImport?.(codes);
-        // Reset state
+        onImport?.(items.map((i) => i.code));
         setPreview(null);
         setSelectedCodes(new Set());
+        setNewPfName('');
+        setImportTarget('new');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '导入失败');
@@ -136,12 +163,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   }, [preview]);
 
   if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 space-y-4">
-        <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-        <p className="text-slate-600">正在识别截图中的基金...</p>
-      </div>
-    );
+    return <OcrProgress currentStep={currentStep} />;
   }
 
   if (preview) {
@@ -209,6 +231,9 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
                   类型
                 </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
+                  持有金额
+                </th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
                   置信度
                 </th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-slate-700">
@@ -227,6 +252,39 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Portfolio selection */}
+        <div className="border-t border-slate-100 pt-4 mt-2">
+          <p className="text-sm font-medium text-slate-700 mb-2">导入到组合</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <button
+              type="button"
+              onClick={() => setImportTarget('new')}
+              className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${importTarget === 'new' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+            >
+              新建组合
+            </button>
+            {portfolios.map((pf) => (
+              <button
+                key={pf.id}
+                type="button"
+                onClick={() => setImportTarget(pf.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${importTarget === pf.id ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+              >
+                {pf.name}
+              </button>
+            ))}
+          </div>
+          {importTarget === 'new' && (
+            <input
+              type="text"
+              value={newPfName}
+              onChange={(e) => setNewPfName(e.target.value)}
+              placeholder={`组合名称（留空则自动生成）`}
+              className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-blue-400"
+            />
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -275,6 +333,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
       <input
         type="file"
         accept="image/png,image/jpeg,image/jpg,image/webp"
+        multiple
         onChange={handleFileSelect}
         className="hidden"
         id="import-file"
@@ -293,12 +352,32 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         </div>
         <h3 className="text-lg font-medium text-slate-900 mb-2">上传截图</h3>
         <p className="text-sm text-slate-500 mb-4">
-          支持 PNG、JPG、WebP 格式，最大 10MB
+          支持 PNG、JPG、WebP，可同时选多张，自动去重
         </p>
         <span className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
           选择文件
         </span>
       </label>
+
+      {!ocrReady && (
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center">
+          <Loader2 className="w-4 h-4 text-blue-500 mr-2 shrink-0 animate-spin" />
+          <span className="text-sm text-blue-800">
+            OCR 模型初始化中，首次启动需下载模型文件，请稍候...
+          </span>
+        </div>
+      )}
+
+      {!isConfigured && (
+        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center">
+          <KeyRound className="w-4 h-4 text-amber-600 mr-2 shrink-0" />
+          <span className="text-sm text-amber-800">
+            未配置 AI 密钥，识别将使用服务器默认配置（如无则失败）。可在{' '}
+            <a href="/ai-select" className="underline font-medium">AI 选基</a>{' '}
+            页面右上角配置。
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center">
@@ -338,15 +417,28 @@ const ImportRow: FC<ImportRowProps> = ({ fund, isSelected, onToggle }) => {
             <AlertCircle className="w-4 h-4 text-yellow-500 ml-2" />
           )}
         </div>
+        {fund.ocr_name && fund.ocr_name !== fund.name && (
+          <div className="text-xs text-amber-600 mt-0.5">
+            识别: {fund.ocr_name}
+            {fund.similarity != null && (
+              <span className="text-slate-400 ml-1">({Math.round(fund.similarity * 100)}%)</span>
+            )}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3 text-sm font-mono text-slate-600">{fund.code}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{fund.type}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">
+        {fund.amount != null && fund.amount > 0
+          ? `¥${fund.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : <span className="text-slate-300">—</span>}
+      </td>
       <td className="px-4 py-3">
         <span className={`text-sm font-medium ${ci.color}`}>
           {formatConfidence(fund.confidence)}
         </span>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 space-y-1">
         <span className={`inline-flex items-center px-2 py-1 text-xs rounded-full ${ci.className}`}>
           {fund.needs_review ? (
             <><AlertCircle className="w-3 h-3 mr-1" />{ci.label}</>
@@ -354,8 +446,59 @@ const ImportRow: FC<ImportRowProps> = ({ fund, isSelected, onToggle }) => {
             <><CheckCircle2 className="w-3 h-3 mr-1" />{ci.label}</>
           )}
         </span>
+        {fund.review === 'confirmed' && (
+          <span className="block text-xs text-green-600">✓ Pro已确认</span>
+        )}
+        {fund.review === 'corrected' && fund.ocr_name && (
+          <span className="block text-xs text-amber-600" title={`OCR识别: ${fund.ocr_name}`}>
+            ✎ Pro已修正
+          </span>
+        )}
       </td>
     </tr>
+  );
+};
+
+const STEPS: { key: OcrStep['step']; label: string }[] = [
+  { key: 'ocr',          label: '识别图片文字' },
+  { key: 'ai_extract',   label: 'AI 提取基金名称' },
+  { key: 'search',       label: '搜索基金数据库' },
+  { key: 'pro_identify', label: 'Pro 识别未命中基金' },
+  { key: 'pro_review',   label: 'Pro 核查匹配结果' },
+];
+
+const OcrProgress: FC<{ currentStep: OcrStep | null }> = ({ currentStep }) => {
+  const activeIdx = currentStep
+    ? STEPS.findIndex((s) => s.key === currentStep.step)
+    : 0;
+
+  return (
+    <div className="flex flex-col items-center justify-center p-10 space-y-6">
+      <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+      <p className="text-sm font-medium text-slate-700">
+        {currentStep?.text ?? '准备中...'}
+      </p>
+      <ol className="w-full max-w-xs space-y-2">
+        {STEPS.map((s, i) => {
+          const done = i < activeIdx;
+          const active = i === activeIdx && !!currentStep;
+          return (
+            <li key={s.key} className="flex items-center gap-2 text-sm">
+              {done ? (
+                <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+              ) : active ? (
+                <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
+              ) : (
+                <span className="w-4 h-4 rounded-full border border-slate-300 shrink-0" />
+              )}
+              <span className={done ? 'text-slate-400 line-through' : active ? 'text-slate-900 font-medium' : 'text-slate-400'}>
+                {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 };
 

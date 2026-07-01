@@ -9,9 +9,11 @@ import {
   fetchMarketIndices,
   fetchNavHistory,
   fetchPortfolioHistory,
+  fetchPortfolioHoldings,
   fetchPortfolioSummary,
   fetchQuote,
   fetchTransactions,
+  listPortfolios,
 } from './api'
 
 // ponytail: refetchInterval callback — stops polling outside trading hours to save requests
@@ -29,19 +31,29 @@ export const queryClient = new QueryClient({
 
 /* ---------- query keys ---------- */
 export const keys = {
+  portfolios: ['portfolios'] as const,
   fundsOverview: ['funds', 'overview'] as const,
-  portfolioSummary: ['portfolio', 'summary'] as const,
-  portfolioHistory: (limit: number) => ['portfolio', 'history', limit] as const,
+  portfolioSummary: (pf?: number) => ['portfolio', 'summary', pf ?? null] as const,
+  portfolioHoldings: (pf?: number) => ['portfolio', 'holdings', pf ?? null] as const,
+  portfolioHistory: (limit: number, pf?: number) => ['portfolio', 'history', limit, pf ?? null] as const,
   marketIndices: ['market', 'indices'] as const,
   cronStatus: ['cron', 'status'] as const,
   fundDetail: (code: string) => ['fund', code, 'detail'] as const,
   navHistory: (code: string, limit: number) => ['fund', code, 'nav-history', limit] as const,
   fundHoldings: (code: string) => ['fund', code, 'holdings'] as const,
   quote: (code: string) => ['fund', code, 'quote'] as const,
-  transactions: (code: string) => ['fund', code, 'transactions'] as const,
+  transactions: (code: string, pf?: number) => ['fund', code, 'transactions', pf ?? null] as const,
 }
 
 /* ---------- hooks ---------- */
+export function usePortfolios() {
+  return useQuery({
+    queryKey: keys.portfolios,
+    queryFn: listPortfolios,
+    select: (r) => r.items,
+  })
+}
+
 export function useFundsOverview() {
   return useQuery({
     queryKey: keys.fundsOverview,
@@ -51,18 +63,25 @@ export function useFundsOverview() {
   })
 }
 
-export function usePortfolioSummary() {
+export function usePortfolioSummary(portfolioId?: number) {
   return useQuery({
-    queryKey: keys.portfolioSummary,
-    queryFn: fetchPortfolioSummary,
+    queryKey: keys.portfolioSummary(portfolioId),
+    queryFn: () => fetchPortfolioSummary(portfolioId),
     refetchInterval: tradingRefetch,
   })
 }
 
-export function usePortfolioHistory(limit: number) {
+export function usePortfolioHoldings(portfolioId?: number) {
   return useQuery({
-    queryKey: keys.portfolioHistory(limit),
-    queryFn: () => fetchPortfolioHistory(limit),
+    queryKey: keys.portfolioHoldings(portfolioId),
+    queryFn: () => fetchPortfolioHoldings(portfolioId),
+  })
+}
+
+export function usePortfolioHistory(limit: number, portfolioId?: number) {
+  return useQuery({
+    queryKey: keys.portfolioHistory(limit, portfolioId),
+    queryFn: () => fetchPortfolioHistory(limit, portfolioId),
     select: (r) => r.history,
   })
 }
@@ -119,22 +138,24 @@ export function useQuote(code: string | undefined) {
   })
 }
 
-export function useTransactions(code: string | undefined, enabled = true) {
+export function useTransactions(code: string | undefined, portfolioId?: number, enabled = true) {
   return useQuery({
-    queryKey: keys.transactions(code ?? ''),
-    queryFn: () => fetchTransactions(code!),
+    queryKey: keys.transactions(code ?? '', portfolioId),
+    queryFn: () => fetchTransactions(code!, portfolioId),
     select: (r) => r.items,
     enabled: !!code && enabled,
   })
 }
 
 /** 持仓/交易变动后,使组合相关查询失效(overview、summary、history、各基金交易记录) */
-export function useInvalidatePortfolio() {
+export function useInvalidatePortfolio(portfolioId?: number) {
   const qc = useQueryClient()
   return useCallback(() => {
+    qc.invalidateQueries({ queryKey: keys.portfolios })
     qc.invalidateQueries({ queryKey: keys.fundsOverview })
-    qc.invalidateQueries({ queryKey: keys.portfolioSummary })
+    qc.invalidateQueries({ queryKey: keys.portfolioSummary(portfolioId) })
+    qc.invalidateQueries({ queryKey: keys.portfolioHoldings(portfolioId) })
     qc.invalidateQueries({ queryKey: ['portfolio', 'history'] })
     qc.invalidateQueries({ queryKey: ['fund'] })
-  }, [qc])
+  }, [qc, portfolioId])
 }

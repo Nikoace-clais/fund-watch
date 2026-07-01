@@ -7,9 +7,9 @@ import logging
 import re
 import time
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from ..core import validate_code
 from ..db import get_conn
@@ -23,12 +23,7 @@ from ..fund_source import (
     fetch_realtime_estimate,
     search_fund_by_name,
 )
-from ..schemas import (
-    AddFundPayload,
-    BatchFundItem,
-    BatchFundsPayload,
-    UpdateFundPayload,
-)
+from ..schemas import BatchFundItem, BatchFundsPayload
 from ..services.holdings import recompute_holding_shares
 
 logger = logging.getLogger(__name__)
@@ -40,8 +35,7 @@ router = APIRouter(tags=["funds"])
 def list_funds() -> dict:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT code, name, sector, holding_shares, created_at"
-            " FROM funds ORDER BY created_at DESC"
+            "SELECT code, name, sector, created_at FROM funds ORDER BY created_at DESC"
         ).fetchall()
     return {"items": [dict(r) for r in rows]}
 
@@ -52,7 +46,7 @@ async def funds_overview() -> dict:
         funds = [
             dict(r)
             for r in conn.execute(
-                "SELECT code, name, sector, holding_shares, created_at"
+                "SELECT code, name, sector, created_at"
                 " FROM funds ORDER BY created_at DESC"
             ).fetchall()
         ]
@@ -119,7 +113,26 @@ async def search_funds(q: str = "") -> dict:
 async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     now = datetime.now(timezone.utc).isoformat()
 
-    # Resolve items: cross-check code and name when both are provided
+    # ── Resolve or create the target portfolio ────────────────────────────────
+    with get_conn() as conn:
+        if payload.portfolio_id is not None:
+            if not conn.execute(
+                "SELECT 1 FROM portfolios WHERE id=?", (payload.portfolio_id,)
+            ).fetchone():
+                raise HTTPException(status_code=404, detail="组合不存在")
+            pf_id: int = payload.portfolio_id
+        else:
+            # Derive name: explicit > auto-date
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            pf_name = (payload.portfolio_name or "").strip() or f"导入 {today}"
+            cur = conn.execute(
+                "INSERT INTO portfolios(name, created_at) VALUES(?, ?)",
+                (pf_name, now),
+            )
+            pf_id = cur.lastrowid  # type: ignore[assignment]
+        conn.commit()
+
+    # ── Resolve items: cross-check code and name when both are provided ───────
     resolved_items: list[BatchFundItem] = []
     unresolved: list[str] = []
     warnings: list[str] = []
@@ -129,12 +142,10 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
         has_name = bool(item.name and item.name.strip())
 
         if has_code and has_name:
-            # Cross-check: fetch actual name for the given code
             try:
                 info = await fetch_fund_info(item.code.strip())  # type: ignore[union-attr]
                 actual_name: str = info.get("name") or ""
                 provided_name: str = item.name.strip()  # type: ignore[union-attr]
-                # Fuzzy check: provided name should be a substring or vice versa
                 if (
                     actual_name
                     and provided_name not in actual_name
@@ -166,7 +177,6 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
         else:
             unresolved.append(str(item.code or item.name or "unknown"))
 
-    # Merge codes list and funds list into a unified map: code -> extra data
     extra: dict[str, BatchFundItem] = {
         item.code.strip(): item for item in resolved_items
     }  # type: ignore[union-attr]
@@ -186,7 +196,7 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     valid = sorted(set(valid))
     amounts = payload.amounts or {}
 
-    # Fetch all fund infos in parallel
+    # ── Fetch all fund infos in parallel ──────────────────────────────────────
     t_batch = time.perf_counter()
 
     async def _safe_fetch_info(code: str) -> tuple[str, str | None, str | None]:
@@ -201,7 +211,8 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
         r[0]: (r[1], r[2]) for r in info_results
     }
     logger.info(
-        "add_funds_batch: fetched info for %d codes in %.3fs",
+        "add_funds_batch(pf=%d): fetched info for %d codes in %.3fs",
+        pf_id,
         len(valid),
         time.perf_counter() - t_batch,
     )
@@ -210,54 +221,72 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
     with get_conn() as conn:
         for code in valid:
             name, sector = fund_info_map.get(code, (None, None))
-
-            # Reject codes that don't correspond to a real fund (no name returned)
             item = extra.get(code)
-            existing = conn.execute(
+
+            # ── Global fund registry (name/sector only) ──
+            existing_fund = conn.execute(
                 "SELECT code FROM funds WHERE code=?", (code,)
             ).fetchone()
-            if not existing and not name:
+            if not existing_fund and not name:
                 invalid.append(code)
                 continue
-            actually_added.append(code)
-            if existing:
-                updates = []
-                params: list = []
+            if not existing_fund:
+                conn.execute(
+                    "INSERT INTO funds(code, name, sector, created_at) VALUES(?,?,?,?)",
+                    (code, name, sector, now),
+                )
+            elif name or sector:
+                updates, params_u = [], []
                 if name:
                     updates.append("name=?")
-                    params.append(name)
+                    params_u.append(name)
                 if sector:
                     updates.append("sector=?")
-                    params.append(sector)
-                amt = amounts.get(code)
+                    params_u.append(sector)
+                params_u.append(code)
+                conn.execute(
+                    f"UPDATE funds SET {','.join(updates)} WHERE code=?",
+                    params_u,
+                )
+
+            # ── Portfolio-scoped position (upsert) ──
+            amt = amounts.get(code)
+            existing_pos = conn.execute(
+                "SELECT id FROM positions WHERE portfolio_id=? AND code=?",
+                (pf_id, code),
+            ).fetchone()
+            if existing_pos:
+                pos_updates, pos_params = [], []
                 if amt is not None:
-                    updates.append("amount=?")
-                    params.append(float(amt))
+                    pos_updates.append("amount=?")
+                    pos_params.append(float(amt))
                 if item:
                     if item.holding_amount is not None:
-                        updates.append("imported_holding_amount=?")
-                        params.append(float(item.holding_amount))
+                        pos_updates.append("imported_holding_amount=?")
+                        pos_params.append(float(item.holding_amount))
                     if item.cumulative_return is not None:
-                        updates.append("imported_cumulative_return=?")
-                        params.append(float(item.cumulative_return))
+                        pos_updates.append("imported_cumulative_return=?")
+                        pos_params.append(float(item.cumulative_return))
                     if item.holding_return is not None:
-                        updates.append("imported_holding_return=?")
-                        params.append(float(item.holding_return))
-                if updates:
-                    params.append(code)
+                        pos_updates.append("imported_holding_return=?")
+                        pos_params.append(float(item.holding_return))
+                if pos_updates:
+                    pos_params += [pf_id, code]
                     conn.execute(
-                        f"UPDATE funds SET {','.join(updates)} WHERE code=?", params
+                        f"UPDATE positions SET {','.join(pos_updates)}"
+                        " WHERE portfolio_id=? AND code=?",
+                        pos_params,
                     )
             else:
                 conn.execute(
-                    """INSERT INTO funds
-                       (code,name,sector,amount,imported_holding_amount,imported_cumulative_return,imported_holding_return,created_at)
-                       VALUES(?,?,?,?,?,?,?,?)""",
+                    """INSERT INTO positions
+                       (portfolio_id,code,amount,imported_holding_amount,
+                        imported_cumulative_return,imported_holding_return,created_at)
+                       VALUES(?,?,?,?,?,?,?)""",
                     (
+                        pf_id,
                         code,
-                        name,
-                        sector,
-                        float(amounts[code]) if code in amounts else None,
+                        float(amt) if amt is not None else None,
                         float(item.holding_amount)
                         if item and item.holding_amount is not None
                         else None,
@@ -270,9 +299,10 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                         now,
                     ),
                 )
+            actually_added.append(code)
         conn.commit()
 
-    # For funds with holding_amount, create a synthetic buy transaction using latest NAV
+    # ── Synthetic buy transaction for imported holding amounts ────────────────
     tx_now = datetime.now(timezone.utc).isoformat()
     nav_skipped: list[str] = []
     for code in actually_added:
@@ -282,7 +312,9 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
         try:
             with get_conn() as conn:
                 existing_tx = conn.execute(
-                    "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
+                    "SELECT COUNT(*) as c FROM transactions"
+                    " WHERE portfolio_id=? AND code=?",
+                    (pf_id, code),
                 ).fetchone()["c"]
             if existing_tx > 0:
                 nav_skipped.append(f"{code}（已有交易记录，跳过）")
@@ -303,10 +335,11 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
             with get_conn() as conn:
                 conn.execute(
                     "INSERT INTO transactions"
-                    "(code,direction,trade_date,nav,shares,amount,fee,source,created_at)"
-                    " VALUES(?,?,?,?,?,?,?,?,?)",
+                    "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,source,created_at)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (
                         code,
+                        pf_id,
                         "buy",
                         latest["date"],
                         str(nav_val),
@@ -317,7 +350,7 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
                         tx_now,
                     ),
                 )
-                recompute_holding_shares(conn, code)
+                recompute_holding_shares(conn, pf_id, code)
                 conn.commit()
         except Exception as e:
             nav_skipped.append(f"{code}（{e}）")
@@ -327,6 +360,7 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
 
     return {
         "ok": True,
+        "portfolio_id": pf_id,
         "added": actually_added,
         "invalid": invalid,
         "warnings": warnings,
@@ -334,7 +368,11 @@ async def add_funds_batch(payload: BatchFundsPayload) -> dict:
 
 
 @router.post("/api/funds/{code}")
-async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
+async def add_fund(code: str) -> dict:
+    """Add a fund to the global registry (watchlist).
+
+    Position data lives in /api/funds/batch.
+    """
     code = validate_code(code)
     now = datetime.now(timezone.utc).isoformat()
 
@@ -348,22 +386,15 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
     except Exception:
         pass
 
-    amount = float(payload.amount) if payload and payload.amount is not None else None
-
     with get_conn() as conn:
         existing = conn.execute(
             "SELECT code FROM funds WHERE code=?", (code,)
         ).fetchone()
         if existing:
-            if amount is not None:
-                conn.execute("UPDATE funds SET amount=? WHERE code=?", (amount, code))
-            if (
-                sector
-                and not conn.execute(
-                    "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
-                    (code,),
-                ).fetchone()
-            ):
+            if sector and not conn.execute(
+                "SELECT sector FROM funds WHERE code=? AND sector IS NOT NULL",
+                (code,),
+            ).fetchone():
                 conn.execute(
                     "UPDATE funds SET sector=?, name=? WHERE code=?",
                     (sector, name, code),
@@ -374,55 +405,16 @@ async def add_fund(code: str, payload: AddFundPayload | None = None) -> dict:
                     status_code=400, detail="无法获取基金信息，请确认基金代码有效后重试"
                 )
             conn.execute(
-                "INSERT INTO funds(code,name,sector,amount,created_at)"
-                " VALUES(?,?,?,?,?)",
-                (code, name, sector, amount, now),
+                "INSERT INTO funds(code,name,sector,created_at) VALUES(?,?,?,?)",
+                (code, name, sector, now),
             )
         conn.commit()
     return {"ok": True, "code": code, "name": name, "sector": sector}
 
 
-@router.patch("/api/funds/{code}")
-def update_fund(code: str, payload: UpdateFundPayload) -> dict:
-    code = validate_code(code)
-    with get_conn() as conn:
-        if not conn.execute("SELECT code FROM funds WHERE code=?", (code,)).fetchone():
-            raise HTTPException(status_code=404, detail="fund not found")
-
-        # If has transactions, reject manual shares edit
-        if payload.holding_shares is not None:
-            tx_count = conn.execute(
-                "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
-            ).fetchone()["c"]
-            if tx_count > 0:
-                raise HTTPException(
-                    status_code=400, detail="有交易记录时不可手动编辑份额"
-                )
-            try:
-                shares_d = Decimal(payload.holding_shares)
-            except InvalidOperation:
-                raise HTTPException(status_code=400, detail="无效的份额数值")
-            if shares_d < 0:
-                raise HTTPException(status_code=400, detail="份额不能为负数")
-
-        updates = []
-        params: list = []
-        if payload.holding_shares is not None:
-            updates.append("holding_shares=?")
-            params.append(payload.holding_shares)
-        if payload.sector is not None:
-            updates.append("sector=?")
-            params.append(payload.sector)
-        if not updates:
-            raise HTTPException(status_code=400, detail="nothing to update")
-        params.append(code)
-        conn.execute(f"UPDATE funds SET {','.join(updates)} WHERE code=?", params)
-        conn.commit()
-    return {"ok": True, "code": code}
-
 
 @router.delete("/api/funds/{code}")
-def delete_fund(code: str) -> dict:
+def delete_fund(code: str, portfolio_id: int | None = Query(default=None)) -> dict:
     """Remove a fund from the watchlist."""
     code = validate_code(code)
     with get_conn() as conn:
@@ -431,11 +423,33 @@ def delete_fund(code: str) -> dict:
         ).fetchone()
         if not existing:
             raise HTTPException(status_code=404, detail="fund not found")
+        if portfolio_id is not None:
+            portfolio = conn.execute(
+                "SELECT id FROM portfolios WHERE id=?", (portfolio_id,)
+            ).fetchone()
+            if not portfolio:
+                raise HTTPException(status_code=404, detail="portfolio not found")
+            conn.execute(
+                "DELETE FROM transactions WHERE portfolio_id=? AND code=?",
+                (portfolio_id, code),
+            )
+            conn.execute(
+                "DELETE FROM positions WHERE portfolio_id=? AND code=?",
+                (portfolio_id, code),
+            )
+            conn.commit()
+            return {
+                "ok": True,
+                "code": code,
+                "portfolio_id": portfolio_id,
+                "scope": "portfolio",
+            }
         conn.execute("DELETE FROM fund_snapshots WHERE code=?", (code,))
         conn.execute("DELETE FROM transactions WHERE code=?", (code,))
+        conn.execute("DELETE FROM positions WHERE code=?", (code,))
         conn.execute("DELETE FROM funds WHERE code=?", (code,))
         conn.commit()
-    return {"ok": True, "code": code}
+    return {"ok": True, "code": code, "scope": "global"}
 
 
 @router.get("/api/funds/{code}/holdings")

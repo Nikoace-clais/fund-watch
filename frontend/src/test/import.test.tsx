@@ -1,42 +1,67 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement, ReactNode } from 'react';
 import { ImportPreview } from '../components/ImportPreview';
+import { ProviderConfigProvider } from '../lib/provider-config';
 import type { ImportPreviewResult } from '../services/import';
+
+function Providers({ children }: { children: ReactNode }) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return (
+    <QueryClientProvider client={qc}>
+      <ProviderConfigProvider>{children}</ProviderConfigProvider>
+    </QueryClientProvider>
+  );
+}
+
+function renderWrapped(ui: ReactElement) {
+  return render(ui, { wrapper: Providers });
+}
 
 describe('ImportPreview Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock fetch for API calls
-    global.fetch = vi.fn();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ items: [] }),
+    });
   });
 
   it('should render upload area', () => {
-    render(<ImportPreview onImport={() => {}} />);
-    
+    renderWrapped(<ImportPreview onImport={() => {}} />);
+
     expect(screen.getByText(/上传截图/i)).toBeInTheDocument();
     expect(screen.getByText(/支持 PNG、JPG、WebP/i)).toBeInTheDocument();
   });
 
+  it('should show unconfigured warning when no api_key', () => {
+    renderWrapped(<ImportPreview onImport={() => {}} />);
+    expect(screen.getByText(/未配置 AI 密钥/i)).toBeInTheDocument();
+  });
+
   it('should show loading state when uploading', async () => {
-    // Mock fetch to return a pending promise (never resolves)
     let resolvePromise: () => void;
     const pendingPromise = new Promise<Response>((resolve) => {
       resolvePromise = () => resolve(new Response());
     });
-    (global.fetch as any).mockReturnValue(pendingPromise);
-    
-    render(<ImportPreview onImport={() => {}} />);
-    
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [] }),
+      })
+      .mockReturnValueOnce(pendingPromise);
+
+    renderWrapped(<ImportPreview onImport={() => {}} />);
+
     const file = new File(['dummy'], 'test.png', { type: 'image/png' });
     const input = screen.getByTestId('file-input');
-    
+
     fireEvent.change(input, { target: { files: [file] } });
-    
-    // Should show loading state immediately
+
     expect(screen.getByText(/正在识别截图/i)).toBeInTheDocument();
-    
-    // Cleanup: resolve the promise to avoid hanging
+
     resolvePromise!();
   });
 
@@ -57,8 +82,8 @@ describe('ImportPreview Component', () => {
       total_count: 1,
     };
 
-    render(<ImportPreview onImport={() => {}} initialData={mockResult} />);
-    
+    renderWrapped(<ImportPreview onImport={() => {}} initialData={mockResult} />);
+
     await waitFor(() => {
       expect(screen.getByText('易方达蓝筹精选混合')).toBeInTheDocument();
       expect(screen.getByText('005827')).toBeInTheDocument();
@@ -83,11 +108,9 @@ describe('ImportPreview Component', () => {
       total_count: 1,
     };
 
-    render(<ImportPreview onImport={() => {}} initialData={mockResult} />);
-    
-    // Should show the warning banner for low confidence
+    renderWrapped(<ImportPreview onImport={() => {}} initialData={mockResult} />);
+
     expect(screen.getByText(/部分基金置信度较低/i)).toBeInTheDocument();
-    // Should show "需确认" badge
     expect(screen.getByText('需确认')).toBeInTheDocument();
   });
 
@@ -102,14 +125,12 @@ describe('ImportPreview Component', () => {
       total_count: 2,
     };
 
-    render(<ImportPreview onImport={() => {}} initialData={mockResult} />);
-    
+    renderWrapped(<ImportPreview onImport={() => {}} initialData={mockResult} />);
+
     const selectAllCheckbox = screen.getByTestId('select-all') as HTMLInputElement;
-    
-    // 默认两个高置信度基金应该都被选中，所以全选框应该是选中的
+
     expect(selectAllCheckbox.checked).toBe(true);
-    
-    // 取消全选
+
     await userEvent.click(selectAllCheckbox);
     expect(selectAllCheckbox.checked).toBe(false);
   });
@@ -125,10 +146,8 @@ describe('ImportPreview Component', () => {
       total_count: 2,
     };
 
-    const { container } = render(<ImportPreview onImport={() => {}} initialData={mockResult} />);
-    
-    // 高置信度自动选中(1个)，低置信度未选中(1个)
-    // 检查 footer 区域存在
+    const { container } = renderWrapped(<ImportPreview onImport={() => {}} initialData={mockResult} />);
+
     expect(container.textContent).toContain('已选择');
     expect(container.textContent).toContain('确认导入');
   });
@@ -144,18 +163,26 @@ describe('ImportPreview Component', () => {
       total_count: 1,
     };
 
-    // Mock successful /api/funds/batch response
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ ok: true, added: ['005827'], invalid: [], warnings: [] }),
-    });
+    // portfolios + ocr/status queries fire on mount, then the batch import
+    (global.fetch as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [] }),        // /api/portfolios
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ready: true }),       // /api/ocr/status
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true, added: ['005827'], invalid: [], warnings: [] }),
+      });
 
-    render(<ImportPreview onImport={mockImport} initialData={mockResult} />);
-    
+    renderWrapped(<ImportPreview onImport={mockImport} initialData={mockResult} />);
+
     const confirmButton = screen.getByRole('button', { name: /确认导入/i });
     await userEvent.click(confirmButton);
-    
-    // Wait for the async operation to complete
+
     await waitFor(() => {
       expect(mockImport).toHaveBeenCalledWith(['005827']);
     });
