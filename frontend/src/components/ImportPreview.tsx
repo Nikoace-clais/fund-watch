@@ -1,8 +1,10 @@
 import { useState, useMemo, type DragEvent, type ChangeEvent, type FC } from 'react';
-import { Upload, FileImage, AlertCircle, CheckCircle2, Loader2, KeyRound } from 'lucide-react';
+import { Upload, FileImage, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import type { ImportPreviewResult, ImportPreviewItem, OcrStep } from '../services/import';
-import { previewImport, confirmImport, formatConfidence, getConfidenceInfo } from '../services/import';
+import type { ImportPreviewResult, OcrStep } from '../services/import';
+import { previewImport, confirmImport, HIGH_CONFIDENCE, MEDIUM_CONFIDENCE } from '../services/import';
+import { ImportRow } from './import/ImportRow';
+import { OcrProgress } from './import/OcrProgress';
 import { usePortfolios } from '@/lib/queries';
 import { useProviderConfig } from '@/lib/provider-config';
 import { getOcrStatus } from '@/lib/api';
@@ -26,7 +28,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
     if (initialData) {
       return new Set(
         initialData.funds
-          .filter((f) => f.confidence >= 0.85)
+          .filter((f) => f.confidence >= HIGH_CONFIDENCE)
           .map((f) => f.code)
       );
     }
@@ -82,7 +84,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
       setPreview(result);
       // Auto-select high confidence funds
       const autoSelected = new Set(
-        result.funds.filter((f) => f.confidence >= 0.85).map((f) => f.code)
+        result.funds.filter((f) => f.confidence >= HIGH_CONFIDENCE).map((f) => f.code)
       );
       setSelectedCodes(autoSelected);
     } catch (err) {
@@ -153,11 +155,11 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   // Calculate stats
   const stats = useMemo(() => {
     if (!preview) return null;
-    const highConfidence = preview.funds.filter((f) => f.confidence >= 0.85).length;
+    const highConfidence = preview.funds.filter((f) => f.confidence >= HIGH_CONFIDENCE).length;
     const mediumConfidence = preview.funds.filter(
-      (f) => f.confidence >= 0.75 && f.confidence < 0.85
+      (f) => f.confidence >= MEDIUM_CONFIDENCE && f.confidence < HIGH_CONFIDENCE
     ).length;
-    const lowConfidence = preview.funds.filter((f) => f.confidence < 0.75).length;
+    const lowConfidence = preview.funds.filter((f) => f.confidence < MEDIUM_CONFIDENCE).length;
 
     return { highConfidence, mediumConfidence, lowConfidence };
   }, [preview]);
@@ -385,119 +387,6 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
           <span className="text-sm text-red-800">{error}</span>
         </div>
       )}
-    </div>
-  );
-};
-
-interface ImportRowProps {
-  fund: ImportPreviewItem;
-  isSelected: boolean;
-  onToggle: () => void;
-}
-
-const ImportRow: FC<ImportRowProps> = ({ fund, isSelected, onToggle }) => {
-  const ci = getConfidenceInfo(fund.confidence);
-
-  return (
-    <tr
-      className={`hover:bg-slate-50 ${fund.needs_review ? 'bg-yellow-50/30' : ''}`}
-    >
-      <td className="px-4 py-3">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={onToggle}
-          className="rounded border-slate-300"
-        />
-      </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center">
-          <span className="font-medium text-slate-900">{fund.name}</span>
-          {fund.needs_review && (
-            <AlertCircle className="w-4 h-4 text-yellow-500 ml-2" />
-          )}
-        </div>
-        {fund.ocr_name && fund.ocr_name !== fund.name && (
-          <div className="text-xs text-amber-600 mt-0.5">
-            识别: {fund.ocr_name}
-            {fund.similarity != null && (
-              <span className="text-slate-400 ml-1">({Math.round(fund.similarity * 100)}%)</span>
-            )}
-          </div>
-        )}
-      </td>
-      <td className="px-4 py-3 text-sm font-mono text-slate-600">{fund.code}</td>
-      <td className="px-4 py-3 text-sm text-slate-600">{fund.type}</td>
-      <td className="px-4 py-3 text-sm text-slate-600">
-        {fund.amount != null && fund.amount > 0
-          ? `¥${fund.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-          : <span className="text-slate-300">—</span>}
-      </td>
-      <td className="px-4 py-3">
-        <span className={`text-sm font-medium ${ci.color}`}>
-          {formatConfidence(fund.confidence)}
-        </span>
-      </td>
-      <td className="px-4 py-3 space-y-1">
-        <span className={`inline-flex items-center px-2 py-1 text-xs rounded-full ${ci.className}`}>
-          {fund.needs_review ? (
-            <><AlertCircle className="w-3 h-3 mr-1" />{ci.label}</>
-          ) : (
-            <><CheckCircle2 className="w-3 h-3 mr-1" />{ci.label}</>
-          )}
-        </span>
-        {fund.review === 'confirmed' && (
-          <span className="block text-xs text-green-600">✓ Pro已确认</span>
-        )}
-        {fund.review === 'corrected' && fund.ocr_name && (
-          <span className="block text-xs text-amber-600" title={`OCR识别: ${fund.ocr_name}`}>
-            ✎ Pro已修正
-          </span>
-        )}
-      </td>
-    </tr>
-  );
-};
-
-const STEPS: { key: OcrStep['step']; label: string }[] = [
-  { key: 'ocr',          label: '识别图片文字' },
-  { key: 'ai_extract',   label: 'AI 提取基金名称' },
-  { key: 'search',       label: '搜索基金数据库' },
-  { key: 'pro_identify', label: 'Pro 识别未命中基金' },
-  { key: 'pro_review',   label: 'Pro 核查匹配结果' },
-];
-
-const OcrProgress: FC<{ currentStep: OcrStep | null }> = ({ currentStep }) => {
-  const activeIdx = currentStep
-    ? STEPS.findIndex((s) => s.key === currentStep.step)
-    : 0;
-
-  return (
-    <div className="flex flex-col items-center justify-center p-10 space-y-6">
-      <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-      <p className="text-sm font-medium text-slate-700">
-        {currentStep?.text ?? '准备中...'}
-      </p>
-      <ol className="w-full max-w-xs space-y-2">
-        {STEPS.map((s, i) => {
-          const done = i < activeIdx;
-          const active = i === activeIdx && !!currentStep;
-          return (
-            <li key={s.key} className="flex items-center gap-2 text-sm">
-              {done ? (
-                <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-              ) : active ? (
-                <Loader2 className="w-4 h-4 text-blue-500 animate-spin shrink-0" />
-              ) : (
-                <span className="w-4 h-4 rounded-full border border-slate-300 shrink-0" />
-              )}
-              <span className={done ? 'text-slate-400 line-through' : active ? 'text-slate-900 font-medium' : 'text-slate-400'}>
-                {s.label}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
     </div>
   );
 };
