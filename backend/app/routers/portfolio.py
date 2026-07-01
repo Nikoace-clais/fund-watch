@@ -214,6 +214,20 @@ async def portfolio_summary(portfolio_id: int | None = None) -> dict:
         else Decimal("0")
     )
 
+    # positions in this portfolio with no holding (watch-only, scoped to this portfolio)
+    with get_conn() as conn:
+        watch_codes = [
+            r["code"]
+            for r in conn.execute(
+                """SELECT pos.code FROM positions pos
+                   WHERE pos.portfolio_id=?
+                     AND pos.holding_shares IS NULL
+                     AND COALESCE(pos.imported_holding_amount, pos.amount, 0) <= 0
+                   ORDER BY pos.created_at DESC""",
+                (pf_id,),
+            ).fetchall()
+        ]
+
     return {
         "portfolio_id": pf_id,
         "total_current": str(total_current),
@@ -223,6 +237,7 @@ async def portfolio_summary(portfolio_id: int | None = None) -> dict:
         "total_return_rate": str(total_return_rate),
         "fund_count": len(items),
         "items": items,
+        "watch_codes": watch_codes,
     }
 
 

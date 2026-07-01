@@ -31,7 +31,85 @@ from ..ocr_service import (
 
 router = APIRouter(tags=["ocr"])
 
-_VERIFY_LIMIT = 15
+_VERIFY_LIMIT = 40  # raised from 15 — search is now reliable enough
+
+# ── Name-to-fund helpers ──────────────────────────────────────────────────────
+
+import re as _re  # noqa: E402 — local to this block
+
+# Structural keywords that mark the end of the brand+theme prefix
+_STRUCT_KWS = [
+    "ETF发起式联接", "ETF联接", "指数增强", "灵活配置",
+    "联接", "ETF", "指数", "股票", "混合", "债券",
+    "发起式", "发起", "QDII-FOF-LOF", "QDII-LOF", "QDII", "FOF", "LOF",
+]
+
+
+def _normalize_query(name: str) -> str:
+    """Return brand+theme prefix suitable for eastmoney suggest API.
+
+    Full names with share-class/qualifier tails (e.g. 'ETF联接C', '(QDII)C')
+    cause the API to return garbage.  Stripping to the core prefix gets clean hits.
+    """
+    s = _re.sub(r"[（(][^）)]*[）)]", "", name)  # drop parentheticals
+    s = s.replace("基金", "")
+    for kw in _STRUCT_KWS:
+        idx = s.find(kw)
+        if idx > 3:
+            s = s[:idx]
+            break
+    s = _re.sub(r"[ABCDEIR]$", "", s.strip())
+    return s.strip()
+
+
+def _share_class(name: str) -> str:
+    """Extract trailing share-class letter (A/B/C/D/E/I/R)."""
+    _PAT = r"([ABCDEI])(?:人民币|美元|美钞|美汇|现汇|现钞)?基?金?$"
+    m = _re.search(_PAT, name.strip())
+    return m.group(1) if m else ""
+
+
+def _pick_best(ocr_name: str, candidates: list[dict]) -> dict | None:
+    """Highest similarity to ocr_name; boost matching share class by 0.15."""
+    if not candidates:
+        return None
+    want_cls = _share_class(ocr_name)
+
+    def _score(c: dict) -> float:
+        base = SequenceMatcher(None, ocr_name, c.get("name", "")).ratio()
+        cls_match = want_cls and _share_class(c.get("name", "")) == want_cls
+        return base + (0.15 if cls_match else 0.0)
+
+    return max(candidates, key=_score)
+
+
+async def _resolve_fund_by_name(ocr_name: str) -> dict | None:
+    """Search eastmoney for ocr_name; fall back to normalized prefix on miss.
+
+    Returns {code, name, type, similarity} or None.
+    """
+    cands: list[dict] = []
+    try:
+        cands = await search_fund_by_name(ocr_name, limit=5)
+    except Exception as exc:
+        log.warning("名称搜索异常 '%s': %s", ocr_name, exc)
+    if not cands:
+        norm = _normalize_query(ocr_name)
+        if norm and norm != ocr_name:
+            try:
+                cands = await search_fund_by_name(norm, limit=5)
+            except Exception as exc:
+                log.warning("归一化搜索异常 '%s': %s", norm, exc)
+    best = _pick_best(ocr_name, cands)
+    if best is None:
+        return None
+    sim = round(SequenceMatcher(None, ocr_name, best.get("name", "")).ratio(), 2)
+    return {
+        "code": best["code"],
+        "name": best["name"],
+        "type": best.get("type"),
+        "similarity": sim,
+    }
 
 
 @router.get("/api/ocr/status")
@@ -120,9 +198,18 @@ async def _ocr_fund_generator(
 
         for fund in page_funds:
             key = fund["code"] or fund["name"]
-            if key and key not in seen_keys:
+            if not key:
+                continue
+            if key not in seen_keys:
                 seen_keys.add(key)
                 all_funds.append(fund)
+            elif fund.get("amount") is not None:
+                # back-fill amount if first occurrence was truncated (no amount)
+                prev = next(
+                    (f for f in all_funds if (f["code"] or f["name"]) == key), None
+                )
+                if prev is not None and prev.get("amount") is None:
+                    prev["amount"] = fund["amount"]
 
     combined_raw = "\n---\n".join(all_raw_texts)
 
@@ -164,28 +251,22 @@ async def _ocr_fund_generator(
         for fund in name_funds[:_VERIFY_LIMIT]:
             if not fund["name"]:
                 continue
-            try:
-                results = await search_fund_by_name(fund["name"], limit=3)
-            except Exception as exc:
-                log.warning("名称搜索失败 '%s': %s", fund["name"], exc)
-                continue
-            if not results:
+            hit = await _resolve_fund_by_name(fund["name"])
+            if hit is None:
                 log.info("名称未命中(待Pro识别): '%s'", fund["name"])
                 no_hit.append(fund)
                 continue
-            best = results[0]
-            similarity = SequenceMatcher(None, fund["name"], best.get("name", "")).ratio()
             log.info("名称匹配: OCR='%s' → 搜索='%s'(%s) 相似度=%.2f",
-                     fund["name"], best.get("name", ""), best["code"], similarity)
+                     fund["name"], hit["name"], hit["code"], hit["similarity"])
             entry = {
-                "code": best["code"], "name": best["name"], "type": best.get("type"),
-                "ocr_name": fund["name"], "similarity": round(similarity, 2),
+                "code": hit["code"], "name": hit["name"], "type": hit.get("type"),
+                "ocr_name": fund["name"], "similarity": hit["similarity"],
                 "amount": fund.get("amount"),
             }
             name_matches.append(entry)
-            if best["code"] not in codes:
-                codes.append(best["code"])
-                matched_funds.append({"code": best["code"], "name": best["name"],
+            if hit["code"] not in codes:
+                codes.append(hit["code"])
+                matched_funds.append({"code": hit["code"], "name": hit["name"],
                                       "amount": fund.get("amount")})
 
     # ── Stage 1.5: Pro identifies unmatched names ────────────────────────
@@ -212,16 +293,11 @@ async def _ocr_fund_generator(
                     log.info("Pro代码核验失败(幻觉?): %s，回退名称搜索", pro_code)
 
             if not verified:
-                try:
-                    results = await search_fund_by_name(full_name, limit=3)
-                except Exception as exc:
-                    log.warning("Pro识别后名称搜索失败 '%s': %s", full_name, exc)
-                    continue
-                if not results:
+                vh = await _resolve_fund_by_name(full_name)
+                if vh is None:
                     log.info("Pro识别后仍未命中: '%s'", full_name)
                     continue
-                best = next((r for r in results if r["code"] == pro_code), results[0])
-                verified = {"code": best["code"], "name": best["name"], "type": best.get("type")}
+                verified = {"code": vh["code"], "name": vh["name"], "type": vh.get("type")}
                 log.info("Pro名称搜索命中: OCR='%s' → Pro='%s' → '%s'(%s)",
                          fund["name"], full_name, verified["name"], verified["code"])
 
@@ -255,17 +331,11 @@ async def _ocr_fund_generator(
             corrected = item.get("corrected_name", "")
             if not corrected:
                 continue
-            try:
-                fix_results = await search_fund_by_name(corrected, limit=3)
-            except Exception as exc:
-                log.warning("纠正搜索失败 '%s': %s", corrected, exc)
-                item["review"] = "unreviewed"
-                continue
-            if not fix_results:
+            best = await _resolve_fund_by_name(corrected)
+            if best is None:
                 log.info("纠正搜索无结果: '%s'，保留原匹配", corrected)
                 item["review"] = "unreviewed"
                 continue
-            best = fix_results[0]
             old_code, old_name = item["code"], item["name"]
             item["code"], item["name"] = best["code"], best["name"]
             item["type"] = best.get("type")
@@ -367,3 +437,5 @@ async def ocr_transaction(
         "raw_text": raw_text,
         "transaction": tx_data,
     }
+
+

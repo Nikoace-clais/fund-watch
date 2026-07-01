@@ -70,16 +70,16 @@ export function Portfolio() {
   const currentPortfolio = portfolios.find((p) => p.id === selectedId)
 
   const watchOnly = useMemo<WatchOnlyItem[]>(() => {
-    const holdingCodes = new Set(items.map((i) => i.code))
+    const watchCodes = new Set(summary?.watch_codes ?? [])
     return overview
-      .filter((i) => !holdingCodes.has(i.fund.code))
+      .filter((i) => watchCodes.has(i.fund.code))
       .map((i) => ({
         code: i.fund.code,
         name: i.latest?.name || i.fund.name,
         gszzl: i.latest?.gszzl,
         gsz: i.latest?.gsz ?? i.latest?.dwjz,
       }))
-  }, [items, overview])
+  }, [summary, overview])
 
   const handleDeleteHolding = useCallback(
     async (code: string, name?: string) => {
@@ -120,13 +120,13 @@ export function Portfolio() {
       if (!confirm(`确认删除基金 ${name || code}?`)) return
       setDeleting(code)
       try {
-        await deleteFund(code)
+        await deleteFund(code, selectedId)
         invalidatePortfolio()
       } finally {
         setDeleting(null)
       }
     },
-    [invalidatePortfolio],
+    [invalidatePortfolio, selectedId],
   )
 
   const handleBatchDeleteWatch = useCallback(

@@ -75,6 +75,7 @@ export type PortfolioSummary = {
   total_return_rate: string
   fund_count: number
   items: PortfolioItem[]
+  watch_codes: string[]
 }
 
 export type Portfolio = {
