@@ -4,13 +4,12 @@ Focuses on the two behavior changes that matter: funds_overview no longer
 does one DB round-trip per fund (bulk repo queries), and portfolio_holdings
 no longer double-fetches realtime estimates via a router-to-router call.
 """
-import pytest
-from fastapi.testclient import TestClient
-
 import app.db as app_db
 import app.routers.funds as funds_router
 import app.services.portfolio_service as portfolio_service
+import pytest
 from app.main import app as fastapi_app
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -46,7 +45,12 @@ class TestFundsOverviewBulk:
         )
 
         async def fake_estimate(code: str) -> dict:
-            return {"name": f"测试基金{code}", "gsz": "1.6", "gszzl": "1.0", "gztime": "15:00"}
+            return {
+                "name": f"测试基金{code}",
+                "gsz": "1.6",
+                "gszzl": "1.0",
+                "gztime": "15:00",
+            }
 
         monkeypatch.setattr(funds_router, "fetch_realtime_estimate", fake_estimate)
 
@@ -94,7 +98,7 @@ class TestPortfolioHoldingsNoDoubleFetch:
         import app.routers.portfolio as portfolio_router
 
         monkeypatch.setattr(portfolio_router, "fetch_fund_holdings", fake_holdings)
-        monkeypatch.setattr(portfolio_router, "fetch_stock_industries", fake_industries)
+        monkeypatch.setattr(portfolio_router, "get_stock_industries", fake_industries)
 
         resp = app_client.get(f"/api/portfolio/holdings?portfolio_id={pf_id}")
         assert resp.status_code == 200

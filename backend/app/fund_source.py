@@ -10,10 +10,14 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 import httpx
+from cachetools import TTLCache
 
-# In-process TTL cache for NAV history (avoids re-fetching on range changes)
-_nav_history_cache: dict[str, tuple[float, list]] = {}  # code -> (fetched_at, data)
 _NAV_CACHE_TTL = 600  # 10 minutes
+# In-process TTL cache for NAV history (avoids re-fetching on range changes);
+# TTLCache evicts both on expiry and once maxsize is hit, unlike a plain dict.
+_nav_history_cache: TTLCache[str, list[dict[str, Any]]] = TTLCache(
+    maxsize=500, ttl=_NAV_CACHE_TTL
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +70,15 @@ async def _get_with_retry(
     raise last_error or Exception(f"Failed GET {url}")
 
 
+async def _fetch(url: str, **kw: Any) -> httpx.Response:
+    """Shared-client GET with retry — the default path for all outbound requests."""
+    return await _get_with_retry(_get_client(), url, **kw)
+
+
 async def fetch_realtime_estimate(code: str) -> dict[str, Any]:
     url = FUND_GZ_URL.format(code=code)
     t0 = time.perf_counter()
-    client = _get_client()
-    resp = await _get_with_retry(client, url)
+    resp = await _fetch(url)
     text = resp.text.strip()
     elapsed = time.perf_counter() - t0
     logger.debug("fetch_realtime_estimate [%s] %.3fs", code, elapsed)
@@ -99,6 +107,23 @@ def _to_float(v: Any) -> float | None:
 
 
 PINGZHONG_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
+
+# Raw pingzhongdata text is shared by fetch_fund_info/fetch_fund_detail/
+# fetch_nav_history — a short TTL coalesces the near-simultaneous calls a
+# fund-detail page load triggers into a single download.
+_pingzhong_cache: TTLCache[str, str] = TTLCache(maxsize=200, ttl=60)
+
+
+async def _fetch_pingzhongdata_text(code: str) -> str:
+    cached = _pingzhong_cache.get(code)
+    if cached is not None:
+        return cached
+    t0 = time.perf_counter()
+    resp = await _fetch(PINGZHONG_URL.format(code=code))
+    text = resp.text
+    logger.debug("_fetch_pingzhongdata_text [%s] %.3fs", code, time.perf_counter() - t0)
+    _pingzhong_cache[code] = text
+    return text
 
 # Common fund sector keywords to extract from fund name
 _SECTOR_KEYWORDS = [
@@ -156,14 +181,7 @@ def _extract_sector(name: str) -> str | None:
 
 async def fetch_fund_info(code: str) -> dict[str, Any]:
     """Fetch fund basic info (name, sector) from eastmoney pingzhongdata."""
-    url = PINGZHONG_URL.format(code=code)
-    t0 = time.perf_counter()
-    client = _get_client()
-    resp = await client.get(url)
-    resp.raise_for_status()
-    text = resp.text
-    elapsed = time.perf_counter() - t0
-    logger.debug("fetch_fund_info [%s] %.3fs", code, elapsed)
+    text = await _fetch_pingzhongdata_text(code)
 
     # Parse: var fS_name = "招商中证白酒指数(LOF)A";
     name_m = re.search(r'var fS_name\s*=\s*"([^"]*)"', text)
@@ -191,11 +209,8 @@ _HOLDING_ROW_RE = re.compile(
 
 async def fetch_fund_holdings(code: str) -> list[dict[str, Any]]:
     """Fetch top-10 stock holdings for a fund from eastmoney."""
-    url = HOLDINGS_URL.format(code=code)
     t0 = time.perf_counter()
-    client = _get_client()
-    resp = await client.get(url)
-    resp.raise_for_status()
+    resp = await _fetch(HOLDINGS_URL.format(code=code))
     text = resp.text
     elapsed = time.perf_counter() - t0
     logger.debug("fetch_fund_holdings [%s] %.3fs", code, elapsed)
@@ -220,32 +235,85 @@ async def fetch_fund_holdings(code: str) -> list[dict[str, Any]]:
     return holdings
 
 
+def _parse_fund_size(text: str) -> float | None:
+    """Fund size (亿) from fluctuation scale: series is [{y:374.98, mom:"..."}, ...]."""
+    m = re.search(r"var Data_fluctuationScale\s*=\s*(\{.*?\});", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        series = json.loads(m.group(1)).get("series", [])
+        return series[-1].get("y") if series else None
+    except (json.JSONDecodeError, KeyError):
+        return None
+
+
+def _parse_period_returns(text: str) -> dict[str, float | None]:
+    """syl_1y=近1月, syl_3y=近3月, syl_6y=近6月, syl_1n=近1年."""
+    returns: dict[str, float | None] = {}
+    for var_name, key in [
+        ("syl_1y", "one_month_return"),
+        ("syl_3y", "three_month_return"),
+        ("syl_6y", "six_month_return"),
+        ("syl_1n", "one_year_return"),
+    ]:
+        m = re.search(rf'var {var_name}\s*=\s*"([^"]*)"', text)
+        if not m:
+            m = re.search(rf"var {var_name}\s*=\s*([^;]*);", text)
+        returns[key] = _to_float(m.group(1).strip('"')) if m else None
+    return returns
+
+
+def _parse_asset_allocation(text: str) -> list[dict[str, Any]]:
+    """Data_assetAllocation: series items are {name, data:[...]}, aligned to dates."""
+    m = re.search(r"var Data_assetAllocation\s*=\s*(\{.*?\});", text, re.DOTALL)
+    if not m:
+        return []
+    try:
+        series = json.loads(m.group(1)).get("series", [])
+        allocation = []
+        for s in series:
+            name = s.get("name", "")
+            if "净资产" in name:
+                continue  # net asset value is not an allocation category
+            data = s.get("data", [])
+            if data:
+                allocation.append({"name": name, "value": data[-1]})
+        return allocation
+    except (json.JSONDecodeError, KeyError):
+        return []
+
+
+def _parse_manager_power(
+    text: str, code: str
+) -> tuple[list[Any] | None, list[Any] | None]:
+    """Manager power scores/categories from the first Data_currentFundManager entry."""
+    raw_managers = _extract_js_array(text, "Data_currentFundManager")
+    if not raw_managers:
+        return None, None
+    try:
+        power = raw_managers[0].get("power", {})
+        return power.get("data"), power.get("categories")
+    except AttributeError as e:
+        logger.debug("manager_power parse failed for %s: %s", code, e)
+        return None, None
+
+
 async def fetch_fund_detail(code: str) -> dict[str, Any]:
     """Fetch comprehensive fund detail from eastmoney pingzhongdata.
 
     Returns: name, manager, size, established_date, period returns,
     asset allocation, etc.
     """
-    url = PINGZHONG_URL.format(code=code)
-    t0 = time.perf_counter()
-    client = _get_client()
-    resp = await client.get(url)
-    resp.raise_for_status()
-    text = resp.text
-    elapsed = time.perf_counter() - t0
-    logger.debug("fetch_fund_detail [%s] %.3fs", code, elapsed)
+    text = await _fetch_pingzhongdata_text(code)
 
     result: dict[str, Any] = {"code": code}
 
-    # Fund name
     m = re.search(r'var fS_name\s*=\s*"([^"]*)"', text)
     result["name"] = m.group(1) if m else None
 
-    # Fund code (verify)
     m = re.search(r'var fS_code\s*=\s*"([^"]*)"', text)
     result["fund_code"] = m.group(1) if m else code
 
-    # Fund type
     m = re.search(r'var fS_type\s*=\s*"([^"]*)"', text)
     result["fund_type"] = m.group(1) if m else None
 
@@ -258,80 +326,25 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
     )
     result["manager"] = m.group(1) if m else None
 
-    # Fund size (亿) from fluctuation scale: series is [{y:374.98, mom:"..."}, ...]
-    m = re.search(r"var Data_fluctuationScale\s*=\s*(\{.*?\});", text, re.DOTALL)
-    if m:
-        try:
-            scale_data = json.loads(m.group(1))
-            series = scale_data.get("series", [])
-            if series:
-                result["size"] = series[-1].get("y")
-            else:
-                result["size"] = None
-        except (json.JSONDecodeError, KeyError):
-            result["size"] = None
-    else:
-        result["size"] = None
+    result["size"] = _parse_fund_size(text)
 
     # Established date — not always a separate var, extract from fund page if needed
-    # Try fS_nkfr first, then look for 成立日期 pattern
     m = re.search(r'var fS_nkfr\s*=\s*"([^"]*)"', text)
     result["established_date"] = m.group(1) if m else None
 
-    # Period returns: syl_1y=近1月, syl_3y=近3月, syl_6y=近6月, syl_1n=近1年
-    for var_name, key in [
-        ("syl_1y", "one_month_return"),
-        ("syl_3y", "three_month_return"),
-        ("syl_6y", "six_month_return"),
-        ("syl_1n", "one_year_return"),
-    ]:
-        m = re.search(rf'var {var_name}\s*=\s*"([^"]*)"', text)
-        if not m:
-            m = re.search(rf"var {var_name}\s*=\s*([^;]*);", text)
-        result[key] = _to_float(m.group(1).strip('"')) if m else None
-
-    # Asset allocation: Data_assetAllocation
-    m = re.search(r"var Data_assetAllocation\s*=\s*(\{.*?\});", text, re.DOTALL)
-    if m:
-        try:
-            alloc_data = json.loads(m.group(1))
-            series = alloc_data.get("series", [])
-            # Build allocation: each series item is {name, data: [...]}
-            # data aligns with categories (dates), take latest value
-            allocation = []
-            for s in series:
-                name = s.get("name", "")
-                if "净资产" in name:
-                    continue  # Skip net asset value, not an allocation category
-                data = s.get("data", [])
-                if data:
-                    allocation.append({"name": name, "value": data[-1]})
-            result["asset_allocation"] = allocation
-        except (json.JSONDecodeError, KeyError):
-            result["asset_allocation"] = []
-    else:
-        result["asset_allocation"] = []
-
+    result.update(_parse_period_returns(text))
+    result["asset_allocation"] = _parse_asset_allocation(text)
     result["sector"] = _extract_sector(result["name"]) if result["name"] else None
 
-    # Subscription fee rates
     m = re.search(r'var fund_sourceRate\s*=\s*"([^"]*)"', text)
     result["subscription_rate"] = _to_float(m.group(1)) if m else None
 
     m = re.search(r'var fund_Rate\s*=\s*"([^"]*)"', text)
     result["subscription_rate_discounted"] = _to_float(m.group(1)) if m else None
 
-    # Manager power scores from Data_currentFundManager
-    raw_managers = _extract_js_array(text, "Data_currentFundManager")
-    result["manager_power_scores"] = None
-    result["manager_power_categories"] = None
-    if raw_managers:
-        try:
-            power = raw_managers[0].get("power", {})
-            result["manager_power_scores"] = power.get("data")
-            result["manager_power_categories"] = power.get("categories")
-        except AttributeError as e:
-            logger.debug("manager_power parse failed for %s: %s", code, e)
+    scores, categories = _parse_manager_power(text, code)
+    result["manager_power_scores"] = scores
+    result["manager_power_categories"] = categories
 
     return result
 
@@ -373,21 +386,11 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
     Results are cached in-process for 10 minutes (TTL) to avoid repeated fetches
     when the user switches between chart range buttons.
     """
-    # I4 fix: return cached data when still fresh
-    cached = _nav_history_cache.get(code)
-    if cached:
-        fetched_at, full_data = cached
-        if time.time() - fetched_at < _NAV_CACHE_TTL:
-            return full_data[-limit:] if limit < len(full_data) else full_data
+    full_data = _nav_history_cache.get(code)
+    if full_data is not None:
+        return full_data[-limit:] if limit < len(full_data) else full_data
 
-    url = PINGZHONG_URL.format(code=code)
-    t0 = time.perf_counter()
-    client = _get_client()
-    resp = await client.get(url)
-    resp.raise_for_status()
-    text = resp.text
-    elapsed = time.perf_counter() - t0
-    logger.debug("fetch_nav_history [%s] %.3fs", code, elapsed)
+    text = await _fetch_pingzhongdata_text(code)
 
     from datetime import datetime as dt
 
@@ -425,7 +428,7 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
         h["accNav"] = acc_map.get(h["date"])
 
     # Store full history in cache; callers slice by limit from here
-    _nav_history_cache[code] = (time.time(), history)
+    _nav_history_cache[code] = history
     return history[-limit:] if limit < len(history) else history
 
 
@@ -549,17 +552,16 @@ async def fetch_market_indices() -> list[dict[str, Any]]:
     return items
 
 
+_LSJZ_HEADERS = {"Referer": "https://fund.eastmoney.com/"}
+
+
 async def fetch_latest_nav(code: str) -> dict[str, Any] | None:
     """Fetch the most recent NAV record. Returns {date, nav} or None."""
     params = {"fundCode": code, "pageIndex": 1, "pageSize": 1}
-    headers = {"Referer": "https://fund.eastmoney.com/"}
     t0 = time.perf_counter()
-    client = _get_client()
-    resp = await client.get(LSJZ_URL, params=params, headers=headers)
-    resp.raise_for_status()
+    resp = await _fetch(LSJZ_URL, params=params, headers=_LSJZ_HEADERS)
     data = resp.json()
-    elapsed = time.perf_counter() - t0
-    logger.debug("fetch_latest_nav [%s] %.3fs", code, elapsed)
+    logger.debug("fetch_latest_nav [%s] %.3fs", code, time.perf_counter() - t0)
     items = (data.get("Data") or {}).get("LSJZList") or []
     if items:
         return {"date": items[0].get("FSRQ"), "nav": _to_float(items[0].get("DWJZ"))}
@@ -575,11 +577,8 @@ async def fetch_nav_on_date(code: str, date: str) -> float | None:
         "startDate": date,
         "endDate": date,
     }
-    headers = {"Referer": "https://fund.eastmoney.com/"}
     t0 = time.perf_counter()
-    client = _get_client()
-    resp = await client.get(LSJZ_URL, params=params, headers=headers)
-    resp.raise_for_status()
+    resp = await _fetch(LSJZ_URL, params=params, headers=_LSJZ_HEADERS)
     data = resp.json()
     elapsed = time.perf_counter() - t0
     logger.debug("fetch_nav_on_date [%s@%s] %.3fs", code, date, elapsed)
@@ -608,6 +607,15 @@ _RANKING_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
+# rankhandler.aspx comma-separated field positions (undocumented, order-dependent)
+_RANK_IDX_CODE = 0
+_RANK_IDX_NAME = 1
+_RANK_IDX_ONE_YEAR = 11
+_RANK_IDX_THREE_YEAR = 13
+_RANK_IDX_SIZE = 18
+_RANK_IDX_FEE = 20
+_RANK_MIN_FIELDS = 20  # below this, the row is missing fields we rely on
+
 
 async def _fetch_ranking_mobile(fund_type: str, page_size: int) -> list[dict[str, Any]]:
     """Fallback ranking via eastmoney mobile API (FundMNRank).
@@ -631,9 +639,8 @@ async def _fetch_ranking_mobile(fund_type: str, page_size: int) -> list[dict[str
         "Sort": "desc",
     }
     t0 = time.perf_counter()
-    client = _get_client()
-    resp = await _get_with_retry(
-        client, _MOBILE_RANKING_URL, params=params, headers=_MOBILE_RANKING_HEADERS
+    resp = await _fetch(
+        _MOBILE_RANKING_URL, params=params, headers=_MOBILE_RANKING_HEADERS
     )
     data = resp.json()
     elapsed = time.perf_counter() - t0
@@ -698,10 +705,7 @@ async def fetch_fund_ranking(
     }
     try:
         t0 = time.perf_counter()
-        client = _get_client()
-        resp = await _get_with_retry(
-            client, RANKING_URL, params=params, headers=_RANKING_HEADERS
-        )
+        resp = await _fetch(RANKING_URL, params=params, headers=_RANKING_HEADERS)
         text = resp.text
         elapsed = time.perf_counter() - t0
         logger.debug(
@@ -719,19 +723,25 @@ async def fetch_fund_ranking(
         results: list[dict[str, Any]] = []
         for raw in raw_items:
             fields = raw.split(",")
-            if len(fields) < 20:
+            if len(fields) < _RANK_MIN_FIELDS:
                 continue
-            code = fields[0]
+            code = fields[_RANK_IDX_CODE]
             if not re.match(r"^\d{6}$", code):
                 continue
             results.append(
                 {
                     "code": code,
-                    "name": fields[1],
-                    "one_year_return": _to_float(fields[11]),
-                    "three_year_return": _to_float(fields[13]),
-                    "fee": fields[20] if len(fields) > 20 else None,
-                    "size": _to_float(fields[18]) if len(fields) > 18 else None,
+                    "name": fields[_RANK_IDX_NAME],
+                    "one_year_return": _to_float(fields[_RANK_IDX_ONE_YEAR]),
+                    "three_year_return": _to_float(fields[_RANK_IDX_THREE_YEAR]),
+                    "fee": (
+                        fields[_RANK_IDX_FEE] if len(fields) > _RANK_IDX_FEE else None
+                    ),
+                    "size": (
+                        _to_float(fields[_RANK_IDX_SIZE])
+                        if len(fields) > _RANK_IDX_SIZE
+                        else None
+                    ),
                 }
             )
         if results:
@@ -870,12 +880,9 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
     """
     params = {"callback": "cb", "m": "1", "key": keyword}
     t0 = time.perf_counter()
-    client = _get_client()
-    resp = await client.get(FUND_SEARCH_URL, params=params)
-    resp.raise_for_status()
+    resp = await _fetch(FUND_SEARCH_URL, params=params)
     text = resp.text.strip()
-    elapsed = time.perf_counter() - t0
-    logger.debug("search_fund_by_name [%s] %.3fs", keyword, elapsed)
+    logger.debug("search_fund_by_name [%s] %.3fs", keyword, time.perf_counter() - t0)
 
     # Strip JSONP wrapper: cb({...})
     if text.startswith("cb(") and text.endswith(")"):
@@ -903,80 +910,37 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
 # ── Stock industry enrichment ─────────────────────────────────────────────────
 # ponytail: 行业基本不变，落表持久化；要纠正分类改库行，要强制刷新删行重拉
 
+_STOCK_INDUSTRY_URL = "https://push2.eastmoney.com/api/qt/stock/get"
+
 
 def _secid(stock_code: str) -> str:
     """Eastmoney secid prefix: 1 for Shanghai (6x/9x), 0 for Shenzhen/Beijing."""
     return "1" if stock_code[0] in "69" else "0"
 
 
-async def fetch_stock_industries(codes: list[str]) -> dict[str, str]:
-    """Return {stock_code: industry} for the given codes.
-
-    Local ``stock_industry`` table is the primary source.  Only codes missing
-    from the table hit the eastmoney API; results are written back so they
-    accumulate across restarts.
+async def fetch_stock_industries_from_source(
+    codes: list[str],
+) -> dict[str, tuple[str | None, str | None]]:
+    """Query eastmoney for {code: (stock_name, industry)}. No caching, no DB —
+    persistence and the local-table short-circuit live in
+    services.stock_industry_service so this adapter only ever returns data.
     """
-    if not codes:
-        return {}
-
-    from datetime import datetime, timezone
-
-    from app.db import get_conn
-
-    # 1. Query local table first
-    placeholders = ",".join("?" * len(codes))
-    result: dict[str, str] = {}
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT stock_code, industry FROM stock_industry"
-            f" WHERE stock_code IN ({placeholders})",
-            codes,
-        ).fetchall()
-    for row in rows:
-        if row["industry"]:
-            result[row["stock_code"]] = row["industry"]
-
-    missing = [c for c in codes if c not in result]
-    if not missing:
-        return result
-
-    # 2. Fetch missing from eastmoney, bounded concurrency
     sem = asyncio.Semaphore(8)
-    client = _get_client()
-    url_tpl = (
-        "https://push2.eastmoney.com/api/qt/stock/get"
-        "?secid={secid}.{code}&fields=f57,f58,f127"
-    )
 
     async def _one(code: str) -> tuple[str, str | None, str | None]:
         if len(code) != 6:  # skip non-A-share codes (e.g. HK 5-digit)
             return code, None, None
         async with sem:
             try:
-                resp = await client.get(url_tpl.format(secid=_secid(code), code=code))
-                resp.raise_for_status()
+                resp = await _fetch(
+                    f"{_STOCK_INDUSTRY_URL}?secid={_secid(code)}.{code}"
+                    "&fields=f57,f58,f127"
+                )
                 data = resp.json().get("data") or {}
                 return code, data.get("f58"), data.get("f127")
             except Exception:
-                logger.debug("fetch_stock_industries: failed for %s", code)
+                logger.debug("fetch_stock_industries_from_source: failed for %s", code)
                 return code, None, None
 
-    fetched = await asyncio.gather(*[_one(c) for c in missing])
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    rows_to_write = [(c, name, ind, now) for c, name, ind in fetched if ind]
-    if rows_to_write:
-        with get_conn() as conn:
-            conn.executemany(
-                "INSERT OR REPLACE INTO stock_industry"
-                " (stock_code, stock_name, industry, updated_at)"
-                " VALUES (?, ?, ?, ?)",
-                rows_to_write,
-            )
-            conn.commit()
-
-    for c, _name, ind in fetched:
-        if ind:
-            result[c] = ind
-
-    return result
+    fetched = await asyncio.gather(*[_one(c) for c in codes])
+    return {code: (name, industry) for code, name, industry in fetched}

@@ -1,16 +1,14 @@
-"""Tests for stock industry enrichment (fetch_stock_industries)."""
+"""Tests for stock industry enrichment (get_stock_industries)."""
 from __future__ import annotations
 
 import os
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-from app.fund_source import _secid, fetch_stock_industries
-
+from app.fund_source import _secid
+from app.services.stock_industry_service import get_stock_industries
 
 # ── secid prefix helper ───────────────────────────────────────────────────────
 
@@ -60,7 +58,7 @@ async def test_hits_local_table_no_api(tmp_db):
         patch.dict(os.environ, {"FUND_WATCH_DB": tmp_db}),
         patch("app.fund_source._get_client") as mock_client,
     ):
-        result = await fetch_stock_industries(["600519", "000858"])
+        result = await get_stock_industries(["600519", "000858"])
 
     mock_client.assert_not_called()
     assert result == {"600519": "白酒Ⅱ", "000858": "白酒Ⅱ"}
@@ -80,7 +78,7 @@ async def test_unknown_code_skipped_gracefully(tmp_db):
         patch.dict(os.environ, {"FUND_WATCH_DB": tmp_db}),
         patch("app.fund_source._get_client", return_value=mock_http),
     ):
-        result = await fetch_stock_industries(["600519", "999999"])
+        result = await get_stock_industries(["600519", "999999"])
 
     # 600519 from table, 999999 has no industry → omitted
     assert result["600519"] == "白酒Ⅱ"

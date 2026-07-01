@@ -16,10 +16,10 @@ from ..fund_source import (
     fetch_fund_holdings,
     fetch_nav_history,
     fetch_realtime_estimate,
-    fetch_stock_industries,
 )
 from ..repositories import portfolios_repo, positions_repo, tx_repo
 from ..services.portfolio_service import compute_summary
+from ..services.stock_industry_service import get_stock_industries
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ async def portfolio_holdings(
 
     total_value = Decimal(str(summary.get("total_current", "0")))
 
-    ind_map = await fetch_stock_industries(list(agg.keys()))
+    ind_map = await get_stock_industries(list(agg.keys()))
 
     sector_agg: dict[str, Decimal] = defaultdict(Decimal)
     for sc, v in agg.items():
