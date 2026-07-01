@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Search, X, Plus, Check, AlertCircle, FileJson, Hash, Copy, ChevronDown, ChevronUp } from 'lucide-react'
-import { addFund, batchAddFunds, searchFunds, type BatchFundItem } from '@/lib/api'
+import { searchFunds, type BatchFundItem } from '@/lib/api'
+import { useAddFund, useBatchAddFunds } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
 type AddFundModalProps = {
   open: boolean
   onClose: () => void
-  onAdded: () => void
+  /** Portfolio to scope added funds/invalidation to; omit for the default portfolio */
+  portfolioId?: number
   /** Codes already in the watchlist — pre-marks them as added in search results */
   existingCodes?: string[]
 }
@@ -19,7 +21,7 @@ const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'batch', label: '批量导入', icon: <FileJson className="w-4 h-4" /> },
 ]
 
-export function AddFundModal({ open, onClose, onAdded, existingCodes = [] }: AddFundModalProps) {
+export function AddFundModal({ open, onClose, portfolioId, existingCodes = [] }: AddFundModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('search')
 
   // Close on Escape
@@ -74,9 +76,9 @@ export function AddFundModal({ open, onClose, onAdded, existingCodes = [] }: Add
 
         {/* Content */}
         <div className="px-6 pb-6 overflow-y-auto flex-1">
-          {activeTab === 'search' && <SearchTab onAdded={onAdded} existingCodes={existingCodes} />}
-          {activeTab === 'code' && <CodeTab onAdded={onAdded} />}
-          {activeTab === 'batch' && <BatchTab onAdded={onAdded} />}
+          {activeTab === 'search' && <SearchTab portfolioId={portfolioId} existingCodes={existingCodes} />}
+          {activeTab === 'code' && <CodeTab portfolioId={portfolioId} />}
+          {activeTab === 'batch' && <BatchTab portfolioId={portfolioId} />}
         </div>
       </div>
     </div>
@@ -84,13 +86,13 @@ export function AddFundModal({ open, onClose, onAdded, existingCodes = [] }: Add
 }
 
 /* ─── Tab 1: Search ─── */
-function SearchTab({ onAdded, existingCodes }: { onAdded: () => void; existingCodes: string[] }) {
+function SearchTab({ portfolioId, existingCodes }: { portfolioId?: number; existingCodes: string[] }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Array<{ code: string; name: string; type?: string }>>([])
   const [loading, setLoading] = useState(false)
   const [addedCodes, setAddedCodes] = useState<Set<string>>(() => new Set(existingCodes))
-  const [adding, setAdding] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const addFund = useAddFund(portfolioId)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   // Cleanup debounce timer on unmount
@@ -124,17 +126,12 @@ function SearchTab({ onAdded, existingCodes }: { onAdded: () => void; existingCo
     debounceRef.current = setTimeout(() => doSearch(value), 300)
   }
 
-  const handleAdd = async (code: string) => {
-    setAdding(code)
-    try {
-      await addFund(code)
-      setAddedCodes((prev) => new Set(prev).add(code))
-      onAdded()
-    } catch (err: any) {
-      setError(err.message || '添加失败')
-    } finally {
-      setAdding(null)
-    }
+  const handleAdd = (code: string) => {
+    setError('')
+    addFund.mutate(code, {
+      onSuccess: () => setAddedCodes((prev) => new Set(prev).add(code)),
+      onError: (err: Error) => setError(err.message || '添加失败'),
+    })
   }
 
   return (
@@ -169,7 +166,7 @@ function SearchTab({ onAdded, existingCodes }: { onAdded: () => void; existingCo
       <div className="space-y-1 max-h-64 overflow-y-auto">
         {results.map((item) => {
           const isAdded = addedCodes.has(item.code)
-          const isAdding = adding === item.code
+          const isAdding = addFund.isPending && addFund.variables === item.code
           return (
             <button
               key={item.code}
@@ -209,27 +206,25 @@ function SearchTab({ onAdded, existingCodes }: { onAdded: () => void; existingCo
 }
 
 /* ─── Tab 2: Code Input ─── */
-function CodeTab({ onAdded }: { onAdded: () => void }) {
+function CodeTab({ portfolioId }: { portfolioId?: number }) {
   const [code, setCode] = useState('')
-  const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const addFund = useAddFund(portfolioId)
 
   const isValid = /^\d{6}$/.test(code)
+  const loading = addFund.isPending
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!isValid) return
-    setLoading(true)
     setMessage(null)
-    try {
-      await addFund(code)
-      setMessage({ type: 'success', text: `基金 ${code} 添加成功` })
-      setCode('')
-      onAdded()
-    } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || '添加失败' })
-    } finally {
-      setLoading(false)
-    }
+    const submittedCode = code
+    addFund.mutate(submittedCode, {
+      onSuccess: () => {
+        setMessage({ type: 'success', text: `基金 ${submittedCode} 添加成功` })
+        setCode('')
+      },
+      onError: (err: Error) => setMessage({ type: 'error', text: err.message || '添加失败' }),
+    })
   }
 
   return (
@@ -291,11 +286,12 @@ function CodeTab({ onAdded }: { onAdded: () => void }) {
 }
 
 /* ─── Tab 3: Batch Import ─── */
-function BatchTab({ onAdded }: { onAdded: () => void }) {
+function BatchTab({ portfolioId }: { portfolioId?: number }) {
   const [text, setText] = useState('')
-  const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ added: string[]; invalid: string[]; warnings: string[] } | null>(null)
   const [error, setError] = useState('')
+  const batchAddFunds = useBatchAddFunds(portfolioId)
+  const loading = batchAddFunds.isPending
 
   type ParseResult = { codes: string[]; funds: BatchFundItem[] }
 
@@ -340,7 +336,7 @@ function BatchTab({ onAdded }: { onAdded: () => void }) {
     return { codes: tokens.filter((t) => /^\d{6}$/.test(t)), funds: [] }
   }
 
-  const handleImport = async () => {
+  const handleImport = () => {
     setError('')
     setResult(null)
     const { codes, funds } = parseInput(text)
@@ -348,16 +344,13 @@ function BatchTab({ onAdded }: { onAdded: () => void }) {
       setError('未识别到有效的6位基金代码')
       return
     }
-    setLoading(true)
-    try {
-      const data = await batchAddFunds(codes, funds)
-      setResult({ added: data.added, invalid: data.invalid ?? [], warnings: data.warnings ?? [] })
-      if (data.added.length > 0) onAdded()
-    } catch (err: any) {
-      setError(err.message || '导入失败')
-    } finally {
-      setLoading(false)
-    }
+    batchAddFunds.mutate(
+      { codes, funds },
+      {
+        onSuccess: (data) => setResult({ added: data.added, invalid: data.invalid ?? [], warnings: data.warnings ?? [] }),
+        onError: (err: Error) => setError(err.message || '导入失败'),
+      },
+    )
   }
 
   const [showPrompt, setShowPrompt] = useState(false)

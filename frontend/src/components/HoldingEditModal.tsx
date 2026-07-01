@@ -1,20 +1,21 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
-import { addTransaction, fetchFundDetail, fetchNavOnDate } from '@/lib/api'
+import { fetchFundDetail, fetchNavOnDate } from '@/lib/api'
+import { useAddTransaction } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
 type Props = {
   open: boolean
   onClose: () => void
-  onSaved: () => void
   code: string
   name?: string
   defaultNav?: number
   portfolioId?: number
 }
 
-export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNav, portfolioId }: Props) {
+export function HoldingEditModal({ open, onClose, code, name, defaultNav, portfolioId }: Props) {
   const today = new Date().toISOString().slice(0, 10)
+  const addTransaction = useAddTransaction(portfolioId)
 
   const [direction, setDirection] = useState<'buy' | 'sell'>('buy')
   const [tradeDate, setTradeDate] = useState(today)
@@ -24,7 +25,6 @@ export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNa
   const [feeRate, setFeeRate] = useState<number | null>(null)
   const [feeManual, setFeeManual] = useState(false)
   const [navLoading, setNavLoading] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // reset + fetch fee rate when opened
@@ -80,21 +80,19 @@ export function HoldingEditModal({ open, onClose, onSaved, code, name, defaultNa
     if (direction === 'sell') { setFee('0'); setFeeManual(false) }
   }, [direction])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     if (!nav || !shares) { setError('请填写净值和份额'); return }
-    setSubmitting(true)
-    try {
-      await addTransaction(code, { direction, trade_date: tradeDate, nav, shares, fee, portfolio_id: portfolioId })
-      onSaved()
-      onClose()
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : '提交失败')
-    } finally {
-      setSubmitting(false)
-    }
+    addTransaction.mutate(
+      { code, payload: { direction, trade_date: tradeDate, nav, shares, fee, portfolio_id: portfolioId } },
+      {
+        onSuccess: onClose,
+        onError: (err: Error) => setError(err.message || '提交失败'),
+      },
+    )
   }
+  const submitting = addTransaction.isPending
 
   if (!open) return null
 

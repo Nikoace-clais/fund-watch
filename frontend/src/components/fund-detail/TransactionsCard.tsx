@@ -1,7 +1,7 @@
-import { useState } from 'react'
 import { Plus, Trash2, TrendingUp } from 'lucide-react'
-import { deleteTransaction, type Transaction } from '@/lib/api'
-import { useInvalidatePortfolio } from '@/lib/queries'
+import { type Transaction } from '@/lib/api'
+import { useDeleteTransaction } from '@/lib/queries'
+import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { cn, formatCNY } from '@/lib/utils'
 
 export function TransactionsCard({
@@ -11,19 +11,14 @@ export function TransactionsCard({
   transactions: Transaction[]
   onAddTx: () => void
 }) {
-  const invalidatePortfolio = useInvalidatePortfolio()
-  const [deletingTx, setDeletingTx] = useState<number | null>(null)
+  const { selectedId } = useSelectedPortfolio()
+  const deleteTransaction = useDeleteTransaction(selectedId)
 
-  async function handleDeleteTx(id: number) {
+  function handleDeleteTx(id: number) {
     if (!confirm('确认删除该条交易记录？')) return
-    setDeletingTx(id)
-    try {
-      await deleteTransaction(id)
-      invalidatePortfolio()
-    } finally {
-      setDeletingTx(null)
-    }
+    deleteTransaction.mutate(id)
   }
+  const deletingTx = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">

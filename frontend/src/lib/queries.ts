@@ -1,7 +1,14 @@
-import { QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
+import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { isTradingHours } from './utils'
 import {
+  addFund,
+  addTransaction,
+  batchAddFunds,
+  createPortfolio,
+  deleteFund,
+  deletePortfolio,
+  deleteTransaction,
   fetchCronStatus,
   fetchFundDetail,
   fetchFundHoldings,
@@ -14,6 +21,8 @@ import {
   fetchQuote,
   fetchTransactions,
   listPortfolios,
+  renamePortfolio,
+  type BatchFundItem,
 } from './api'
 
 // ponytail: refetchInterval callback — stops polling outside trading hours to save requests
@@ -158,4 +167,84 @@ export function useInvalidatePortfolio(portfolioId?: number) {
     qc.invalidateQueries({ queryKey: ['portfolio', 'history'] })
     qc.invalidateQueries({ queryKey: ['fund'] })
   }, [qc, portfolioId])
+}
+
+/* ---------- mutations ---------- */
+// All write hooks below share one pattern: mutate, then invalidate the
+// portfolio-scoped queries — no per-call-site setLoading/try/finally.
+
+export function useAddFund(portfolioId?: number) {
+  const invalidate = useInvalidatePortfolio(portfolioId)
+  return useMutation({
+    mutationFn: (code: string) => addFund(code),
+    onSuccess: invalidate,
+  })
+}
+
+/** variables.scopeToPortfolio controls whether the delete is scoped to one
+ * portfolio or removes the fund globally — callers choose per call site. */
+export function useDeleteFund(invalidatePortfolioId?: number) {
+  const invalidate = useInvalidatePortfolio(invalidatePortfolioId)
+  return useMutation({
+    mutationFn: ({ code, scopeToPortfolio }: { code: string; scopeToPortfolio?: number }) =>
+      deleteFund(code, scopeToPortfolio),
+    onSuccess: invalidate,
+  })
+}
+
+export function useBatchAddFunds(portfolioId?: number) {
+  const invalidate = useInvalidatePortfolio(portfolioId)
+  return useMutation({
+    mutationFn: ({
+      codes,
+      funds,
+      opts,
+    }: {
+      codes: string[]
+      funds?: BatchFundItem[]
+      opts?: { portfolioId?: number; portfolioName?: string }
+    }) => batchAddFunds(codes, funds, opts),
+    onSuccess: invalidate,
+  })
+}
+
+export function useAddTransaction(portfolioId?: number) {
+  const invalidate = useInvalidatePortfolio(portfolioId)
+  return useMutation({
+    mutationFn: ({ code, payload }: { code: string; payload: Parameters<typeof addTransaction>[1] }) =>
+      addTransaction(code, payload),
+    onSuccess: invalidate,
+  })
+}
+
+export function useDeleteTransaction(portfolioId?: number) {
+  const invalidate = useInvalidatePortfolio(portfolioId)
+  return useMutation({
+    mutationFn: (txId: number) => deleteTransaction(txId),
+    onSuccess: invalidate,
+  })
+}
+
+export function useCreatePortfolio() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => createPortfolio(name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.portfolios }),
+  })
+}
+
+export function useRenamePortfolio() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => renamePortfolio(id, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.portfolios }),
+  })
+}
+
+export function useDeletePortfolio() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => deletePortfolio(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.portfolios }),
+  })
 }

@@ -1,7 +1,8 @@
 import { Link } from 'react-router'
 import { useState } from 'react'
 import { TrendingUp, ArrowRight, BarChart3, Briefcase, Camera, Activity, Plus } from 'lucide-react'
-import { useFundsOverview, useMarketIndices, usePortfolioSummary, useInvalidatePortfolio } from '@/lib/queries'
+import { useFundsOverview, useMarketIndices, usePortfolioSummary } from '@/lib/queries'
+import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { cn, formatCNY, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 import { PageState } from '@/components/PageState'
@@ -13,10 +14,10 @@ const BADGE_CODES = ['000001', '399001', '399006']
 /* ---------- component ---------- */
 export function Dashboard() {
   const { colorFor, badgeClassFor } = useColor()
+  const { selectedId } = useSelectedPortfolio()
   const { data: overview = [], isLoading: loading } = useFundsOverview()
-  const { data: portfolio } = usePortfolioSummary()
+  const { data: portfolio } = usePortfolioSummary(selectedId)
   const { data: allIndices = [], isLoading: indicesLoading } = useMarketIndices()
-  const invalidatePortfolio = useInvalidatePortfolio()
   const [showAddModal, setShowAddModal] = useState(false)
 
   const indices = allIndices
@@ -153,7 +154,7 @@ export function Dashboard() {
       <AddFundModal
         open={showAddModal}
         onClose={() => setShowAddModal(false)}
-        onAdded={invalidatePortfolio}
+        portfolioId={selectedId}
         existingCodes={overview.map((i) => i.fund.code)}
       />
 

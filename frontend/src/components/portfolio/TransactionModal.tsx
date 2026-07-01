@@ -1,7 +1,5 @@
-import { useState } from 'react'
 import { Plus, Trash2, X } from 'lucide-react'
-import { deleteTransaction } from '@/lib/api'
-import { useInvalidatePortfolio, useTransactions } from '@/lib/queries'
+import { useDeleteTransaction, useTransactions } from '@/lib/queries'
 import { cn, formatCNY } from '@/lib/utils'
 
 export function TransactionModal({
@@ -14,19 +12,13 @@ export function TransactionModal({
   onAddTx: () => void
 }) {
   const { data: items = [], isLoading: loading } = useTransactions(code, portfolioId)
-  const invalidatePortfolio = useInvalidatePortfolio(portfolioId)
-  const [deleting, setDeleting] = useState<number | null>(null)
+  const deleteTransaction = useDeleteTransaction(portfolioId)
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = (id: number) => {
     if (!confirm('确认删除该条交易记录？')) return
-    setDeleting(id)
-    try {
-      await deleteTransaction(id)
-      invalidatePortfolio()
-    } finally {
-      setDeleting(null)
-    }
+    deleteTransaction.mutate(id)
   }
+  const deleting = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
 
   return (
     <div
