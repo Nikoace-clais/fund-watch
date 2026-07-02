@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { TrendingUp, ArrowRight, BarChart3, Briefcase, Camera, Activity, Plus } from 'lucide-react'
 import { useFundsOverview, useMarketIndices, usePortfolioSummary } from '@/lib/queries'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
-import { cn, formatCNY, formatPercent } from '@/lib/utils'
+import { cn, formatCNY, formatNum2, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 import { PageState } from '@/components/PageState'
 import { AddFundModal } from '@/components/AddFundModal'
@@ -58,7 +58,7 @@ export function Dashboard() {
                 )}
               >
                 {idx.name}
-                <span className="font-semibold">{idx.value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span className="font-semibold">{formatNum2(idx.value)}</span>
                 <span>{up ? '+' : ''}{idx.change_percent.toFixed(2)}%</span>
               </span>
             )

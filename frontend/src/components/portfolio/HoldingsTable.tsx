@@ -10,7 +10,7 @@ import {
   type RowSelectionState,
 } from '@tanstack/react-table'
 import type { PortfolioItem } from '@/lib/api'
-import { cn, formatCNY, formatPercent } from '@/lib/utils'
+import { cn, formatCNY, formatCNYSigned, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 import { Checkbox } from './Checkbox'
 import { SortHead } from './SortHead'
@@ -143,7 +143,7 @@ export function HoldingsTable({
             <p className="text-right text-slate-300">—</p>
           ) : (
             <div className="text-right">
-              <p className={cn('font-medium', colorFor(dr))}>{dr > 0 ? '+' : ''}{formatCNY(dr)}</p>
+              <p className={cn('font-medium', colorFor(dr))}>{formatCNYSigned(dr)}</p>
               <p className={cn('text-xs mt-0.5', colorFor(it.daily_change))}>{formatPercent(it.daily_change)}</p>
             </div>
           )
@@ -166,9 +166,9 @@ export function HoldingsTable({
           const cumRet = it.imported_cumulative_return != null ? parseFloat(it.imported_cumulative_return) : null
           return (
             <div className="text-right">
-              <p className={cn('font-medium', colorFor(tr))}>{tr > 0 ? '+' : ''}{formatCNY(tr)}</p>
+              <p className={cn('font-medium', colorFor(tr))}>{formatCNYSigned(tr)}</p>
               {it.is_imported && cumRet != null
-                ? <p className="text-xs text-slate-400 mt-0.5">累计 {cumRet > 0 ? '+' : ''}{formatCNY(cumRet)}</p>
+                ? <p className="text-xs text-slate-400 mt-0.5">累计 {formatCNYSigned(cumRet)}</p>
                 : rr != null
                   ? <p className={cn('text-xs mt-0.5', colorFor(rr))}>{formatPercent(rr)}</p>
                   : null}

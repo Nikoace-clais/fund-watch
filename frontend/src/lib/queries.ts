@@ -12,6 +12,7 @@ import {
   fetchCronStatus,
   fetchFundDetail,
   fetchFundHoldings,
+  fetchFundsHoldingStock,
   fetchFundsOverview,
   fetchMarketIndices,
   fetchNavHistory,
@@ -20,6 +21,7 @@ import {
   fetchPortfolioSummary,
   fetchQuote,
   fetchTransactions,
+  getOcrStatus,
   listPortfolios,
   renamePortfolio,
   type BatchFundItem,
@@ -52,6 +54,8 @@ export const keys = {
   fundHoldings: (code: string) => ['fund', code, 'holdings'] as const,
   quote: (code: string) => ['fund', code, 'quote'] as const,
   transactions: (code: string, pf?: number) => ['fund', code, 'transactions', pf ?? null] as const,
+  ocrStatus: ['ocr-status'] as const,
+  stockFunds: (stockCode: string) => ['stock-funds', stockCode] as const,
 }
 
 /* ---------- hooks ---------- */
@@ -153,6 +157,23 @@ export function useTransactions(code: string | undefined, portfolioId?: number, 
     queryFn: () => fetchTransactions(code!, portfolioId),
     select: (r) => r.items,
     enabled: !!code && enabled,
+  })
+}
+
+export function useOcrStatus() {
+  return useQuery({
+    queryKey: keys.ocrStatus,
+    queryFn: getOcrStatus,
+    refetchInterval: (q) => (q.state.data?.ready ? false : 2000),
+  })
+}
+
+export function useStockFundsHolding(stockCode: string) {
+  return useQuery({
+    queryKey: keys.stockFunds(stockCode),
+    queryFn: () => fetchFundsHoldingStock(stockCode, 100),
+    enabled: /^\d{6}$/.test(stockCode),
+    staleTime: 5 * 60_000,
   })
 }
 

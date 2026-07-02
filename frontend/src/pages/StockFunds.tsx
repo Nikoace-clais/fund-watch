@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Search, AlertCircle, Building2 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
-import { fetchFundsHoldingStock, type FundHolderItem } from '@/lib/api'
+import type { FundHolderItem } from '@/lib/api'
+import { useStockFundsHolding } from '@/lib/queries'
 import { formatCNY } from '@/lib/utils'
 import { PageState } from '@/components/PageState'
 
@@ -60,12 +60,7 @@ export function StockFunds() {
     if (/^\d{6}$/.test(trimmed)) setCode(trimmed)
   }
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['stock-funds', code],
-    queryFn: () => fetchFundsHoldingStock(code, 100),
-    enabled: /^\d{6}$/.test(code),
-    staleTime: 5 * 60_000,
-  })
+  const { data, isLoading, error } = useStockFundsHolding(code)
 
   const errMsg = error instanceof Error ? error.message : error ? '数据加载失败' : null
 

@@ -47,7 +47,7 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
       return
     }
     batchAddFunds.mutate(
-      { codes, funds },
+      { codes, funds, opts: portfolioId != null ? { portfolioId } : undefined },
       {
         onSuccess: (data) => setResult({ added: data.added, invalid: data.invalid ?? [], warnings: data.warnings ?? [] }),
         onError: (err: Error) => setError(err.message || '导入失败'),

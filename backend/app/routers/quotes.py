@@ -10,7 +10,12 @@ from ..core import validate_code
 from ..db import get_request_conn
 from ..fund_source import fetch_realtime_estimate
 from ..repositories import snapshot_repo
-from ..services.snapshots import cron_state, pull_all_snapshots
+from ..services.snapshots import (
+    PULL_INTERVAL_MINUTES,
+    TRADING_HOURS_LABEL,
+    cron_state,
+    pull_all_snapshots,
+)
 
 router = APIRouter(tags=["quotes"])
 
@@ -47,7 +52,7 @@ def get_snapshots(
 def cron_status() -> dict:
     """Return the snapshot scheduler state."""
     return {
-        "interval_minutes": 5,
-        "trading_hours": "09:25-11:35, 12:55-15:05 CST (周一至周五)",
+        "interval_minutes": PULL_INTERVAL_MINUTES,
+        "trading_hours": TRADING_HOURS_LABEL,
         **cron_state,
     }

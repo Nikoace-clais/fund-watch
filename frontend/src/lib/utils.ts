@@ -12,8 +12,29 @@ export function formatCNY(value: number) {
   }).format(value)
 }
 
+/** formatCNY with an explicit + prefix for positive values (gains/losses display). */
+export function formatCNYSigned(value: number) {
+  return `${value > 0 ? '+' : ''}${formatCNY(value)}`
+}
+
 export function formatPercent(value: number) {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+}
+
+/** Fixed 2-decimal grouped number (zh-CN locale), no currency symbol. */
+export function formatNum2(value: number) {
+  return value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** Today as YYYY-MM-DD in the browser's local timezone.
+ * `new Date().toISOString()` converts to UTC first, which is the wrong date
+ * for part of the day in timezones ahead of UTC (e.g. CST, UTC+8). */
+export function todayLocal(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /** A-share trading windows in CST (UTC+8): weekday 9:30–11:30 and 13:00–15:00. */

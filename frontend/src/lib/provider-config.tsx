@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { getStoredJSON, setStoredJSON } from './storage'
 
 export type AiProvider = 'anthropic' | 'openai'
 
@@ -21,11 +22,8 @@ const DEFAULTS: ProviderConfig = {
 const STORAGE_KEY = 'fund-watch:ai-provider-config'
 
 function readStored(): ProviderConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...DEFAULTS, ...JSON.parse(raw) }
-  } catch {}
-  return DEFAULTS
+  const stored = getStoredJSON<Partial<ProviderConfig>>(STORAGE_KEY)
+  return stored ? { ...DEFAULTS, ...stored } : DEFAULTS
 }
 
 type ContextValue = {
@@ -41,7 +39,7 @@ export function ProviderConfigProvider({ children }: { children: ReactNode }) {
 
   const setConfig = useCallback((c: ProviderConfig) => {
     setConfigState(c)
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(c)) } catch {}
+    setStoredJSON(STORAGE_KEY, c)
   }, [])
 
   const isConfigured = config.api_key.trim().length > 0
