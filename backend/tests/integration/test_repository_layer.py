@@ -105,7 +105,7 @@ class TestPortfolioHoldingsNoDoubleFetch:
         import app.routers.portfolio as portfolio_router
 
         monkeypatch.setattr(portfolio_router, "fetch_fund_holdings", fake_holdings)
-        monkeypatch.setattr(portfolio_router, "fetch_stock_industries", fake_industries)
+        monkeypatch.setattr(portfolio_router, "get_stock_industries", fake_industries)
 
         resp = app_client.get(f"/api/portfolio/holdings?portfolio_id={pf_id}")
         assert resp.status_code == 200
