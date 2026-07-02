@@ -1,6 +1,6 @@
 import { PieChart as PieChartIcon } from 'lucide-react'
 import type { PortfolioSummary } from '@/lib/api'
-import { cn, formatCNY, formatPercent } from '@/lib/utils'
+import { cn, formatCNY, formatCNYSigned, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
 export function StatsCards({ summary }: { summary: PortfolioSummary }) {
@@ -33,14 +33,14 @@ export function StatsCards({ summary }: { summary: PortfolioSummary }) {
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
         <p className="text-sm text-slate-500 mb-1">今日收益(估算)</p>
         <p className={cn('text-2xl font-bold', colorFor(totalDailyReturn))}>
-          {totalDailyReturn > 0 ? '+' : ''}{formatCNY(totalDailyReturn)}
+          {formatCNYSigned(totalDailyReturn)}
         </p>
         <p className={cn('text-xs mt-2', colorFor(dailyReturnRate))}>今日收益率: {formatPercent(dailyReturnRate)}</p>
       </div>
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
         <p className="text-sm text-slate-500 mb-1">累计收益</p>
         <p className={cn('text-2xl font-bold', colorFor(totalReturn))}>
-          {totalReturn > 0 ? '+' : ''}{formatCNY(totalReturn)}
+          {formatCNYSigned(totalReturn)}
         </p>
         <p className={cn('text-xs mt-2', colorFor(totalReturnRate))}>累计收益率: {formatPercent(totalReturnRate)}</p>
       </div>

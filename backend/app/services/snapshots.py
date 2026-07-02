@@ -20,6 +20,11 @@ cron_state: dict = {
     "is_active": False,
 }
 
+PULL_INTERVAL_MINUTES = 5
+TRADING_HOURS_LABEL = "09:25-11:35, 12:55-15:05 CST (周一至周五)"
+_MORNING_START, _MORNING_END = 9 * 60 + 25, 11 * 60 + 35
+_AFTERNOON_START, _AFTERNOON_END = 12 * 60 + 55, 15 * 60 + 5
+
 
 def in_trading_hours() -> bool:
     """True when current CST time is within A-share trading windows (weekdays)."""
@@ -27,8 +32,8 @@ def in_trading_hours() -> bool:
     if now.weekday() >= 5:  # Saturday / Sunday
         return False
     t = now.hour * 60 + now.minute
-    morning = 9 * 60 + 25 <= t <= 11 * 60 + 35
-    afternoon = 12 * 60 + 55 <= t <= 15 * 60 + 5
+    morning = _MORNING_START <= t <= _MORNING_END
+    afternoon = _AFTERNOON_START <= t <= _AFTERNOON_END
     return morning or afternoon
 
 
@@ -107,4 +112,4 @@ async def snapshot_scheduler() -> None:
             except Exception as exc:
                 cron_state["last_error"] = str(exc)
                 logger.error("cron: pull failed — %s", exc)
-        await asyncio.sleep(5 * 60)
+        await asyncio.sleep(PULL_INTERVAL_MINUTES * 60)

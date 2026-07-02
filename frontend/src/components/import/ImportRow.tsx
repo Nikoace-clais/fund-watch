@@ -2,6 +2,7 @@ import type { FC } from 'react';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { ImportPreviewItem } from '@/services/import';
 import { formatConfidence, getConfidenceInfo } from '@/services/import';
+import { formatNum2 } from '@/lib/utils';
 
 interface ImportRowProps {
   fund: ImportPreviewItem;
@@ -44,7 +45,7 @@ export const ImportRow: FC<ImportRowProps> = ({ fund, isSelected, onToggle }) =>
       <td className="px-4 py-3 text-sm text-slate-600">{fund.type}</td>
       <td className="px-4 py-3 text-sm text-slate-600">
         {fund.amount != null && fund.amount > 0
-          ? `¥${fund.amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          ? `¥${formatNum2(fund.amount)}`
           : <span className="text-slate-300">—</span>}
       </td>
       <td className="px-4 py-3">

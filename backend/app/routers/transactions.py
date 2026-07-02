@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
-from ..core import validate_code
+from ..core import is_valid_code, validate_code
 from ..db import get_request_conn
 from ..fund_source import fetch_realtime_estimate
 from ..repositories import funds_repo, portfolios_repo, positions_repo, tx_repo
@@ -180,7 +180,7 @@ async def import_csv(
     for i, row in enumerate(reader, start=2):
         try:
             c = row["code"].strip()
-            if not (c.isdigit() and len(c) == 6):
+            if not is_valid_code(c):
                 errors.append(f"line {i}: invalid code '{c}'")
                 continue
             direction = row["direction"].strip()

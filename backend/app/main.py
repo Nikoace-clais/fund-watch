@@ -63,14 +63,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Fund Watch API", version="0.2.0", lifespan=lifespan)
 
+# Vite's dev server picks 5173 then falls back to 5174 if busy; both are
+# allowed since either can be the active one during local development.
+_DEV_CORS_ORIGINS = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "http://127.0.0.1:5174",
+    "http://localhost:5174",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "http://127.0.0.1:5174",
-        "http://localhost:5174",
-    ],
+    allow_origins=_DEV_CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )

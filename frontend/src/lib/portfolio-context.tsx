@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
 import type { Portfolio } from './api'
 import { usePortfolios } from './queries'
+import { getStoredString, setStoredString } from './storage'
 
 type PortfolioContextValue = {
   portfolios: Portfolio[]
@@ -16,7 +17,7 @@ const PortfolioContext = createContext<PortfolioContextValue | null>(null)
 export function PortfolioProvider({ children }: { children: ReactNode }) {
   const { data: portfolios = [] } = usePortfolios()
   const [rawId, setRawId] = useState<number | null>(() => {
-    const v = localStorage.getItem(STORAGE_KEY)
+    const v = getStoredString(STORAGE_KEY)
     return v ? parseInt(v, 10) : null
   })
 
@@ -28,9 +29,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
   }, [portfolios, rawId])
 
   const selectPortfolio = useCallback((id: number) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(id))
-    } catch {}
+    setStoredString(STORAGE_KEY, String(id))
     setRawId(id)
   }, [])
 
