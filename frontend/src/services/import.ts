@@ -30,6 +30,11 @@ export interface ImportConfirmResult {
   invalid: string[];
 }
 
+// Single source of truth for the high/medium confidence cutoffs — used both
+// to bucket funds for display (getConfidenceInfo) and to auto-select them.
+export const HIGH_CONFIDENCE = 0.85
+export const MEDIUM_CONFIDENCE = 0.75
+
 /**
  * Upload image and get import preview.
  * Uses /api/ocr/fund-code for recognition, then fills missing
@@ -165,7 +170,7 @@ export function formatConfidence(confidence: number): string {
 }
 
 export function getConfidenceInfo(confidence: number): { color: string; label: string; className: string } {
-  if (confidence >= 0.85) return { color: 'text-green-600', label: '高置信度', className: 'bg-green-100 text-green-800' };
-  if (confidence >= 0.75) return { color: 'text-yellow-600', label: '中置信度', className: 'bg-yellow-100 text-yellow-800' };
+  if (confidence >= HIGH_CONFIDENCE) return { color: 'text-green-600', label: '高置信度', className: 'bg-green-100 text-green-800' };
+  if (confidence >= MEDIUM_CONFIDENCE) return { color: 'text-yellow-600', label: '中置信度', className: 'bg-yellow-100 text-yellow-800' };
   return { color: 'text-red-600', label: '需确认', className: 'bg-red-100 text-red-800' };
 }
