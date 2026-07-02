@@ -18,44 +18,76 @@ def _current_db_path() -> Path:
     return Path(os.environ.get("FUND_WATCH_DB") or DB_PATH)
 
 
-@contextmanager
-def get_conn() -> Generator[sqlite3.Connection, None, None]:
-    db_path = _current_db_path()
+def _open_conn(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+@contextmanager
+def get_conn() -> Generator[sqlite3.Connection, None, None]:
+    """Short-lived connection for scripts and the background scheduler.
+
+    Callers are responsible for their own commit(); use get_request_conn
+    inside FastAPI request handlers instead so one connection spans the
+    whole request.
+    """
+    conn = _open_conn(_current_db_path())
     try:
         yield conn
     finally:
         conn.close()
 
 
+def get_request_conn() -> Generator[sqlite3.Connection, None, None]:
+    """FastAPI dependency: one connection per request, committed atomically.
+
+    FastAPI caches dependency results per request, so every
+    Depends(get_request_conn) in the same request path shares this
+    connection — repository calls that used to open their own connection
+    now compose into a single transaction.
+    """
+    conn = _open_conn(_current_db_path())
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def prune_old_snapshots(keep_days: int = 30) -> int:
     """Delete fund_snapshots older than keep_days. Returns number of rows deleted."""
+    from .repositories import snapshot_repo
+
     cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
     with get_conn() as conn:
-        cur = conn.execute(
-            "DELETE FROM fund_snapshots WHERE captured_at < ?", (cutoff,)
-        )
+        deleted = snapshot_repo.prune_older_than(conn, cutoff)
         conn.commit()
-    return cur.rowcount
+    return deleted
 
 
-def init_db() -> None:
-    with get_conn() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS funds (
-                code TEXT PRIMARY KEY,
-                name TEXT,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        # Migration: add columns to funds
+# Bump when adding a migration step in _apply_migrations.
+SCHEMA_VERSION = 2
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Additive column migrations, gated by PRAGMA user_version.
+
+    Each step runs at most once (tracked via user_version) instead of on
+    every init_db() call; ALTER TABLE ADD COLUMN has no IF NOT EXISTS in
+    SQLite, so the try/except stays as a defensive fallback for DBs that
+    already have the column from before this versioning existed.
+    """
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+
+    if current < 1:
         for col, coltype in [
             ("sector", "TEXT"),
             ("amount", "REAL"),
@@ -69,6 +101,29 @@ def init_db() -> None:
                 conn.execute(f"ALTER TABLE funds ADD COLUMN {col} {coltype}")
             except sqlite3.OperationalError:
                 pass  # column already exists
+        current = 1
+
+    if current < 2:
+        try:
+            conn.execute("ALTER TABLE transactions ADD COLUMN portfolio_id INTEGER")
+        except sqlite3.OperationalError:
+            pass  # column already exists
+        current = 2
+
+    conn.execute(f"PRAGMA user_version = {current}")
+
+
+def init_db() -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS funds (
+                code TEXT PRIMARY KEY,
+                name TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
 
         conn.execute(
             """
@@ -116,11 +171,7 @@ def init_db() -> None:
             )
             """
         )
-        # Migration: scope transactions to a portfolio
-        try:
-            conn.execute("ALTER TABLE transactions ADD COLUMN portfolio_id INTEGER")
-        except sqlite3.OperationalError:
-            pass  # column already exists
+        _apply_migrations(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tx_code ON transactions(code)")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_tx_pf_code"

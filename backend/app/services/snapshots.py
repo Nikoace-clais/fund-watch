@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from ..core import CST
 from ..db import get_conn, prune_old_snapshots
 from ..fund_source import fetch_realtime_estimate
+from ..repositories import funds_repo, snapshot_repo
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ def in_trading_hours() -> bool:
 async def pull_all_snapshots() -> dict:
     """Fetch realtime estimates for every watched fund and persist them."""
     with get_conn() as conn:
-        codes = [r["code"] for r in conn.execute("SELECT code FROM funds").fetchall()]
+        codes = funds_repo.list_codes(conn)
 
     captured_at = datetime.now(timezone.utc).isoformat()
 
@@ -51,20 +52,15 @@ async def pull_all_snapshots() -> dict:
         for code, d in results:
             if d is None:
                 continue
-            conn.execute(
-                """
-                INSERT INTO fund_snapshots(code,name,dwjz,gsz,gszzl,gztime,captured_at)
-                VALUES(?,?,?,?,?,?,?)
-                """,
-                (
-                    code,
-                    d.get("name"),
-                    d.get("dwjz"),
-                    d.get("gsz"),
-                    d.get("gszzl"),
-                    d.get("gztime"),
-                    captured_at,
-                ),
+            snapshot_repo.insert(
+                conn,
+                code=code,
+                name=d.get("name"),
+                dwjz=d.get("dwjz"),
+                gsz=d.get("gsz"),
+                gszzl=d.get("gszzl"),
+                gztime=d.get("gztime"),
+                captured_at=captured_at,
             )
             inserted += 1
         conn.commit()

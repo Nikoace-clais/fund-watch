@@ -2,44 +2,52 @@
 
 from __future__ import annotations
 
+import sqlite3
 from decimal import Decimal
 
+from ..repositories import positions_repo, tx_repo
 
-def recompute_holding_shares(conn, portfolio_id: int, code: str) -> None:
-    """Recompute positions.holding_shares from transactions for (portfolio_id, code)."""
-    rows = conn.execute(
-        "SELECT direction, shares FROM transactions WHERE portfolio_id=? AND code=?",
-        (portfolio_id, code),
-    ).fetchall()
-    if not rows:
-        conn.execute(
-            "UPDATE positions SET holding_shares=NULL"
-            " WHERE portfolio_id=? AND code=?",
-            (portfolio_id, code),
-        )
-        return
+
+def _net_shares(rows: list[dict]) -> Decimal:
     holding = Decimal("0")
     for r in rows:
         s = Decimal(r["shares"])
-        if r["direction"] == "buy":
-            holding += s
-        else:
-            holding -= s
-    conn.execute(
-        "UPDATE positions SET holding_shares=? WHERE portfolio_id=? AND code=?",
-        (str(holding), portfolio_id, code),
-    )
+        holding += s if r["direction"] == "buy" else -s
+    return holding
+
+
+def current_holding_shares(
+    conn: sqlite3.Connection, portfolio_id: int, code: str
+) -> Decimal:
+    """Net buy/sell shares for a (portfolio_id, code), as currently recorded."""
+    return _net_shares(tx_repo.list_shares_by_direction(conn, portfolio_id, code))
+
+
+def recompute_holding_shares(
+    conn: sqlite3.Connection, portfolio_id: int, code: str
+) -> None:
+    """Recompute positions.holding_shares from transactions for (portfolio_id, code)."""
+    rows = tx_repo.list_shares_by_direction(conn, portfolio_id, code)
+    if not rows:
+        positions_repo.set_holding_shares(conn, portfolio_id, code, None)
+        return
+    positions_repo.set_holding_shares(conn, portfolio_id, code, str(_net_shares(rows)))
 
 
 def compute_pnl(
-    conn, portfolio_id: int, code: str, current_nav: str | None = None
+    conn: sqlite3.Connection,
+    portfolio_id: int,
+    code: str,
+    current_nav: str | None = None,
+    rows: list[dict] | None = None,
 ) -> dict:
-    """Compute full P&L (realized + unrealized) for a (portfolio_id, code) position."""
-    rows = conn.execute(
-        "SELECT direction, nav, shares, amount, fee FROM transactions"
-        " WHERE portfolio_id=? AND code=? ORDER BY trade_date",
-        (portfolio_id, code),
-    ).fetchall()
+    """Compute full P&L (realized + unrealized) for a (portfolio_id, code) position.
+
+    Pass `rows` (e.g. from tx_repo.list_for_pnl_bulk) when the caller already
+    has transactions for many codes, to avoid a query per code.
+    """
+    if rows is None:
+        rows = tx_repo.list_for_pnl(conn, portfolio_id, code)
 
     buy_shares = Decimal("0")
     buy_amount = Decimal("0")

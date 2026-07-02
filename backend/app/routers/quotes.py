@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import sqlite3
+
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..core import validate_code
-from ..db import get_conn
+from ..db import get_request_conn
 from ..fund_source import fetch_realtime_estimate
+from ..repositories import snapshot_repo
 from ..services.snapshots import cron_state, pull_all_snapshots
 
 router = APIRouter(tags=["quotes"])
@@ -28,21 +31,14 @@ async def pull_snapshots() -> dict:
 
 
 @router.get("/api/snapshots/{code}")
-def get_snapshots(code: str, limit: int = 50) -> dict:
+def get_snapshots(
+    code: str,
+    limit: int = 50,
+    conn: sqlite3.Connection = Depends(get_request_conn),
+) -> dict:
     code = validate_code(code)
     limit = max(1, min(limit, 500))
-    with get_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT code,name,dwjz,gsz,gszzl,gztime,captured_at
-            FROM fund_snapshots
-            WHERE code=?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (code, limit),
-        ).fetchall()
-    items = [dict(r) for r in rows]
+    items = snapshot_repo.list_by_code(conn, code, limit)
     items.reverse()
     return {"code": code, "count": len(items), "items": items}
 
