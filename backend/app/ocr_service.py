@@ -8,6 +8,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .core import is_valid_code
+
 # ponytail: disable oneDNN — causes RuntimeError: std::exception on WSL2 / some CPUs
 #os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
@@ -228,7 +230,7 @@ async def extract_funds_from_text(
     for item in result:
         raw_code = str(item.get("code") or "").strip()
         name = str(item.get("name") or "").strip()
-        code = raw_code if (len(raw_code) == 6 and raw_code.isdigit()) else ""
+        code = raw_code if is_valid_code(raw_code) else ""
         if not code and not name:
             continue
         out.append({"code": code, "name": name, "amount": item.get("amount")})
@@ -334,7 +336,7 @@ async def resolve_unknown_fund_names(
         idx = item.get("index")
         name = (item.get("full_name") or "").strip()
         raw_code = str(item.get("code") or "").strip()
-        code = raw_code if (len(raw_code) == 6 and raw_code.isdigit()) else None
+        code = raw_code if is_valid_code(raw_code) else None
         if idx is not None and name:
             ocr_name = unknown[idx]["name"] if isinstance(idx, int) and idx < len(unknown) else "?"
             log.info("Pro识别 #%d: 「%s」→ 名称=「%s」代码=%s", idx, ocr_name, name, code or "未知")

@@ -29,5 +29,9 @@ export function getStoredJSON<T>(key: string): T | null {
 }
 
 export function setStoredJSON(key: string, value: unknown): void {
-  setStoredString(key, JSON.stringify(value))
+  try {
+    setStoredString(key, JSON.stringify(value))
+  } catch {
+    // value isn't serializable (circular reference, BigInt, etc.) — ignore
+  }
 }
