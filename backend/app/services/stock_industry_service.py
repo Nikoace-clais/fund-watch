@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from ..db import get_conn
 from ..fund_source import fetch_stock_industries_from_source
 from ..repositories import stock_industry_repo
+
+logger = logging.getLogger(__name__)
 
 
 async def get_stock_industries(codes: list[str]) -> dict[str, str]:
@@ -33,9 +36,15 @@ async def get_stock_industries(codes: list[str]) -> dict[str, str]:
         if industry
     ]
     if rows_to_write:
-        with get_conn() as conn:
-            stock_industry_repo.upsert_bulk(conn, rows_to_write)
-            conn.commit()
+        try:
+            with get_conn() as conn:
+                stock_industry_repo.upsert_bulk(conn, rows_to_write)
+                conn.commit()
+        except Exception:
+            logger.exception(
+                "get_stock_industries: failed to write back %d rows",
+                len(rows_to_write),
+            )
 
     for code, (_name, industry) in fetched.items():
         if industry:
