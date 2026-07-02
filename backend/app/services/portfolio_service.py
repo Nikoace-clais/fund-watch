@@ -9,7 +9,7 @@ import time
 from decimal import Decimal
 
 from ..fund_source import fetch_realtime_estimate
-from ..repositories import positions_repo
+from ..repositories import positions_repo, tx_repo
 from .holdings import compute_pnl
 
 logger = logging.getLogger(__name__)
@@ -21,14 +21,16 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict:
 
     t0 = time.perf_counter()
 
-    pnl_map: dict[str, dict] = {}
     codes = [
         f["code"]
         for f in funds
         if f.get("holding_shares") and Decimal(f["holding_shares"]) > 0
     ]
-    for code in codes:
-        pnl_map[code] = compute_pnl(conn, pf_id, code)
+    tx_rows_by_code = tx_repo.list_for_pnl_bulk(conn, pf_id, codes)
+    pnl_map: dict[str, dict] = {
+        code: compute_pnl(conn, pf_id, code, rows=tx_rows_by_code.get(code, []))
+        for code in codes
+    }
 
     async def _fetch_fund_item(f: dict) -> dict | None:
         code = f["code"]

@@ -39,9 +39,15 @@ def compute_pnl(
     portfolio_id: int,
     code: str,
     current_nav: str | None = None,
+    rows: list[dict] | None = None,
 ) -> dict:
-    """Compute full P&L (realized + unrealized) for a (portfolio_id, code) position."""
-    rows = tx_repo.list_for_pnl(conn, portfolio_id, code)
+    """Compute full P&L (realized + unrealized) for a (portfolio_id, code) position.
+
+    Pass `rows` (e.g. from tx_repo.list_for_pnl_bulk) when the caller already
+    has transactions for many codes, to avoid a query per code.
+    """
+    if rows is None:
+        rows = tx_repo.list_for_pnl(conn, portfolio_id, code)
 
     buy_shares = Decimal("0")
     buy_amount = Decimal("0")
