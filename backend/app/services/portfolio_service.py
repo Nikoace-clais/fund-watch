@@ -150,12 +150,19 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict:
 
     watch_codes = positions_repo.list_watch_only_codes(conn, pf_id)
 
+    # total_current includes imported (no-cost-basis) holdings' market value,
+    # so total_current - total_cost would count that value as pure profit.
+    # Sum each item's own displayed total_return instead — for tx-based
+    # holdings that's current_value - cost; for imported ones it's the
+    # user-supplied imported_holding_return.
+    total_return_sum = sum((Decimal(it["total_return"]) for it in items), Decimal("0"))
+
     return {
         "portfolio_id": pf_id,
         "total_current": str(total_current),
         "total_cost": str(total_cost),
         "total_daily_return": str(total_daily_return),
-        "total_return": str((total_current - total_cost).quantize(Decimal("0.01"))),
+        "total_return": str(total_return_sum.quantize(Decimal("0.01"))),
         "total_return_rate": str(total_return_rate),
         "fund_count": len(items),
         "items": items,

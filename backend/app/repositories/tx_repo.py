@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 
 def insert(
@@ -21,6 +22,12 @@ def insert(
     created_at: str,
 ) -> None:
     """The one INSERT shared by manual entry, CSV import, and synthetic buys."""
+    if not (code.isdigit() and len(code) == 6):
+        raise ValueError(f"invalid fund code: {code}")
+    try:
+        datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"invalid trade_date: {trade_date}")
     conn.execute(
         "INSERT INTO transactions"
         "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
