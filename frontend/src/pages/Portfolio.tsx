@@ -10,51 +10,27 @@ import { HoldingsTable } from '@/components/portfolio/HoldingsTable'
 import { HoldingsXray } from '@/components/portfolio/HoldingsXray'
 import { WatchTable, type WatchOnlyItem } from '@/components/portfolio/WatchTable'
 import { TransactionModal } from '@/components/portfolio/TransactionModal'
-import { deleteFund, createPortfolio, renamePortfolio, deletePortfolio } from '@/lib/api'
 import {
+  useCreatePortfolio,
+  useDeleteFund,
+  useDeletePortfolio,
   useFundsOverview,
-  useInvalidatePortfolio,
   usePortfolioHoldings,
   usePortfolioSummary,
-  usePortfolios,
+  useRenamePortfolio,
 } from '@/lib/queries'
-import { useQueryClient } from '@tanstack/react-query'
-import { keys } from '@/lib/queries'
-
-// ponytail: localStorage for portfolio selection — good enough for single-user MVP
-const STORAGE_KEY = 'fw_portfolio_id'
-
-function useSelectedPortfolio() {
-  const { data: portfolios = [] } = usePortfolios()
-  const [rawId, setRawId] = useState<number | null>(() => {
-    const v = localStorage.getItem(STORAGE_KEY)
-    return v ? parseInt(v, 10) : null
-  })
-
-  // Derive the effective ID: use stored if it still exists, else first portfolio
-  const effectiveId = useMemo(() => {
-    if (!portfolios.length) return undefined
-    if (rawId != null && portfolios.some((p) => p.id === rawId)) return rawId
-    return portfolios[0].id
-  }, [portfolios, rawId])
-
-  const selectPortfolio = useCallback((id: number) => {
-    localStorage.setItem(STORAGE_KEY, String(id))
-    setRawId(id)
-  }, [])
-
-  return { portfolios, selectedId: effectiveId, selectPortfolio }
-}
+import { useSelectedPortfolio } from '@/lib/portfolio-context'
 
 export function Portfolio() {
   const { portfolios, selectedId, selectPortfolio } = useSelectedPortfolio()
   const { data: summary, isLoading: summaryLoading } = usePortfolioSummary(selectedId)
   const { data: overview = [], isLoading: overviewLoading } = useFundsOverview()
   const { data: portfolioHoldings } = usePortfolioHoldings(selectedId)
-  const invalidatePortfolio = useInvalidatePortfolio(selectedId)
-  const qc = useQueryClient()
+  const deleteFund = useDeleteFund(selectedId)
+  const createPortfolio = useCreatePortfolio()
+  const renamePortfolio = useRenamePortfolio()
+  const deletePortfolio = useDeletePortfolio()
 
-  const [deleting, setDeleting] = useState<string | null>(null)
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [holdingEdit, setHoldingEdit] = useState<{ code: string; name?: string; nav?: number } | null>(null)
@@ -81,73 +57,51 @@ export function Portfolio() {
       }))
   }, [summary, overview])
 
-  const handleDeleteHolding = useCallback(
-    async (code: string, name?: string) => {
+  // Single-delete: both the holdings table and the watch-only table scope to
+  // the current portfolio — genuinely the same handler.
+  const handleDeleteFund = useCallback(
+    (code: string, name?: string) => {
       if (!confirm(`确认删除基金 ${name || code}?`)) return
-      setDeleting(code)
-      try {
-        await deleteFund(code, selectedId)
-        invalidatePortfolio()
-      } finally {
-        setDeleting(null)
-      }
+      deleteFund.mutate({ code, scopeToPortfolio: selectedId })
     },
-    [invalidatePortfolio, selectedId],
+    [deleteFund, selectedId],
   )
 
+  // Batch delete: holdings scope to the current portfolio; watch-only batch
+  // delete removes the fund globally — preserved from the original behavior.
+  const runBatchDelete = useCallback(
+    async (codes: string[], clearSelection: () => void, scopeToPortfolio: number | undefined) => {
+      if (!confirm(`确认删除选中的 ${codes.length} 只基金？此操作不可撤销。`)) return
+      setBatchDeleting(true)
+      try {
+        const results = await Promise.allSettled(
+          codes.map((code) => deleteFund.mutateAsync({ code, scopeToPortfolio })),
+        )
+        const failed = results.filter((r) => r.status === 'rejected').length
+        if (failed > 0) {
+          alert(`${failed} 只基金删除失败，请稍后重试`)
+        } else {
+          clearSelection()
+        }
+      } finally {
+        setBatchDeleting(false)
+      }
+    },
+    [deleteFund],
+  )
   const handleBatchDeleteHolding = useCallback(
-    async (codes: string[], clearSelection: () => void) => {
-      if (!confirm(`确认删除选中的 ${codes.length} 只基金？此操作不可撤销。`)) return
-      setBatchDeleting(true)
-      try {
-        const results = await Promise.allSettled(codes.map((c) => deleteFund(c, selectedId)))
-        invalidatePortfolio()
-        const failed = results.filter((r) => r.status === 'rejected').length
-        if (failed > 0) {
-          alert(`${failed} 只基金删除失败，请稍后重试`)
-        } else {
-          clearSelection()
-        }
-      } finally {
-        setBatchDeleting(false)
-      }
-    },
-    [invalidatePortfolio, selectedId],
+    (codes: string[], clearSelection: () => void) => runBatchDelete(codes, clearSelection, selectedId),
+    [runBatchDelete, selectedId],
   )
-
-  const handleDeleteWatch = useCallback(
-    async (code: string, name?: string) => {
-      if (!confirm(`确认删除基金 ${name || code}?`)) return
-      setDeleting(code)
-      try {
-        await deleteFund(code, selectedId)
-        invalidatePortfolio()
-      } finally {
-        setDeleting(null)
-      }
-    },
-    [invalidatePortfolio, selectedId],
-  )
-
   const handleBatchDeleteWatch = useCallback(
-    async (codes: string[], clearSelection: () => void) => {
-      if (!confirm(`确认删除选中的 ${codes.length} 只基金？此操作不可撤销。`)) return
-      setBatchDeleting(true)
-      try {
-        const results = await Promise.allSettled(codes.map((c) => deleteFund(c)))
-        invalidatePortfolio()
-        const failed = results.filter((r) => r.status === 'rejected').length
-        if (failed > 0) {
-          alert(`${failed} 只基金删除失败，请稍后重试`)
-        } else {
-          clearSelection()
-        }
-      } finally {
-        setBatchDeleting(false)
-      }
-    },
-    [invalidatePortfolio],
+    (codes: string[], clearSelection: () => void) => runBatchDelete(codes, clearSelection, undefined),
+    [runBatchDelete],
   )
+
+  // deleteFund is shared by single-row delete and the batch-delete loop below;
+  // while a batch is running its .isPending/.variables reflect an arbitrary
+  // in-flight code, not the row the user actually clicked — suppress it then.
+  const deleting = !batchDeleting && deleteFund.isPending ? (deleteFund.variables?.code ?? null) : null
 
   const handleEditHolding = useCallback(
     (h: { code: string; name?: string; nav?: number }) => setHoldingEdit(h),
@@ -161,8 +115,7 @@ export function Portfolio() {
   const handleCreatePortfolio = async () => {
     const name = newPfName.trim()
     if (!name) return
-    const res = await createPortfolio(name)
-    qc.invalidateQueries({ queryKey: keys.portfolios })
+    const res = await createPortfolio.mutateAsync(name)
     selectPortfolio(res.id)
     setNewPfName('')
     setShowNewPfInput(false)
@@ -171,16 +124,14 @@ export function Portfolio() {
 
   const handleRenamePortfolio = async () => {
     if (!renamingId || !renameName.trim()) return
-    await renamePortfolio(renamingId, renameName.trim())
-    qc.invalidateQueries({ queryKey: keys.portfolios })
+    await renamePortfolio.mutateAsync({ id: renamingId, name: renameName.trim() })
     setRenamingId(null)
     setRenameName('')
   }
 
   const handleDeletePortfolio = async (id: number, name: string) => {
     if (!confirm(`确认删除组合「${name}」？该组合的所有持仓和交易记录将被清除，基金仍保留在自选列表中。`)) return
-    await deletePortfolio(id)
-    qc.invalidateQueries({ queryKey: keys.portfolios })
+    await deletePortfolio.mutateAsync(id)
     // Switch to first remaining portfolio
     const remaining = portfolios.filter((p) => p.id !== id)
     if (remaining.length > 0) selectPortfolio(remaining[0].id)
@@ -307,13 +258,12 @@ export function Portfolio() {
       <AddFundModal
         open={showAddModal}
         onClose={() => setShowAddModal(false)}
-        onAdded={invalidatePortfolio}
+        portfolioId={selectedId}
         existingCodes={overview.map((i) => i.fund.code)}
       />
       <HoldingEditModal
         open={holdingEdit !== null}
         onClose={() => setHoldingEdit(null)}
-        onSaved={invalidatePortfolio}
         code={holdingEdit?.code ?? ''}
         name={holdingEdit?.name}
         defaultNav={holdingEdit?.nav}
@@ -372,7 +322,7 @@ export function Portfolio() {
               batchDeleting={batchDeleting}
               onViewTx={handleViewTx}
               onEditHolding={handleEditHolding}
-              onDelete={handleDeleteHolding}
+              onDelete={handleDeleteFund}
               onBatchDelete={handleBatchDeleteHolding}
             />
             <AllocationPie items={items} totalCurrent={totalCurrent} fundCount={summary.fund_count} />
@@ -391,7 +341,7 @@ export function Portfolio() {
           deleting={deleting}
           batchDeleting={batchDeleting}
           onEditHolding={handleEditHolding}
-          onDelete={handleDeleteWatch}
+          onDelete={handleDeleteFund}
           onBatchDelete={handleBatchDeleteWatch}
         />
       )}

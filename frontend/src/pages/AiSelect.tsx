@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { Sparkles, ExternalLink, Plus, Loader2, AlertCircle } from 'lucide-react'
-import { streamAiSelect, batchAddFunds } from '@/lib/api'
+import { streamAiSelect } from '@/lib/api'
 import type { AiFundRec } from '@/lib/api'
-import { useInvalidatePortfolio } from '@/lib/queries'
+import { useBatchAddFunds } from '@/lib/queries'
+import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { useProviderConfig } from '@/lib/provider-config'
 import { cn } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
@@ -113,7 +114,8 @@ function Metric({ label, value, className }: { label: string; value: string; cla
 }
 
 export function AiSelect() {
-  const invalidatePortfolio = useInvalidatePortfolio()
+  const { selectedId } = useSelectedPortfolio()
+  const batchAddFunds = useBatchAddFunds(selectedId)
   const { config: providerConfig, isConfigured } = useProviderConfig()
 
   const [theme, setTheme] = useState('')
@@ -149,8 +151,7 @@ export function AiSelect() {
   }
 
   async function handleAdd(code: string) {
-    await batchAddFunds([code])
-    invalidatePortfolio()
+    await batchAddFunds.mutateAsync({ codes: [code], opts: { portfolioId: selectedId } })
   }
 
   function handleReset() {

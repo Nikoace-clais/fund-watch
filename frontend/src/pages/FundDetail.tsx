@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { ArrowLeft, Plus } from 'lucide-react'
-import { addFund } from '@/lib/api'
 import {
-  useFundDetail, useFundHoldings, useNavHistory, useQuote, useTransactions,
+  useAddFund, useFundDetail, useFundHoldings, useNavHistory, useQuote, useTransactions,
 } from '@/lib/queries'
+import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { HoldingEditModal } from '@/components/HoldingEditModal'
 import { PageState } from '@/components/PageState'
 import { NavChart } from '@/components/fund-detail/NavChart'
@@ -14,7 +14,6 @@ import { TopHoldings } from '@/components/fund-detail/TopHoldings'
 import { TransactionsCard } from '@/components/fund-detail/TransactionsCard'
 import { SignalGauge } from '@/components/fund-detail/SignalGauge'
 import { RiskMetrics } from '@/components/fund-detail/RiskMetrics'
-import { useInvalidatePortfolio } from '@/lib/queries'
 import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
@@ -22,13 +21,14 @@ export function FundDetail() {
   const navigate = useNavigate()
   const { code } = useParams<{ code: string }>()
   const { colorFor } = useColor()
+  const { selectedId } = useSelectedPortfolio()
 
   const detailQ = useFundDetail(code)
   const { data: history = [], isLoading: navLoading } = useNavHistory(code, 500)
   const { data: holdings = [] } = useFundHoldings(code)
   const { data: quote } = useQuote(code)
-  const { data: transactions = [] } = useTransactions(code)
-  const invalidatePortfolio = useInvalidatePortfolio()
+  const { data: transactions = [] } = useTransactions(code, selectedId)
+  const addFund = useAddFund(selectedId)
 
   const [addMsg, setAddMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [showAddTx, setShowAddTx] = useState(false)
@@ -40,17 +40,13 @@ export function FundDetail() {
   const navValue = quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : null)
   const changeValue = quote?.gszzl ?? null
 
-  async function handleAddFund() {
+  function handleAddFund() {
     if (!code) return
-    try {
-      await addFund(code)
-      invalidatePortfolio()
-      setAddMsg({ text: '已加入自选', ok: true })
-      setTimeout(() => setAddMsg(null), 3000)
-    } catch {
-      setAddMsg({ text: '加入失败', ok: false })
-      setTimeout(() => setAddMsg(null), 3000)
-    }
+    addFund.mutate(code, {
+      onSuccess: () => setAddMsg({ text: '已加入自选', ok: true }),
+      onError: () => setAddMsg({ text: '加入失败', ok: false }),
+      onSettled: () => setTimeout(() => setAddMsg(null), 3000),
+    })
   }
 
   /* ---- loading / not found ---- */
@@ -74,10 +70,10 @@ export function FundDetail() {
       <HoldingEditModal
         open={showAddTx}
         onClose={() => setShowAddTx(false)}
-        onSaved={invalidatePortfolio}
         code={code!}
         name={detail.name}
         defaultNav={quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : undefined)}
+        portfolioId={selectedId}
       />
 
       {/* ---- Top bar ---- */}
