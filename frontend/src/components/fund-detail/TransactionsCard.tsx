@@ -16,7 +16,9 @@ export function TransactionsCard({
 
   function handleDeleteTx(id: number) {
     if (!confirm('确认删除该条交易记录？')) return
-    deleteTransaction.mutate(id)
+    deleteTransaction.mutate(id, {
+      onError: (err: Error) => alert(err.message || '删除失败'),
+    })
   }
   const deletingTx = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
 

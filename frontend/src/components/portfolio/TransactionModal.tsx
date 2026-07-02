@@ -16,7 +16,9 @@ export function TransactionModal({
 
   const handleDelete = (id: number) => {
     if (!confirm('确认删除该条交易记录？')) return
-    deleteTransaction.mutate(id)
+    deleteTransaction.mutate(id, {
+      onError: (err: Error) => alert(err.message || '删除失败'),
+    })
   }
   const deleting = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
 

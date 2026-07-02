@@ -28,7 +28,7 @@ export function FundDetail() {
   const { data: holdings = [] } = useFundHoldings(code)
   const { data: quote } = useQuote(code)
   const { data: transactions = [] } = useTransactions(code, selectedId)
-  const addFund = useAddFund()
+  const addFund = useAddFund(selectedId)
 
   const [addMsg, setAddMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [showAddTx, setShowAddTx] = useState(false)
