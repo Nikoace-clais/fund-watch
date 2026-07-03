@@ -83,3 +83,43 @@ async def test_unknown_code_skipped_gracefully(tmp_db):
     # 600519 from table, 999999 has no industry → omitted
     assert result["600519"] == "白酒Ⅱ"
     assert "999999" not in result
+
+
+@pytest.mark.asyncio
+async def test_fetch_success_writes_back_and_then_hits_local_table(tmp_db):
+    """New code fetched from the API is written to stock_industry, and a
+    subsequent lookup for the same code hits the local table instead of
+    calling the API again."""
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = lambda: None
+    mock_resp.json.return_value = {
+        "data": {"f57": "300750", "f58": "宁德时代", "f127": "电池"}
+    }
+    mock_http = AsyncMock()
+    mock_http.get.return_value = mock_resp
+
+    with (
+        patch.dict(os.environ, {"FUND_WATCH_DB": tmp_db}),
+        patch("app.fund_source._get_client", return_value=mock_http),
+    ):
+        result = await get_stock_industries(["300750"])
+
+    assert result["300750"] == "电池"
+
+    conn = sqlite3.connect(tmp_db)
+    row = conn.execute(
+        "SELECT stock_code, stock_name, industry FROM stock_industry"
+        " WHERE stock_code=?",
+        ("300750",),
+    ).fetchone()
+    conn.close()
+    assert row == ("300750", "宁德时代", "电池")
+
+    with (
+        patch.dict(os.environ, {"FUND_WATCH_DB": tmp_db}),
+        patch("app.fund_source._get_client") as mock_client_2,
+    ):
+        result2 = await get_stock_industries(["300750"])
+
+    mock_client_2.assert_not_called()
+    assert result2["300750"] == "电池"

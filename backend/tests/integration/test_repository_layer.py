@@ -32,8 +32,10 @@ class TestFundsOverviewBulk:
             resp = app_client.post(f"/api/funds/{code}")
             assert resp.status_code == 200
 
-        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()["id"]
-        app_client.post(
+        pf_resp = app_client.post("/api/portfolios", json={"name": "组合A"})
+        assert pf_resp.status_code == 200
+        pf_id = pf_resp.json()["id"]
+        tx_resp = app_client.post(
             "/api/funds/110011/transactions",
             json={
                 "direction": "buy",
@@ -43,6 +45,7 @@ class TestFundsOverviewBulk:
                 "portfolio_id": pf_id,
             },
         )
+        assert tx_resp.status_code == 200
 
         async def fake_estimate(code: str) -> dict:
             return {
@@ -69,9 +72,12 @@ class TestPortfolioHoldingsNoDoubleFetch:
     def test_holdings_fetches_realtime_estimate_once_per_code(
         self, app_client, monkeypatch
     ):
-        app_client.post("/api/funds/110011")
-        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()["id"]
-        app_client.post(
+        fund_resp = app_client.post("/api/funds/110011")
+        assert fund_resp.status_code == 200
+        pf_resp = app_client.post("/api/portfolios", json={"name": "组合A"})
+        assert pf_resp.status_code == 200
+        pf_id = pf_resp.json()["id"]
+        tx_resp = app_client.post(
             "/api/funds/110011/transactions",
             json={
                 "direction": "buy",
@@ -81,6 +87,7 @@ class TestPortfolioHoldingsNoDoubleFetch:
                 "portfolio_id": pf_id,
             },
         )
+        assert tx_resp.status_code == 200
 
         call_count = {"n": 0}
 

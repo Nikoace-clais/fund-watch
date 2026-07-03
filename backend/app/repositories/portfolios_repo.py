@@ -27,7 +27,7 @@ def exists(conn: sqlite3.Connection, portfolio_id: int) -> bool:
 
 def first_id(conn: sqlite3.Connection) -> int | None:
     row = conn.execute(
-        "SELECT id FROM portfolios ORDER BY created_at ASC LIMIT 1"
+        "SELECT id FROM portfolios ORDER BY created_at ASC, id ASC LIMIT 1"
     ).fetchone()
     return row["id"] if row else None
 

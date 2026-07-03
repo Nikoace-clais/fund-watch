@@ -151,7 +151,7 @@ export function AiSelect() {
   }
 
   async function handleAdd(code: string) {
-    await batchAddFunds.mutateAsync({ codes: [code] })
+    await batchAddFunds.mutateAsync({ codes: [code], opts: { portfolioId: selectedId } })
   }
 
   function handleReset() {

@@ -34,8 +34,13 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     setRawId(id)
   }, [])
 
+  const value = useMemo(
+    () => ({ portfolios, selectedId, selectPortfolio }),
+    [portfolios, selectedId, selectPortfolio],
+  )
+
   return (
-    <PortfolioContext.Provider value={{ portfolios, selectedId, selectPortfolio }}>
+    <PortfolioContext.Provider value={value}>
       {children}
     </PortfolioContext.Provider>
   )
