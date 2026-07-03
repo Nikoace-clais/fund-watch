@@ -2,11 +2,8 @@ import { Fragment, useMemo, useState } from 'react'
 import { flexRender, useReactTable, getCoreRowModel, getSortedRowModel, createColumnHelper, type SortingState } from '@tanstack/react-table'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { HoldingXraySector, HoldingXrayStock, PortfolioHoldings } from '@/lib/api'
-import { cn, formatCNY } from '@/lib/utils'
+import { CHART_COLORS as SECTOR_COLORS, cn, formatCNY } from '@/lib/utils'
 import { SortHead } from './SortHead'
-
-// ponytail: 横向堆叠条够用，要交互式饼图再说
-const SECTOR_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
 
 type DisplaySector = { name: string; weight_pct: number }
 

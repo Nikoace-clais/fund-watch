@@ -11,10 +11,10 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
-from ..core import is_valid_code, validate_code
+from ..core import is_valid_code, resolve_portfolio, validate_code
 from ..db import get_request_conn
 from ..fund_source import fetch_realtime_estimate
-from ..repositories import funds_repo, portfolios_repo, positions_repo, tx_repo
+from ..repositories import funds_repo, positions_repo, tx_repo
 from ..schemas import AddTransactionPayload
 from ..services.holdings import (
     compute_pnl,
@@ -25,21 +25,6 @@ from ..services.holdings import (
 router = APIRouter(tags=["transactions"])
 
 
-def _resolve_tx_portfolio(conn: sqlite3.Connection, portfolio_id: int | None) -> int:
-    """Return the portfolio_id, defaulting to the first existing portfolio.
-
-    Raises 404 when no portfolio exists — create one via POST /api/portfolios first.
-    """
-    if portfolio_id is not None:
-        if not portfolios_repo.exists(conn, portfolio_id):
-            raise HTTPException(status_code=404, detail="组合不存在")
-        return portfolio_id
-    first_id = portfolios_repo.first_id(conn)
-    if first_id is None:
-        raise HTTPException(status_code=404, detail="尚无组合，请先导入基金建立组合")
-    return first_id
-
-
 @router.get("/api/funds/{code}/transactions")
 def list_transactions(
     code: str,
@@ -47,7 +32,7 @@ def list_transactions(
     conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
     code = validate_code(code)
-    pf_id = _resolve_tx_portfolio(conn, portfolio_id)
+    pf_id = resolve_portfolio(conn, portfolio_id)
     items = tx_repo.list_by_code(conn, pf_id, code)
     return {"code": code, "portfolio_id": pf_id, "items": items}
 
@@ -59,10 +44,11 @@ def add_transaction(
     conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
     code = validate_code(code)
-    pf_id = _resolve_tx_portfolio(conn, payload.portfolio_id)
+    pf_id = resolve_portfolio(conn, payload.portfolio_id)
 
     if payload.direction not in ("buy", "sell"):
         raise HTTPException(status_code=400, detail="direction must be 'buy' or 'sell'")
+    # regex 保证补零的规范格式（入库后按字符串比较日期），strptime 拒绝非法日期
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", payload.trade_date):
         raise HTTPException(status_code=400, detail="trade_date must be YYYY-MM-DD")
     try:
@@ -145,7 +131,7 @@ async def get_pnl(
     conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
     code = validate_code(code)
-    pf_id = _resolve_tx_portfolio(conn, portfolio_id)
+    pf_id = resolve_portfolio(conn, portfolio_id)
     current_nav = None
     try:
         q = await fetch_realtime_estimate(code)
@@ -167,7 +153,7 @@ async def import_csv(
     portfolio_id: int | None = Query(default=None),
     conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
-    pf_id = _resolve_tx_portfolio(conn, portfolio_id)
+    pf_id = resolve_portfolio(conn, portfolio_id)
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))
 

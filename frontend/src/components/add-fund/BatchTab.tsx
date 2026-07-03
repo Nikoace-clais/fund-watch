@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Check, AlertCircle, ChevronDown, ChevronUp, Copy } from 'lucide-react'
+import { ErrorBanner } from '@/components/PageState'
 import { useBatchAddFunds } from '@/lib/queries'
 import { parseBatchInput } from '@/lib/parse-batch-input'
 import { cn } from '@/lib/utils'
@@ -130,12 +131,7 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
         {loading ? '导入中...' : '导入'}
       </button>
 
-      {error && (
-        <div className="flex items-center gap-2 text-sm text-red-500 px-3 py-2.5 bg-red-50 rounded-lg">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {result && (
         <div className="space-y-2 text-sm">

@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..core import is_valid_code, validate_code
+from ..core import fetch_502, is_valid_code, validate_code
 from ..db import get_request_conn
 from ..fund_source import (
     fetch_fund_detail,
@@ -386,10 +386,7 @@ def delete_fund(
 @router.get("/api/funds/{code}/holdings")
 async def get_fund_holdings(code: str) -> dict:
     code = validate_code(code)
-    try:
-        holdings = await fetch_fund_holdings(code)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+    holdings = await fetch_502(fetch_fund_holdings(code))
     return {"code": code, "count": len(holdings), "holdings": holdings}
 
 
@@ -397,11 +394,7 @@ async def get_fund_holdings(code: str) -> dict:
 async def get_fund_detail(code: str) -> dict:
     """Comprehensive fund detail: manager, size, period returns, asset allocation."""
     code = validate_code(code)
-    try:
-        detail = await fetch_fund_detail(code)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    return detail
+    return await fetch_502(fetch_fund_detail(code))
 
 
 @router.get("/api/funds/{code}/nav-history")
@@ -409,10 +402,7 @@ async def get_nav_history(code: str, limit: int = 365) -> dict:
     """Historical NAV data for charting."""
     code = validate_code(code)
     limit = max(1, min(limit, 1000))
-    try:
-        history = await fetch_nav_history(code, limit=limit)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+    history = await fetch_502(fetch_nav_history(code, limit=limit))
     return {"code": code, "count": len(history), "history": history}
 
 
@@ -424,8 +414,5 @@ async def get_nav_on_date(code: str, date: str) -> dict:
         datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(status_code=400, detail="date 必须是有效的 YYYY-MM-DD 日期")
-    try:
-        nav = await fetch_nav_on_date(code, date)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+    nav = await fetch_502(fetch_nav_on_date(code, date))
     return {"code": code, "date": date, "nav": nav}

@@ -17,7 +17,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
-from ..core import UPLOAD_DIR
+from ..core import UPLOAD_DIR, sse
 from ..db import get_conn
 from ..fund_source import search_fund_by_name
 from ..ocr_service import (
@@ -167,7 +167,7 @@ async def _resolve_code(code: str) -> dict | None:
 
 
 def _sse(type_: str, **kwargs: object) -> str:
-    return f"data: {json.dumps({'type': type_, **kwargs}, ensure_ascii=False)}\n\n"
+    return sse({"type": type_, **kwargs})
 
 
 async def _ocr_fund_generator(

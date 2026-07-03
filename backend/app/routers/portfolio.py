@@ -6,18 +6,19 @@ import asyncio
 import logging
 import sqlite3
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
+from ..core import CST, resolve_portfolio
 from ..db import get_request_conn
 from ..fund_source import (
     fetch_fund_holdings,
     fetch_nav_history,
     fetch_realtime_estimate,
 )
-from ..repositories import portfolios_repo, positions_repo, tx_repo
+from ..repositories import positions_repo, tx_repo
 from ..services.portfolio_service import compute_summary
 from ..services.stock_industry_service import get_stock_industries
 
@@ -26,25 +27,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["portfolio"])
 
 
-def _resolve_portfolio(conn: sqlite3.Connection, portfolio_id: int | None) -> int:
-    """Return portfolio_id, defaulting to the first portfolio if none given."""
-    if portfolio_id is not None:
-        if not portfolios_repo.exists(conn, portfolio_id):
-            raise HTTPException(status_code=404, detail="组合不存在")
-        return portfolio_id
-    first_id = portfolios_repo.first_id(conn)
-    if first_id is None:
-        raise HTTPException(status_code=404, detail="尚无组合，请先导入基金建立组合")
-    return first_id
-
-
 @router.get("/api/portfolio/summary")
 async def portfolio_summary(
     portfolio_id: int | None = None,
     conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
     """Aggregated portfolio stats for a specific portfolio."""
-    pf_id = _resolve_portfolio(conn, portfolio_id)
+    pf_id = resolve_portfolio(conn, portfolio_id)
     return await compute_summary(conn, pf_id)
 
 
@@ -54,7 +43,7 @@ async def portfolio_holdings(
     conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
     """Stock-level X-ray: aggregate top-10 holdings across portfolio funds."""
-    pf_id = _resolve_portfolio(conn, portfolio_id)
+    pf_id = resolve_portfolio(conn, portfolio_id)
     summary = await compute_summary(conn, pf_id)
     items: list[dict] = summary.get("items", [])
 
@@ -167,7 +156,7 @@ async def portfolio_history(
     conn: sqlite3.Connection = Depends(get_request_conn),
 ) -> dict:
     """Portfolio value history: holdings × NAV per date, plus today's estimate."""
-    pf_id = _resolve_portfolio(conn, portfolio_id)
+    pf_id = resolve_portfolio(conn, portfolio_id)
     limit = max(1, min(limit, 365))
 
     transactions = tx_repo.list_for_portfolio(conn, pf_id)
@@ -259,8 +248,7 @@ async def portfolio_history(
         if total > 0:
             date_totals[target_date] = total
 
-    cst = timezone(timedelta(hours=8))
-    today = datetime.now(cst).strftime("%Y-%m-%d")
+    today = datetime.now(CST).strftime("%Y-%m-%d")
     today_total = sum(
         (
             current_holdings[code] * gsz

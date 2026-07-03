@@ -6,7 +6,7 @@ import {
 } from '@/lib/queries'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { HoldingEditModal } from '@/components/HoldingEditModal'
-import { PageState } from '@/components/PageState'
+import { EstimateBadge, PageState } from '@/components/PageState'
 import { NavChart } from '@/components/fund-detail/NavChart'
 import { StageReturns } from '@/components/fund-detail/StageReturns'
 import { AssetAllocationCard } from '@/components/fund-detail/AssetAllocationCard'
@@ -142,14 +142,7 @@ export function FundDetail() {
           <div className="text-right md:min-w-[180px]">
             <p className="text-xs text-slate-400 mb-1 flex items-center justify-end gap-1">
               单位净值(估)
-              {quote?.gztime && (
-                <span
-                  className="inline-flex items-center px-1 rounded bg-blue-50 text-blue-600 border border-blue-200 text-[10px] leading-4 cursor-help"
-                  title={`盘中估算值 · ${quote.gztime}`}
-                >
-                  估
-                </span>
-              )}
+              {quote?.gztime && <EstimateBadge time={quote.gztime} />}
             </p>
             <p className="text-4xl font-bold text-slate-900">
               {navValue != null ? navValue.toFixed(4) : '--'}

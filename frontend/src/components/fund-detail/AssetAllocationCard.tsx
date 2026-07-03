@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { PieChart as RechartsPieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts'
 import { PieChart } from 'lucide-react'
 import type { FundDetailData } from '@/lib/api'
-
-const PIE_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6']
+import { CHART_COLORS as PIE_COLORS } from '@/lib/utils'
 
 function simplifyAssetName(name: string) {
   if (name.includes('股票')) return '股票'

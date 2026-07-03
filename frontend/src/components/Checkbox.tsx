@@ -4,11 +4,12 @@ export function Checkbox({
   checked,
   indeterminate,
   onChange,
+  ...rest
 }: {
   checked: boolean
   indeterminate?: boolean
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-}) {
+} & Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'checked' | 'onChange' | 'className'>) {
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (ref.current) ref.current.indeterminate = indeterminate ?? false
@@ -20,6 +21,7 @@ export function Checkbox({
       checked={checked}
       onChange={onChange}
       className="h-4 w-4 rounded border-slate-300 text-blue-600 cursor-pointer accent-blue-600"
+      {...rest}
     />
   )
 }

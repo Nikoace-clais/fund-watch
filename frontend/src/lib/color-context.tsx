@@ -10,8 +10,6 @@ type ColorContextValue = {
   colorFor: (value: number) => string
   /** Tailwind badge classes (bg + text + border) for a return value */
   badgeClassFor: (value: number) => string
-  /** Chart stroke + fill colors for a return value */
-  chartColorFor: (value: number) => { stroke: string; fill: string }
 }
 
 const STORAGE_KEY = 'fund-watch-color-scheme'
@@ -56,24 +54,8 @@ export function ColorProvider({ children }: { children: ReactNode }) {
     [scheme],
   )
 
-  const chartColorFor = useCallback(
-    (value: number) => {
-      if (value === 0) return { stroke: '#94a3b8', fill: '#e2e8f0' }
-      const isUp = value > 0
-      if (scheme === 'red-up') {
-        return isUp
-          ? { stroke: '#ef4444', fill: '#fecaca' }
-          : { stroke: '#22c55e', fill: '#bbf7d0' }
-      }
-      return isUp
-        ? { stroke: '#22c55e', fill: '#bbf7d0' }
-        : { stroke: '#ef4444', fill: '#fecaca' }
-    },
-    [scheme],
-  )
-
   return (
-    <ColorContext.Provider value={{ scheme, setScheme, colorFor, badgeClassFor, chartColorFor }}>
+    <ColorContext.Provider value={{ scheme, setScheme, colorFor, badgeClassFor }}>
       {children}
     </ColorContext.Provider>
   )

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { useColor, type ColorScheme } from '@/lib/color-context'
 import { useProviderConfig, type ProviderConfig, type AiProvider } from '@/lib/provider-config'
 import { useCronStatus } from '@/lib/queries'
+import { useClickOutside } from '@/lib/hooks'
 
 const navigation = [
   { name: '概览', href: '/', icon: Home },
@@ -19,15 +20,7 @@ function ColorSchemeSetting() {
   const { scheme, setScheme } = useColor()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
+  useClickOutside(ref, open, () => setOpen(false))
 
   const options: { value: ColorScheme; label: string; desc: string }[] = [
     { value: 'red-up', label: '红涨绿跌', desc: 'A股习惯' },
@@ -93,15 +86,11 @@ function AiConfigSetting() {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState<ProviderConfig>(config)
   const ref = useRef<HTMLDivElement>(null)
+  useClickOutside(ref, open, () => setOpen(false))
 
+  // refresh draft from saved config each time the popover opens
   useEffect(() => {
-    if (!open) return
-    setDraft(config)
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    if (open) setDraft(config)
   }, [open, config])
 
   function save() {

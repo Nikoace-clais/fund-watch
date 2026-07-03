@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
-from ..core import validate_code
+from ..core import fetch_502, validate_code
 from ..db import get_request_conn
 from ..fund_source import fetch_realtime_estimate
 from ..repositories import snapshot_repo
@@ -23,11 +23,7 @@ router = APIRouter(tags=["quotes"])
 @router.get("/api/quote/{code}")
 async def quote(code: str) -> dict:
     code = validate_code(code)
-    try:
-        data = await fetch_realtime_estimate(code)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    return data
+    return await fetch_502(fetch_realtime_estimate(code))
 
 
 @router.post("/api/snapshots/pull")

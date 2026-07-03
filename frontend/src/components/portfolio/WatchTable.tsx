@@ -11,7 +11,7 @@ import {
 } from '@tanstack/react-table'
 import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
-import { Checkbox } from './Checkbox'
+import { Checkbox } from '../Checkbox'
 import { SortHead } from './SortHead'
 import { BatchBar } from './BatchBar'
 import { DataTable } from './DataTable'

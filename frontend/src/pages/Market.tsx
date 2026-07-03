@@ -1,4 +1,5 @@
-import { BarChart3, Globe, RefreshCw, AlertCircle } from 'lucide-react'
+import { BarChart3, Globe, RefreshCw } from 'lucide-react'
+import { ErrorBanner } from '@/components/PageState'
 import { useMarketIndices } from '@/lib/queries'
 import { cn, formatNum2 } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
@@ -83,12 +84,7 @@ export function Market() {
       </div>
 
       {/* Error */}
-      {error && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {/* Domestic */}
       <section className="space-y-4">

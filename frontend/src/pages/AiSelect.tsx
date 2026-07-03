@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { Sparkles, ExternalLink, Plus, Loader2, AlertCircle } from 'lucide-react'
+import { Sparkles, ExternalLink, Plus, Loader2 } from 'lucide-react'
+import { ErrorBanner } from '@/components/PageState'
 import { streamAiSelect } from '@/lib/api'
 import type { AiFundRec } from '@/lib/api'
 import { useBatchAddFunds } from '@/lib/queries'
@@ -179,10 +180,9 @@ export function AiSelect() {
 
       {/* Unconfigured warning */}
       {!isConfigured && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-          <AlertCircle className="h-4 w-4 shrink-0" />
+        <ErrorBanner variant="warning">
           尚未配置 API Key。请点击左侧导航底部的「AI 配置」完成设置后再使用。
-        </div>
+        </ErrorBanner>
       )}
 
       {/* Form card — collapsed to summary strip while loading/showing results */}
@@ -295,13 +295,10 @@ export function AiSelect() {
 
       {/* Error */}
       {error && (
-        <div className="flex items-start gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium">选基失败</p>
-            <p className="mt-0.5 opacity-80">{error}</p>
-          </div>
-        </div>
+        <ErrorBanner className="items-start [&>svg]:mt-0.5">
+          <p className="font-medium">选基失败</p>
+          <p className="mt-0.5 opacity-80">{error}</p>
+        </ErrorBanner>
       )}
 
       {/* Results */}

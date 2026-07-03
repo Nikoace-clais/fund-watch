@@ -246,6 +246,19 @@ export function useDeleteTransaction(portfolioId?: number) {
   })
 }
 
+/** Delete-with-confirm flow shared by the transaction tables. */
+export function useDeleteTxConfirm(portfolioId?: number) {
+  const deleteTransaction = useDeleteTransaction(portfolioId)
+  const handleDelete = (id: number) => {
+    if (!confirm('确认删除该条交易记录？')) return
+    deleteTransaction.mutate(id, {
+      onError: (err: Error) => alert(err.message || '删除失败'),
+    })
+  }
+  const deletingId = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
+  return { handleDelete, deletingId }
+}
+
 export function useCreatePortfolio() {
   const qc = useQueryClient()
   return useMutation({

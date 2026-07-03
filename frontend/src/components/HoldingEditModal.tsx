@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
+import { Modal } from './Modal'
 import { fetchFundDetail, fetchNavOnDate } from '@/lib/api'
 import { useAddTransaction } from '@/lib/queries'
 import { cn, todayLocal } from '@/lib/utils'
@@ -46,13 +47,6 @@ export function HoldingEditModal({ open, onClose, code, name, defaultNav, portfo
     }).catch(() => {/* silently ignore */})
   }, [open, code, defaultNav])
 
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [open, onClose])
-
   // fetch NAV when date changes
   useEffect(() => {
     if (!open || !tradeDate || !code) return
@@ -94,14 +88,8 @@ export function HoldingEditModal({ open, onClose, code, name, defaultNav, portfo
   }
   const submitting = addTransaction.isPending
 
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+    <Modal open={open} onClose={onClose} className="rounded-2xl max-w-md">
         {/* header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div>
@@ -220,7 +208,6 @@ export function HoldingEditModal({ open, onClose, code, name, defaultNav, portfo
             {submitting ? '提交中...' : direction === 'buy' ? '确认买入' : '确认卖出'}
           </button>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }
