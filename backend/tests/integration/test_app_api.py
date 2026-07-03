@@ -3,12 +3,12 @@
 Uses an isolated temp SQLite DB and stubs out all external data-source
 calls so tests run fully offline.
 """
-import pytest
-from fastapi.testclient import TestClient
-
 import app.db as app_db
 import app.routers.funds as funds_router
+import app.services.fund_import as fund_import_svc
+import pytest
 from app.main import app as fastapi_app
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -21,6 +21,7 @@ def app_client(tmp_path, monkeypatch):
         return {"name": f"测试基金{code}", "sector": "测试板块"}
 
     monkeypatch.setattr(funds_router, "fetch_fund_info", fake_fetch_fund_info)
+    monkeypatch.setattr(fund_import_svc, "fetch_fund_info", fake_fetch_fund_info)
     return TestClient(fastapi_app)
 
 

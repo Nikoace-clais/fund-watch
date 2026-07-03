@@ -6,6 +6,7 @@ no longer double-fetches realtime estimates via a router-to-router call.
 """
 import app.db as app_db
 import app.routers.funds as funds_router
+import app.services.fund_import as fund_import_svc
 import app.services.portfolio_service as portfolio_service
 import pytest
 from app.main import app as fastapi_app
@@ -21,6 +22,7 @@ def app_client(tmp_path, monkeypatch):
         return {"name": f"测试基金{code}", "sector": "测试板块"}
 
     monkeypatch.setattr(funds_router, "fetch_fund_info", fake_fetch_fund_info)
+    monkeypatch.setattr(fund_import_svc, "fetch_fund_info", fake_fetch_fund_info)
     return TestClient(fastapi_app)
 
 
@@ -102,10 +104,9 @@ class TestPortfolioHoldingsNoDoubleFetch:
             return {}
 
         monkeypatch.setattr(portfolio_service, "fetch_realtime_estimate", fake_estimate)
-        import app.routers.portfolio as portfolio_router
 
-        monkeypatch.setattr(portfolio_router, "fetch_fund_holdings", fake_holdings)
-        monkeypatch.setattr(portfolio_router, "get_stock_industries", fake_industries)
+        monkeypatch.setattr(portfolio_service, "fetch_fund_holdings", fake_holdings)
+        monkeypatch.setattr(portfolio_service, "get_stock_industries", fake_industries)
 
         resp = app_client.get(f"/api/portfolio/holdings?portfolio_id={pf_id}")
         assert resp.status_code == 200
