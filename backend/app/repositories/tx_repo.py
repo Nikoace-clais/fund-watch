@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
 
 def insert(
@@ -21,6 +22,12 @@ def insert(
     created_at: str,
 ) -> None:
     """The one INSERT shared by manual entry, CSV import, and synthetic buys."""
+    if not (code.isdigit() and len(code) == 6):
+        raise ValueError(f"invalid fund code: {code}")
+    try:
+        datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"invalid trade_date: {trade_date}")
     conn.execute(
         "INSERT INTO transactions"
         "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
@@ -68,6 +75,24 @@ def list_for_pnl(conn: sqlite3.Connection, portfolio_id: int, code: str) -> list
         (portfolio_id, code),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def list_for_pnl_bulk(
+    conn: sqlite3.Connection, portfolio_id: int, codes: list[str]
+) -> dict[str, list[dict]]:
+    """Grouped transaction rows for P&L, one query for the whole batch."""
+    if not codes:
+        return {}
+    placeholders = ",".join("?" * len(codes))
+    rows = conn.execute(
+        f"SELECT code, direction, nav, shares, amount, fee FROM transactions"
+        f" WHERE portfolio_id=? AND code IN ({placeholders}) ORDER BY trade_date",
+        (portfolio_id, *codes),
+    ).fetchall()
+    grouped: dict[str, list[dict]] = {c: [] for c in codes}
+    for r in rows:
+        grouped[r["code"]].append(dict(r))
+    return grouped
 
 
 def list_for_portfolio(conn: sqlite3.Connection, portfolio_id: int) -> list[dict]:

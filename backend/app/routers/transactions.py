@@ -176,6 +176,9 @@ async def import_csv(
     skipped = 0
     errors: list[str] = []
     affected_codes: set[str] = set()
+    # Running balance per code so multiple sells for the same fund within one
+    # CSV are checked against each other, not just the DB's stale holding.
+    running_shares: dict[str, Decimal] = {}
 
     for i, row in enumerate(reader, start=2):
         try:
@@ -183,16 +186,33 @@ async def import_csv(
             if not is_valid_code(c):
                 errors.append(f"line {i}: invalid code '{c}'")
                 continue
+            if not funds_repo.get_fund(conn, c):
+                errors.append(f"line {i}: fund {c} not found")
+                continue
             direction = row["direction"].strip()
             if direction not in ("buy", "sell"):
                 errors.append(f"line {i}: invalid direction '{direction}'")
                 continue
+            trade_date = row["trade_date"].strip()
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", trade_date):
+                errors.append(f"line {i}: trade_date must be YYYY-MM-DD")
+                continue
             nav_d = Decimal(row["nav"].strip())
             shares_d = Decimal(row["shares"].strip())
             fee_d = Decimal(row.get("fee", "0").strip() or "0")
+            if nav_d <= 0 or shares_d <= 0 or fee_d < 0:
+                errors.append(
+                    f"line {i}: nav and shares must be positive, fee non-negative"
+                )
+                continue
             amount = str((nav_d * shares_d).quantize(Decimal("0.01")))
             note = row.get("note", "").strip()
-            trade_date = row["trade_date"].strip()
+
+            if c not in running_shares:
+                running_shares[c] = current_holding_shares(conn, pf_id, c)
+            if direction == "sell" and shares_d > running_shares[c]:
+                errors.append(f"line {i}: insufficient shares to sell")
+                continue
 
             if tx_repo.find_duplicate(
                 conn, pf_id, c, direction, trade_date, str(nav_d), str(shares_d)
@@ -216,9 +236,10 @@ async def import_csv(
                 source="csv",
                 created_at=now,
             )
+            running_shares[c] += shares_d if direction == "buy" else -shares_d
             affected_codes.add(c)
             imported += 1
-        except (KeyError, InvalidOperation) as e:
+        except (KeyError, InvalidOperation, ValueError) as e:
             errors.append(f"line {i}: {e}")
 
     for c in affected_codes:

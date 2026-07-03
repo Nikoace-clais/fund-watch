@@ -64,16 +64,25 @@ fund-watch/
         ├── routes.tsx          # 路由定义
         ├── styles/             # Tailwind CSS v4
         ├── lib/
-        │   ├── api.ts          # API 客户端 + 全部响应类型（唯一类型来源）
-        │   ├── queries.ts      # TanStack Query：queryClient/keys/hooks
+        │   ├── api.ts          # 薄 barrel：re-export api-client/api-types/api-endpoints
+        │   ├── api-client.ts   # fetch 封装 + 共享 SSE 解析（streamSSE）
+        │   ├── api-types.ts    # 全部响应类型（唯一类型来源）
+        │   ├── api-endpoints.ts # 各接口的请求函数
+        │   ├── parse-batch-input.ts # 批量导入文本/JSON 解析
+        │   ├── queries.ts      # TanStack Query：queryClient/keys/hooks/mutations
+        │   ├── portfolio-context.tsx # 全局选中组合状态（PortfolioProvider）
         │   ├── color-context.tsx # 涨跌配色（colorFor/badgeClassFor/chartColorFor）
         │   └── utils.ts        # 工具函数
         ├── services/
         │   └── import.ts       # 截图导入预览/确认（基于 lib/api）
         ├── components/
         │   ├── Layout.tsx      # 侧边栏布局（含 cron 状态、移动端红点）
-        │   ├── PageState.tsx   # 统一加载/空态占位
-        │   ├── portfolio/      # Portfolio 页子组件（表格/统计卡/图表/弹窗）
+        │   ├── PageState.tsx   # 统一加载/空态占位（loading/empty/error）
+        │   ├── AddFundModal.tsx # 添加基金弹窗壳层
+        │   ├── add-fund/       # AddFundModal 子标签页（Search/Code/BatchTab）
+        │   ├── ImportPreview.tsx # 截图导入预览壳层
+        │   ├── import/         # ImportPreview 子组件（ImportRow/OcrProgress）
+        │   ├── portfolio/      # Portfolio 页子组件（表格/统计卡/图表/弹窗/PortfolioSwitcher）
         │   └── fund-detail/    # FundDetail 页子组件（净值图/配置/定投等）
         └── pages/
             ├── Dashboard.tsx   # 概览

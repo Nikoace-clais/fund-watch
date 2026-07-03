@@ -82,7 +82,10 @@ export function Portfolio() {
     [runBatchDelete],
   )
 
-  const deleting = deleteFund.isPending ? (deleteFund.variables?.code ?? null) : null
+  // deleteFund is shared by single-row delete and the batch-delete loop below;
+  // while a batch is running its .isPending/.variables reflect an arbitrary
+  // in-flight code, not the row the user actually clicked — suppress it then.
+  const deleting = !batchDeleting && deleteFund.isPending ? (deleteFund.variables?.code ?? null) : null
 
   const handleEditHolding = useCallback(
     (h: { code: string; name?: string; nav?: number }) => setHoldingEdit(h),

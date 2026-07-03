@@ -114,18 +114,29 @@ PINGZHONG_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
 # fetch_nav_history — a short TTL coalesces the near-simultaneous calls a
 # fund-detail page load triggers into a single download.
 _pingzhong_cache: TTLCache[str, str] = TTLCache(maxsize=200, ttl=60)
+_pingzhong_locks: dict[str, asyncio.Lock] = {}
 
 
 async def _fetch_pingzhongdata_text(code: str) -> str:
     cached = _pingzhong_cache.get(code)
     if cached is not None:
         return cached
-    t0 = time.perf_counter()
-    resp = await _fetch(PINGZHONG_URL.format(code=code))
-    text = resp.text
-    logger.debug("_fetch_pingzhongdata_text [%s] %.3fs", code, time.perf_counter() - t0)
-    _pingzhong_cache[code] = text
-    return text
+    # Single-flight per code: without this lock, concurrent callers (a
+    # fund-detail page firing info/detail/nav-history at once) would all
+    # cache-miss and each download, defeating the point of this cache.
+    lock = _pingzhong_locks.setdefault(code, asyncio.Lock())
+    async with lock:
+        cached = _pingzhong_cache.get(code)
+        if cached is not None:
+            return cached
+        t0 = time.perf_counter()
+        resp = await _fetch(PINGZHONG_URL.format(code=code))
+        text = resp.text
+        logger.debug(
+            "_fetch_pingzhongdata_text [%s] %.3fs", code, time.perf_counter() - t0
+        )
+        _pingzhong_cache[code] = text
+        return text
 
 # Common fund sector keywords to extract from fund name
 _SECTOR_KEYWORDS = [
@@ -400,7 +411,7 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
 
     raw = _extract_js_array(text, "Data_netWorthTrend")
     if raw:
-        for item in raw[-limit:]:
+        for item in raw:
             ts = item.get("x", 0)
             date_str = dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
             history.append(
@@ -415,7 +426,7 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
     acc_map: dict[str, float] = {}
     raw_acc = _extract_js_array(text, "Data_ACWorthTrend")
     if raw_acc:
-        for item in raw_acc[-limit:]:
+        for item in raw_acc:
             try:
                 ts, acc = item[0], item[1]
                 date_str = (
@@ -930,7 +941,7 @@ async def fetch_stock_industries_from_source(
     sem = asyncio.Semaphore(8)
 
     async def _one(code: str) -> tuple[str, str | None, str | None]:
-        if len(code) != 6:  # skip non-A-share codes (e.g. HK 5-digit)
+        if not re.match(r"^\d{6}$", code):  # skip non-A-share codes (e.g. HK 5-digit)
             return code, None, None
         async with sem:
             try:

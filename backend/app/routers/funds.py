@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -107,6 +108,10 @@ async def search_funds(q: str = "") -> dict:
 async def add_funds_batch(
     payload: BatchFundsPayload, conn: sqlite3.Connection = Depends(get_request_conn)
 ) -> dict:
+    # ponytail: writes are interleaved with several awaited HTTP calls below,
+    # so the request-scoped connection's write transaction stays open longer
+    # than ideal. Single-user SQLite today has no concurrent writer to block;
+    # split network resolution from the write phase if multi-user lands.
     now = datetime.now(timezone.utc).isoformat()
 
     # ── Resolve or create the target portfolio ────────────────────────────────
@@ -243,43 +248,66 @@ async def add_funds_batch(
     # ── Synthetic buy transaction for imported holding amounts ────────────────
     tx_now = datetime.now(timezone.utc).isoformat()
     nav_skipped: list[str] = []
+    candidates: list[tuple[str, Decimal]] = []
     for code in actually_added:
         item = extra.get(code)
         if not item or item.holding_amount is None or item.holding_amount <= 0:
             continue
+        if tx_repo.count_for_portfolio_code(conn, pf_id, code) > 0:
+            nav_skipped.append(f"{code}（已有交易记录，跳过）")
+            continue
+        candidates.append((code, item.holding_amount))
+
+    async def _safe_fetch_nav(code: str) -> tuple[str, dict | None, Exception | None]:
         try:
-            if tx_repo.count_for_portfolio_code(conn, pf_id, code) > 0:
-                nav_skipped.append(f"{code}（已有交易记录，跳过）")
-                continue
-
-            latest = await fetch_latest_nav(code)
-            if not latest or not latest.get("nav"):
-                nav_skipped.append(f"{code}（无法获取净值）")
-                continue
-
-            nav_val = Decimal(str(latest["nav"]))
-            shares_val = (item.holding_amount / nav_val).quantize(Decimal("0.01"))
-            if shares_val <= 0:
-                nav_skipped.append(f"{code}（计算份额为零）")
-                continue
-
-            amount_val = (nav_val * shares_val).quantize(Decimal("0.01"))
-            tx_repo.insert(
-                conn,
-                code=code,
-                portfolio_id=pf_id,
-                direction="buy",
-                trade_date=latest["date"],
-                nav=str(nav_val),
-                shares=str(shares_val),
-                amount=str(amount_val),
-                fee="0",
-                source="import",
-                created_at=tx_now,
-            )
-            recompute_holding_shares(conn, pf_id, code)
+            return code, await fetch_latest_nav(code), None
         except Exception as e:
-            nav_skipped.append(f"{code}（{e}）")
+            return code, None, e
+
+    nav_results = await asyncio.gather(
+        *[_safe_fetch_nav(c) for c, _ in candidates]
+    )
+    holding_amounts = dict(candidates)
+
+    for code, latest, err in nav_results:
+        holding_amount = holding_amounts[code]
+        if err is not None:
+            nav_skipped.append(f"{code}（{err}）")
+            continue
+        if not latest or not latest.get("nav"):
+            nav_skipped.append(f"{code}（无法获取净值）")
+            continue
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(latest.get("date") or "")):
+            nav_skipped.append(f"{code}（净值日期格式异常）")
+            continue
+
+        try:
+            nav_val = Decimal(str(latest["nav"]))
+            shares_val = (holding_amount / nav_val).quantize(Decimal("0.01"))
+        except (InvalidOperation, ZeroDivisionError):
+            nav_skipped.append(f"{code}（净值数据异常）")
+            continue
+        if shares_val <= 0:
+            nav_skipped.append(f"{code}（计算份额为零）")
+            continue
+
+        # Recoverable checks are all above; nothing below should be caught and
+        # silently swallowed as a "skip" once we've decided to write.
+        amount_val = (nav_val * shares_val).quantize(Decimal("0.01"))
+        tx_repo.insert(
+            conn,
+            code=code,
+            portfolio_id=pf_id,
+            direction="buy",
+            trade_date=latest["date"],
+            nav=str(nav_val),
+            shares=str(shares_val),
+            amount=str(amount_val),
+            fee="0",
+            source="import",
+            created_at=tx_now,
+        )
+        recompute_holding_shares(conn, pf_id, code)
 
     if nav_skipped:
         warnings.extend(nav_skipped)

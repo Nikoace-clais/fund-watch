@@ -6,14 +6,6 @@ import sqlite3
 from decimal import Decimal
 
 
-def get(conn: sqlite3.Connection, portfolio_id: int, code: str) -> dict | None:
-    row = conn.execute(
-        "SELECT id FROM positions WHERE portfolio_id=? AND code=?",
-        (portfolio_id, code),
-    ).fetchone()
-    return dict(row) if row else None
-
-
 def ensure_exists(
     conn: sqlite3.Connection, portfolio_id: int, code: str, created_at: str
 ) -> None:
@@ -31,49 +23,45 @@ def upsert(
     code: str,
     created_at: str,
     *,
+    # ponytail: float, not Decimal — these are user-entered/estimated import
+    # amounts, not the ledger (transactions.amount is TEXT/Decimal already).
+    # Switch to Decimal-as-TEXT if these ever feed a precision-sensitive calc.
     amount: float | None = None,
     imported_holding_amount: float | None = None,
     imported_cumulative_return: float | None = None,
     imported_holding_return: float | None = None,
 ) -> None:
-    """Insert the position if new; otherwise update only the given fields."""
-    if get(conn, portfolio_id, code):
-        updates, params = [], []
-        if amount is not None:
-            updates.append("amount=?")
-            params.append(amount)
-        if imported_holding_amount is not None:
-            updates.append("imported_holding_amount=?")
-            params.append(imported_holding_amount)
-        if imported_cumulative_return is not None:
-            updates.append("imported_cumulative_return=?")
-            params.append(imported_cumulative_return)
-        if imported_holding_return is not None:
-            updates.append("imported_holding_return=?")
-            params.append(imported_holding_return)
-        if updates:
-            params += [portfolio_id, code]
-            conn.execute(
-                f"UPDATE positions SET {','.join(updates)}"
-                " WHERE portfolio_id=? AND code=?",
-                params,
-            )
-        return
+    """Insert the position if new; otherwise update only the given fields.
+
+    ponytail: INSERT OR IGNORE + UPDATE instead of get()-then-branch, so two
+    concurrent imports of the same (portfolio_id, code) can't both see "not
+    found" and double-insert.
+    """
     conn.execute(
-        """INSERT INTO positions
-           (portfolio_id,code,amount,imported_holding_amount,
-            imported_cumulative_return,imported_holding_return,created_at)
-           VALUES(?,?,?,?,?,?,?)""",
-        (
-            portfolio_id,
-            code,
-            amount,
-            imported_holding_amount,
-            imported_cumulative_return,
-            imported_holding_return,
-            created_at,
-        ),
+        "INSERT OR IGNORE INTO positions(portfolio_id, code, created_at)"
+        " VALUES(?, ?, ?)",
+        (portfolio_id, code, created_at),
     )
+    updates, params = [], []
+    if amount is not None:
+        updates.append("amount=?")
+        params.append(amount)
+    if imported_holding_amount is not None:
+        updates.append("imported_holding_amount=?")
+        params.append(imported_holding_amount)
+    if imported_cumulative_return is not None:
+        updates.append("imported_cumulative_return=?")
+        params.append(imported_cumulative_return)
+    if imported_holding_return is not None:
+        updates.append("imported_holding_return=?")
+        params.append(imported_holding_return)
+    if updates:
+        params += [portfolio_id, code]
+        conn.execute(
+            f"UPDATE positions SET {','.join(updates)}"
+            " WHERE portfolio_id=? AND code=?",
+            params,
+        )
 
 
 def set_holding_shares(
