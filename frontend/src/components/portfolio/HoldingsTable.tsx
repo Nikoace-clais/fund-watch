@@ -1,23 +1,11 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router'
+import { useMemo } from 'react'
 import { BookOpen, History, Trash2 } from 'lucide-react'
-import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  createColumnHelper,
-  type SortingState,
-  type RowSelectionState,
-} from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import type { PortfolioItem } from '@/lib/api'
 import { cn, formatCNY, formatCNYSigned, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
-import { Checkbox } from '../Checkbox'
 import { SortHead } from './SortHead'
-import { BatchBar } from './BatchBar'
-import { DataTable } from './DataTable'
-
-const helper = createColumnHelper<PortfolioItem>()
+import { FundTableCard, nameColumn, selectColumn } from './FundTableCard'
 
 export function HoldingsTable({
   items,
@@ -39,51 +27,18 @@ export function HoldingsTable({
   onBatchDelete: (codes: string[], clearSelection: () => void) => void
 }) {
   const { colorFor } = useColor()
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'current_value', desc: true }])
-  const [selection, setSelection] = useState<RowSelectionState>({})
 
-  const columns = useMemo(
+  const columns = useMemo<ColumnDef<PortfolioItem>[]>(
     () => [
-      helper.display({
-        id: 'select',
-        size: 44,
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllRowsSelected()}
-            indeterminate={table.getIsSomeRowsSelected()}
-            onChange={table.getToggleAllRowsSelectedHandler()}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox checked={row.getIsSelected()} onChange={row.getToggleSelectedHandler()} />
-        ),
-      }),
-      helper.accessor((row) => row.name || row.code, {
-        id: 'name',
-        header: ({ column }) => (
-          <SortHead column={column} tooltip="按基金名称首字母排序">基金名称</SortHead>
-        ),
-        cell: ({ row }) => {
-          const it = row.original
-          return (
-            <div>
-              <div className="flex items-center gap-1.5">
-                <Link to={`/funds/${it.code}`} className="font-medium text-slate-900 hover:text-blue-600 leading-snug">
-                  {it.name || it.code}
-                </Link>
-                {it.is_imported && (
-                  <span className="text-xs px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0">导入</span>
-                )}
-              </div>
-              <p className="text-xs text-slate-400 mt-0.5">{it.code}</p>
-            </div>
-          )
-        },
-        sortingFn: (a, b) =>
-          (a.original.name || a.original.code).localeCompare(b.original.name || b.original.code, 'zh-CN'),
-      }),
-      helper.accessor((row) => (row.nav != null ? parseFloat(row.nav) : null), {
+      selectColumn(),
+      nameColumn((it) =>
+        it.is_imported ? (
+          <span className="text-xs px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0">导入</span>
+        ) : null,
+      ),
+      {
         id: 'nav',
+        accessorFn: (row) => (row.nav != null ? parseFloat(row.nav) : null),
         size: 110,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按当前估算净值从高到低排序">
@@ -105,9 +60,10 @@ export function HoldingsTable({
             </div>
           )
         },
-      }),
-      helper.accessor((row) => parseFloat(row.current_value), {
+      },
+      {
         id: 'current_value',
+        accessorFn: (row) => parseFloat(row.current_value),
         size: 120,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按持仓市值从高到低排序">
@@ -126,8 +82,10 @@ export function HoldingsTable({
             </div>
           )
         },
-      }),
-      helper.accessor('daily_change', {
+      },
+      {
+        id: 'daily_change',
+        accessorKey: 'daily_change',
         size: 120,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按今日估算涨跌幅从高到低排序">
@@ -148,9 +106,10 @@ export function HoldingsTable({
             </div>
           )
         },
-      }),
-      helper.accessor((row) => (row.return_rate != null ? parseFloat(row.return_rate) : null), {
+      },
+      {
         id: 'return_rate',
+        accessorFn: (row) => (row.return_rate != null ? parseFloat(row.return_rate) : null),
         size: 110,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按累计收益率从高到低排序">
@@ -175,8 +134,8 @@ export function HoldingsTable({
             </div>
           )
         },
-      }),
-      helper.display({
+      },
+      {
         id: 'actions',
         size: 80,
         header: () => <div className="text-center font-medium">操作</div>,
@@ -212,41 +171,20 @@ export function HoldingsTable({
             </div>
           )
         },
-      }),
+      },
     ],
     [colorFor, totalCurrent, onViewTx, onEditHolding, onDelete, deleting],
   )
 
-  const table = useReactTable({
-    data: items,
-    columns,
-    state: { sorting, rowSelection: selection },
-    onSortingChange: setSorting,
-    onRowSelectionChange: setSelection,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    enableRowSelection: true,
-    getRowId: (row) => row.code,
-    sortDescFirst: true,
-    ...({ sortUndefined: 'last' } as object),
-  })
-
-  const selectedCodes = table.getSelectedRowModel().rows.map((r) => r.original.code)
-
   return (
-    <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h2 className="text-lg font-semibold text-slate-800">持仓明细</h2>
-      </div>
-
-      <BatchBar
-        count={selectedCodes.length}
-        onDelete={() => onBatchDelete(selectedCodes, () => setSelection({}))}
-        onClear={() => setSelection({})}
-        deleting={batchDeleting}
-      />
-
-      <DataTable table={table} />
-    </div>
+    <FundTableCard
+      title="持仓明细"
+      items={items}
+      columns={columns}
+      initialSorting={[{ id: 'current_value', desc: true }]}
+      batchDeleting={batchDeleting}
+      onBatchDelete={onBatchDelete}
+      className="lg:col-span-2"
+    />
   )
 }
