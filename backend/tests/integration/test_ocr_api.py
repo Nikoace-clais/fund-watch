@@ -7,7 +7,7 @@ against the fund source, name-search fallback merge and the ocr_records insert.
 import io
 
 import app.db as app_db
-import app.routers.ocr as ocr_router
+import app.services.ocr_pipeline as ocr_router  # noqa: N813 — pipeline moved out of the router
 import pytest
 from app.main import app as fastapi_app
 from fastapi.testclient import TestClient

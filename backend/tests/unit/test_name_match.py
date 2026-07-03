@@ -6,7 +6,7 @@ from pathlib import Path
 # Allow importing from app package without installing
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from app.routers.ocr import _normalize_query, _pick_best, _share_class
+from app.services.ocr_pipeline import _normalize_query, _pick_best, _share_class
 
 
 def test_normalize_qdii_etf():
