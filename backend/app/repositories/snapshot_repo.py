@@ -5,15 +5,6 @@ from __future__ import annotations
 import sqlite3
 
 
-def latest(conn: sqlite3.Connection, code: str) -> dict | None:
-    row = conn.execute(
-        "SELECT code,name,gsz,gszzl,gztime,captured_at"
-        " FROM fund_snapshots WHERE code=? ORDER BY id DESC LIMIT 1",
-        (code,),
-    ).fetchone()
-    return dict(row) if row else None
-
-
 def latest_bulk(conn: sqlite3.Connection, codes: list[str]) -> dict[str, dict]:
     """Latest snapshot per code, one query for the whole batch (no N+1)."""
     if not codes:
