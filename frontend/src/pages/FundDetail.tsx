@@ -56,12 +56,18 @@ export function FundDetail() {
 
   if (notFound || !detail) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-center">
-        <p className="text-xl text-slate-500 mb-4">未找到该基金</p>
-        <button onClick={() => navigate(-1)} className="text-blue-600 hover:underline flex items-center gap-1">
-          <ArrowLeft className="h-4 w-4" /> 返回基金列表
-        </button>
-      </div>
+      <PageState
+        error
+        className="h-[60vh] py-0 flex-col text-center"
+        errorContent={
+          <>
+            <p className="text-xl text-slate-500 mb-4">未找到该基金</p>
+            <button onClick={() => navigate(-1)} className="text-blue-600 hover:underline flex items-center gap-1">
+              <ArrowLeft className="h-4 w-4" /> 返回基金列表
+            </button>
+          </>
+        }
+      />
     )
   }
 
