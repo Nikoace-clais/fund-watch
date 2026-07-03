@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { fetchFundDetail, fetchNavOnDate } from '@/lib/api'
 import { useAddTransaction } from '@/lib/queries'
-import { cn } from '@/lib/utils'
+import { cn, todayLocal } from '@/lib/utils'
 
 type Props = {
   open: boolean
@@ -14,7 +14,7 @@ type Props = {
 }
 
 export function HoldingEditModal({ open, onClose, code, name, defaultNav, portfolioId }: Props) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayLocal()
   const addTransaction = useAddTransaction(portfolioId)
 
   const [direction, setDirection] = useState<'buy' | 'sell'>('buy')

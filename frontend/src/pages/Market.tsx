@@ -1,6 +1,6 @@
 import { BarChart3, Globe, RefreshCw, AlertCircle } from 'lucide-react'
 import { useMarketIndices } from '@/lib/queries'
-import { cn } from '@/lib/utils'
+import { cn, formatNum2 } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 import type { MarketIndex } from '@/lib/api'
 
@@ -16,7 +16,7 @@ function IndexCard({ data }: { data: MarketIndex }) {
         <span className="text-xs text-slate-400 font-mono">{data.code}</span>
       </div>
       <div className="text-2xl font-bold text-slate-900 tabular-nums">
-        {data.value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        {formatNum2(data.value)}
       </div>
       <div className={cn('flex items-center gap-3 text-sm font-medium tabular-nums', colorFor(data.change_percent))}>
         <span>{sign}{data.change.toFixed(2)}</span>

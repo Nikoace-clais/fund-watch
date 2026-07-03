@@ -74,7 +74,18 @@ def prune_old_snapshots(keep_days: int = 30) -> int:
 
 
 # Bump when adding a migration step in _apply_migrations.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+
+# funds columns that only ever existed to support the one-time single-pool
+# migration below; positions is the source of truth, these are pure legacy.
+_LEGACY_FUNDS_COLUMNS = [
+    "amount",
+    "percentage",
+    "holding_shares",
+    "imported_holding_amount",
+    "imported_cumulative_return",
+    "imported_holding_return",
+]
 
 
 def _apply_migrations(conn: sqlite3.Connection) -> None:
@@ -111,6 +122,25 @@ def _apply_migrations(conn: sqlite3.Connection) -> None:
         current = 2
 
     conn.execute(f"PRAGMA user_version = {current}")
+
+
+def _drop_legacy_funds_columns(conn: sqlite3.Connection) -> None:
+    """Drop funds' one-time migration columns (version 3) once their data
+    has been copied into positions by _migrate_single_pool_to_default_portfolio.
+
+    Must run after that copy, not inside _apply_migrations (which runs
+    before it in init_db) — dropping first would silently lose any
+    not-yet-migrated legacy holding data.
+    """
+    current = conn.execute("PRAGMA user_version").fetchone()[0]
+    if current >= 3:
+        return
+    for col in _LEGACY_FUNDS_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE funds DROP COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass  # already dropped, or column never existed
+    conn.execute("PRAGMA user_version = 3")
 
 
 def init_db() -> None:
@@ -222,6 +252,7 @@ def init_db() -> None:
         )
 
         _migrate_single_pool_to_default_portfolio(conn)
+        _drop_legacy_funds_columns(conn)
         conn.commit()
 
 
@@ -229,8 +260,9 @@ def _migrate_single_pool_to_default_portfolio(conn: sqlite3.Connection) -> None:
     """One-time: move legacy single-pool holdings/transactions into a default portfolio.
 
     Idempotent: runs only when no portfolio exists yet AND there is legacy data
-    (a fund with position fields, or any transaction). funds keeps its old
-    position columns unused — positions is the source of truth from now on.
+    (a fund with position fields, or any transaction). positions is the
+    source of truth from now on; the funds columns read here are dropped
+    right after by _drop_legacy_funds_columns.
     """
     if conn.execute("SELECT 1 FROM portfolios LIMIT 1").fetchone():
         return  # already migrated / multi-portfolio in use

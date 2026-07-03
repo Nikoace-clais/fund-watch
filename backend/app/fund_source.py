@@ -12,6 +12,8 @@ from typing import Any
 import httpx
 from cachetools import TTLCache
 
+from .core import is_valid_code
+
 _NAV_CACHE_TTL = 600  # 10 minutes
 # In-process TTL cache for NAV history (avoids re-fetching on range changes);
 # TTLCache evicts both on expiry and once maxsize is hit, unlike a plain dict.
@@ -667,7 +669,7 @@ async def _fetch_ranking_mobile(fund_type: str, page_size: int) -> list[dict[str
     results: list[dict[str, Any]] = []
     for f in datas:
         code = f.get("FCODE", "")
-        if not re.match(r"^\d{6}$", code):
+        if not is_valid_code(code):
             continue
         end_nav = _to_float(f.get("ENDNAV"))
         results.append(
@@ -737,7 +739,7 @@ async def fetch_fund_ranking(
             if len(fields) < _RANK_MIN_FIELDS:
                 continue
             code = fields[_RANK_IDX_CODE]
-            if not re.match(r"^\d{6}$", code):
+            if not is_valid_code(code):
                 continue
             results.append(
                 {
@@ -905,7 +907,7 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
         if len(results) >= limit:
             break
         code = item.get("CODE", "")
-        if not re.match(r"^\d{6}$", code):
+        if not is_valid_code(code):
             continue
         # ponytail: CATEGORY==700 = 基金; 100=股票,600=指数 — 过滤掉非基金防污染
         if item.get("CATEGORY") != 700:

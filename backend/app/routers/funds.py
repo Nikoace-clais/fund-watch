@@ -12,7 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..core import validate_code
+from ..core import is_valid_code, validate_code
 from ..db import get_request_conn
 from ..fund_source import (
     fetch_fund_detail,
@@ -131,7 +131,7 @@ async def add_funds_batch(
     warnings: list[str] = []
 
     for item in payload.funds:
-        has_code = bool(item.code and re.match(r"^\d{6}$", item.code.strip()))
+        has_code = bool(item.code and is_valid_code(item.code.strip()))
         has_name = bool(item.name and item.name.strip())
 
         if has_code and has_name:
@@ -182,7 +182,7 @@ async def add_funds_batch(
     valid: list[str] = []
     invalid: list[str] = list(unresolved)
     for c in all_codes:
-        if c.isdigit() and len(c) == 6:
+        if is_valid_code(c):
             valid.append(c)
         else:
             invalid.append(c)

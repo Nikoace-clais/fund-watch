@@ -1,13 +1,11 @@
 import { useState, useMemo, type DragEvent, type ChangeEvent, type FC } from 'react';
 import { Upload, FileImage, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
 import type { ImportPreviewResult, OcrStep } from '../services/import';
 import { previewImport, confirmImport, HIGH_CONFIDENCE, MEDIUM_CONFIDENCE } from '../services/import';
 import { ImportRow } from './import/ImportRow';
 import { OcrProgress } from './import/OcrProgress';
-import { usePortfolios } from '@/lib/queries';
+import { useOcrStatus, usePortfolios } from '@/lib/queries';
 import { useProviderConfig } from '@/lib/provider-config';
-import { getOcrStatus } from '@/lib/api';
 
 interface ImportPreviewProps {
   onImport?: (codes: string[]) => void;
@@ -38,11 +36,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   // Portfolio selection for import
   const { data: portfolios = [] } = usePortfolios();
   const { config: providerConfig, isConfigured } = useProviderConfig();
-  const { data: ocrStatus } = useQuery({
-    queryKey: ['ocr-status'],
-    queryFn: getOcrStatus,
-    refetchInterval: (q) => (q.state.data?.ready ? false : 2000),
-  });
+  const { data: ocrStatus } = useOcrStatus();
   const ocrReady = ocrStatus?.ready ?? false;
   // 'new' = create new portfolio, or a number = existing portfolio id
   const [importTarget, setImportTarget] = useState<'new' | number>('new');

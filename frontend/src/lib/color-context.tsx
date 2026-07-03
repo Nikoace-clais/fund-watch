@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { getStoredString, setStoredString } from './storage'
 
 export type ColorScheme = 'red-up' | 'green-up'
 
@@ -16,10 +17,8 @@ type ColorContextValue = {
 const STORAGE_KEY = 'fund-watch-color-scheme'
 
 function readStored(): ColorScheme {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY)
-    if (v === 'red-up' || v === 'green-up') return v
-  } catch {}
+  const v = getStoredString(STORAGE_KEY)
+  if (v === 'red-up' || v === 'green-up') return v
   return 'red-up' // default: A-share convention
 }
 
@@ -30,7 +29,7 @@ export function ColorProvider({ children }: { children: ReactNode }) {
 
   const setScheme = useCallback((s: ColorScheme) => {
     setSchemeState(s)
-    try { localStorage.setItem(STORAGE_KEY, s) } catch {}
+    setStoredString(STORAGE_KEY, s)
   }, [])
 
   const colorFor = useCallback(
