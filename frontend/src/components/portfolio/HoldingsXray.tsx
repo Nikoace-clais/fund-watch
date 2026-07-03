@@ -1,9 +1,10 @@
-import { Fragment, useMemo, useState } from 'react'
-import { flexRender, useReactTable, getCoreRowModel, getSortedRowModel, createColumnHelper, type SortingState } from '@tanstack/react-table'
+import { useMemo, useState } from 'react'
+import { useReactTable, getCoreRowModel, getSortedRowModel, createColumnHelper, type SortingState } from '@tanstack/react-table'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { HoldingXraySector, HoldingXrayStock, PortfolioHoldings } from '@/lib/api'
 import { CHART_COLORS as SECTOR_COLORS, cn, formatCNY } from '@/lib/utils'
 import { SortHead } from './SortHead'
+import { DataTable } from './DataTable'
 
 type DisplaySector = { name: string; weight_pct: number }
 
@@ -202,9 +203,6 @@ export function HoldingsXray({ data }: { data: PortfolioHoldings }) {
 
   const overlapCount = data.stocks.filter((s) => s.fund_count >= 2).length
 
-  const alignOf = (id: string) =>
-    id === 'name' || id === 'expand' ? 'text-left' : 'text-right'
-
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className="px-6 py-4 border-b border-slate-100">
@@ -219,51 +217,21 @@ export function HoldingsXray({ data }: { data: PortfolioHoldings }) {
         <SectorBar sectors={data.sectors ?? []} selected={selectedSector} onSelect={setSelectedSector} />
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <colgroup>
-            {table.getVisibleLeafColumns().map((col) => (
-              <col key={col.id} style={col.id !== 'name' ? { width: `${col.getSize()}px` } : undefined} />
-            ))}
-          </colgroup>
-          <thead>
-            {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="bg-slate-50 text-slate-500 text-xs uppercase">
-                {hg.headers.map((h) => (
-                  <th key={h.id} className={cn('px-4 py-3 align-middle', alignOf(h.column.id))}>
-                    {h.isPlaceholder ? null : flexRender(h.column.columnDef.header, h.getContext())}
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {table.getRowModel().rows.map((row) => {
-              const s = row.original
-              const overlap = s.fund_count >= 2
-              const open = expanded.has(s.stock_code)
-              return (
-                <Fragment key={row.id}>
-                  <tr className={cn('transition-colors hover:bg-slate-50', overlap && 'bg-amber-50/30')}>
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className={cn('px-4 py-3', alignOf(cell.column.id))}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                  {open && (
-                    <tr>
-                      <td colSpan={columns.length} className="p-0">
-                        <ExpandedFunds stock={s} />
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        table={table}
+        rowClassName={(row) => (row.original.fund_count >= 2 ? 'bg-amber-50/30' : undefined)}
+        renderSubRow={(row) => {
+          const s = row.original
+          if (!expanded.has(s.stock_code)) return null
+          return (
+            <tr key={`${row.id}-expanded`}>
+              <td colSpan={columns.length} className="p-0">
+                <ExpandedFunds stock={s} />
+              </td>
+            </tr>
+          )
+        }}
+      />
     </div>
   )
 }
