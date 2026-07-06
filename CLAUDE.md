@@ -140,6 +140,17 @@ bun run lint                  # tsc --noEmit
 
 ---
 
+## SDD 工作流（Spec-Driven Development）
+
+新功能、重构、跨文件改动**必须**走此流程；琐碎改动（typo、单行修复、纯文档）豁免。
+
+1. **设计先行** — 开工前从 `docs/plans/templates/design-template.md` 复制为 `docs/plans/YYYY-MM-DD-<slug>-design.md`，填写 Goal / 方案 / 不做什么 / 风险。经用户确认（Status: Approved）后才进入实施。
+2. **任务拆解** — 从 `docs/plans/templates/tasks-template.md` 复制为 `docs/plans/YYYY-MM-DD-<slug>.md`，按 Task 拆分，每个 Task 标注涉及文件与验证方式。
+3. **执行状态跟踪** — 每个 Task 标题带复选框（`- [ ]` / `- [x]`），实施中实时勾选；作业结束填写文档末尾「## 执行情况」小节：完成 / 跳过（及原因）/ 遗留问题 / 测试结果。
+4. **执行模型** — 设计与审查由主会话模型负责；逐 Task 编码实施使用最新 Sonnet（派发 `Agent(model: "sonnet")` subagent 执行，或主会话 `/model sonnet` 后执行）。
+
+---
+
 ## Data Source Notes
 
 - Free endpoints can be unstable; build retry + fallback behavior.
