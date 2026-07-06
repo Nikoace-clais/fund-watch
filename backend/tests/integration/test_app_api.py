@@ -113,6 +113,7 @@ def _get_position_shares(code: str, portfolio_id: int) -> str | None:
 class TestTransactions:
     def test_buy_recomputes_holding_shares(self, app_client):
         _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
         resp = app_client.post("/api/funds/110011/transactions", json={
             "direction": "buy", "trade_date": "2026-06-01",
             "nav": "1.5000", "shares": "1000", "fee": "1.5",
@@ -128,6 +129,7 @@ class TestTransactions:
 
     def test_sell_more_than_holding_rejected(self, app_client):
         _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
         app_client.post("/api/funds/110011/transactions", json={
             "direction": "buy", "trade_date": "2026-06-01", "nav": "1.5", "shares": "100",
         })
@@ -144,6 +146,7 @@ class TestTransactions:
 
     def test_delete_transaction(self, app_client):
         _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
         buy_resp = app_client.post("/api/funds/110011/transactions", json={
             "direction": "buy", "trade_date": "2026-06-01", "nav": "1.5", "shares": "100",
         })
@@ -156,6 +159,7 @@ class TestTransactions:
 
     def test_csv_import_with_dedup(self, app_client):
         _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
         csv_content = (
             "code,direction,trade_date,nav,shares,fee,note\n"
             "110011,buy,2026-06-01,1.5,100,0,first\n"
