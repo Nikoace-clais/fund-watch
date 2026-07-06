@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { Search, AlertCircle, Building2 } from 'lucide-react'
+import { Search, Building2 } from 'lucide-react'
 import type { FundHolderItem } from '@/lib/api'
 import { useStockFundsHolding } from '@/lib/queries'
 import { formatCNY } from '@/lib/utils'
-import { PageState } from '@/components/PageState'
+import { ErrorBanner, PageState } from '@/components/PageState'
 
 /* ── 万元 → 亿 display ─────────────────────────────────────────────────────── */
 function fmtMarketCap(v: number | null) {
@@ -100,13 +100,7 @@ export function StockFunds() {
       </div>
 
       {/* Error */}
-      {errMsg && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200
-                        rounded-xl text-sm text-red-600">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          {errMsg}
-        </div>
-      )}
+      {errMsg && <ErrorBanner>{errMsg}</ErrorBanner>}
 
       {/* Loading */}
       {isLoading && <PageState loading />}

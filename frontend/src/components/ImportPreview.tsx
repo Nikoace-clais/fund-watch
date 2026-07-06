@@ -2,6 +2,8 @@ import { useState, useMemo, type DragEvent, type ChangeEvent, type FC } from 're
 import { Upload, FileImage, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
 import type { ImportPreviewResult, OcrStep } from '../services/import';
 import { previewImport, confirmImport, HIGH_CONFIDENCE, MEDIUM_CONFIDENCE } from '../services/import';
+import { Checkbox } from './Checkbox';
+import { ErrorBanner } from './PageState';
 import { ImportRow } from './import/ImportRow';
 import { OcrProgress } from './import/OcrProgress';
 import { useOcrStatus, usePortfolios } from '@/lib/queries';
@@ -165,6 +167,8 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   if (preview) {
     return (
       <div className="space-y-4">
+        {error && <ErrorBanner>{error}</ErrorBanner>}
+
         {/* Header Stats */}
         <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
           <div className="flex items-center space-x-4">
@@ -209,11 +213,10 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-4 py-3 text-left">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={selectedCodes.size === totalCount && totalCount > 0}
+                    indeterminate={selectedCodes.size > 0 && selectedCodes.size < totalCount}
                     onChange={toggleSelectAll}
-                    className="rounded border-slate-300"
                     data-testid="select-all"
                   />
                 </th>
@@ -375,12 +378,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         </div>
       )}
 
-      {error && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center">
-          <AlertCircle className="w-5 h-5 text-red-600 mr-2" />
-          <span className="text-sm text-red-800">{error}</span>
-        </div>
-      )}
+      {error && <ErrorBanner className="mt-4">{error}</ErrorBanner>}
     </div>
   );
 };

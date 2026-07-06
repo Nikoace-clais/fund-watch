@@ -1,5 +1,6 @@
 import { Plus, Trash2, X } from 'lucide-react'
-import { useDeleteTransaction, useTransactions } from '@/lib/queries'
+import { Modal } from '../Modal'
+import { useDeleteTxConfirm, useTransactions } from '@/lib/queries'
 import { cn, formatCNY } from '@/lib/utils'
 
 export function TransactionModal({
@@ -12,22 +13,10 @@ export function TransactionModal({
   onAddTx: () => void
 }) {
   const { data: items = [], isLoading: loading } = useTransactions(code, portfolioId)
-  const deleteTransaction = useDeleteTransaction(portfolioId)
-
-  const handleDelete = (id: number) => {
-    if (!confirm('确认删除该条交易记录？')) return
-    deleteTransaction.mutate(id, {
-      onError: (err: Error) => alert(err.message || '删除失败'),
-    })
-  }
-  const deleting = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
+  const { handleDelete, deletingId: deleting } = useDeleteTxConfirm(portfolioId)
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[80vh]">
+    <Modal onClose={onClose} className="rounded-2xl max-w-lg flex flex-col max-h-[80vh]">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
           <div>
             <h2 className="text-base font-semibold text-slate-900">交易记录</h2>
@@ -95,7 +84,6 @@ export function TransactionModal({
             </table>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

@@ -1,6 +1,6 @@
 import { Plus, Trash2, TrendingUp } from 'lucide-react'
 import { type Transaction } from '@/lib/api'
-import { useDeleteTransaction } from '@/lib/queries'
+import { useDeleteTxConfirm } from '@/lib/queries'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { cn, formatCNY } from '@/lib/utils'
 
@@ -12,15 +12,7 @@ export function TransactionsCard({
   onAddTx: () => void
 }) {
   const { selectedId } = useSelectedPortfolio()
-  const deleteTransaction = useDeleteTransaction(selectedId)
-
-  function handleDeleteTx(id: number) {
-    if (!confirm('确认删除该条交易记录？')) return
-    deleteTransaction.mutate(id, {
-      onError: (err: Error) => alert(err.message || '删除失败'),
-    })
-  }
-  const deletingTx = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
+  const { handleDelete: handleDeleteTx, deletingId: deletingTx } = useDeleteTxConfirm(selectedId)
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">

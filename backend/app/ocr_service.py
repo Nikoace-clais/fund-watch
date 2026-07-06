@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
 from pathlib import Path
 from typing import Any
 
+from .core import extract_json as _parse_json
 from .core import is_valid_code
 
 # ponytail: disable oneDNN — causes RuntimeError: std::exception on WSL2 / some CPUs
@@ -60,37 +60,6 @@ def ocr_text(image_path: Path) -> str:
         texts = res.get("rec_texts") or []
         lines.extend(str(t) for t in texts)
     return "\n".join(lines)
-
-
-# ── JSON parse (strips markdown fences; finds first balanced block) ───────────
-
-
-def _parse_json(s: str) -> Any:
-    s = s.strip()
-    if not s:
-        raise ValueError("模型返回空响应")
-    if s.startswith("```"):
-        s = s.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        pass
-    for opener, closer in [("[", "]"), ("{", "}")]:
-        start = s.find(opener)
-        if start == -1:
-            continue
-        depth = 0
-        for i, ch in enumerate(s[start:], start):
-            if ch == opener:
-                depth += 1
-            elif ch == closer:
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(s[start : i + 1])
-                    except json.JSONDecodeError:
-                        break
-    raise ValueError(f"模型返回了无法解析的 JSON: {s[:120]}")
 
 
 # ── Text AI call ─────────────────────────────────────────────────────────────

@@ -44,9 +44,10 @@ export function SignalGauge({ history }: { history: NavPoint[] }) {
     const s = computeSignals(history)
     return s ? { s, v: signalVerdict(s) } : null
   }, [history])
-  const { chartColorFor } = useColor()
-  const bull = chartColorFor(1)   // buy-side color (red in A-share scheme)
-  const bear = chartColorFor(-1)  // sell-side color (green in A-share scheme)
+  const { hexFor } = useColor()
+  // buy-side / sell-side stroke colors (red = up in A-share convention)
+  const bull = { stroke: hexFor(true) }
+  const bear = { stroke: hexFor(false) }
 
   if (!result) {
     return (

@@ -5,7 +5,7 @@ import { useFundsOverview, useMarketIndices, usePortfolioSummary } from '@/lib/q
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { cn, formatCNY, formatNum2, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
-import { PageState } from '@/components/PageState'
+import { EstimateBadge, PageState } from '@/components/PageState'
 import { AddFundModal } from '@/components/AddFundModal'
 
 /* ---------- A-share display codes for header badges ---------- */
@@ -217,14 +217,7 @@ export function Dashboard() {
                     <div>
                       <p className="text-xs text-slate-400 flex items-center gap-1">
                         单位净值
-                        {isEstimate && (
-                          <span
-                            className="inline-flex items-center px-1 rounded bg-blue-50 text-blue-600 border border-blue-200 text-[10px] leading-4 cursor-help"
-                            title={latest?.gztime ? `盘中估算值 · ${latest.gztime}` : '盘中估算值'}
-                          >
-                            估
-                          </span>
-                        )}
+                        {isEstimate && <EstimateBadge time={latest?.gztime} />}
                       </p>
                       <p className="text-lg font-bold text-slate-800">
                         {dwjz != null ? dwjz.toFixed(4) : gsz != null ? gsz.toFixed(4) : '—'}

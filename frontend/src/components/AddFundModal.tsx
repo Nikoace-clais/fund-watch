@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Search, X, FileJson, Hash } from 'lucide-react'
+import { Modal } from './Modal'
 import { SearchTab } from './add-fund/SearchTab'
 import { CodeTab } from './add-fund/CodeTab'
 import { BatchTab } from './add-fund/BatchTab'
@@ -25,26 +26,8 @@ const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
 export function AddFundModal({ open, onClose, portfolioId, existingCodes = [] }: AddFundModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('search')
 
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [open, onClose])
-
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
+    <Modal open={open} onClose={onClose} className="rounded-xl max-w-lg max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
           <h2 className="text-lg font-semibold text-slate-800">添加基金</h2>
@@ -75,13 +58,12 @@ export function AddFundModal({ open, onClose, portfolioId, existingCodes = [] }:
           ))}
         </div>
 
-        {/* Content */}
-        <div className="px-6 pb-6 overflow-y-auto flex-1">
-          {activeTab === 'search' && <SearchTab portfolioId={portfolioId} existingCodes={existingCodes} />}
-          {activeTab === 'code' && <CodeTab portfolioId={portfolioId} />}
-          {activeTab === 'batch' && <BatchTab portfolioId={portfolioId} />}
-        </div>
+      {/* Content */}
+      <div className="px-6 pb-6 overflow-y-auto flex-1">
+        {activeTab === 'search' && <SearchTab portfolioId={portfolioId} existingCodes={existingCodes} />}
+        {activeTab === 'code' && <CodeTab portfolioId={portfolioId} />}
+        {activeTab === 'batch' && <BatchTab portfolioId={portfolioId} />}
       </div>
-    </div>
+    </Modal>
   )
 }

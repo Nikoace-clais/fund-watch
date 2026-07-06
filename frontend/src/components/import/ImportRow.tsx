@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { ImportPreviewItem } from '@/services/import';
 import { formatConfidence, getConfidenceInfo } from '@/services/import';
 import { formatNum2 } from '@/lib/utils';
+import { Checkbox } from '../Checkbox';
 
 interface ImportRowProps {
   fund: ImportPreviewItem;
@@ -18,12 +19,7 @@ export const ImportRow: FC<ImportRowProps> = ({ fund, isSelected, onToggle }) =>
       className={`hover:bg-slate-50 ${fund.needs_review ? 'bg-yellow-50/30' : ''}`}
     >
       <td className="px-4 py-3">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={onToggle}
-          className="rounded border-slate-300"
-        />
+        <Checkbox checked={isSelected} onChange={onToggle} />
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center">

@@ -1,10 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router'
-import { LineChart, PieChart, TrendingUp, Home, Menu, X, Settings, Sparkles, Camera, Bot, Search } from 'lucide-react'
-import { useState, useRef, useEffect } from 'react'
+import { LineChart, PieChart, TrendingUp, Home, Menu, X, Sparkles, Camera, Search } from 'lucide-react'
+import { useState } from 'react'
 import { cn } from '@/lib/utils'
-import { useColor, type ColorScheme } from '@/lib/color-context'
-import { useProviderConfig, type ProviderConfig, type AiProvider } from '@/lib/provider-config'
 import { useCronStatus } from '@/lib/queries'
+import { AiConfigSetting } from './layout/AiConfigSetting'
+import { ColorSchemeSetting } from './layout/ColorSchemeSetting'
+import { CronStatusBadge } from './layout/CronStatusBadge'
 
 const navigation = [
   { name: '概览', href: '/', icon: Home },
@@ -14,228 +15,6 @@ const navigation = [
   { name: '截图导入', href: '/import', icon: Camera },
   { name: '持仓反查', href: '/stock-funds', icon: Search },
 ]
-
-function ColorSchemeSetting() {
-  const { scheme, setScheme } = useColor()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  const options: { value: ColorScheme; label: string; desc: string }[] = [
-    { value: 'red-up', label: '红涨绿跌', desc: 'A股习惯' },
-    { value: 'green-up', label: '绿涨红跌', desc: '国际惯例' },
-  ]
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={cn(
-          'flex items-center w-full px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
-          'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-        )}
-      >
-        <Settings className="mr-3 h-5 w-5 text-slate-400" />
-        设置
-      </button>
-
-      {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-xl border border-slate-200 shadow-lg p-3 z-50">
-          <p className="text-xs font-medium text-slate-400 uppercase mb-2">涨跌配色</p>
-          <div className="space-y-1">
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => {
-                  setScheme(opt.value)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors',
-                  scheme === opt.value
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-slate-600 hover:bg-slate-50',
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex gap-0.5">
-                    <span className={cn(
-                      'inline-block w-3 h-3 rounded-full',
-                      opt.value === 'red-up' ? 'bg-red-500' : 'bg-green-500',
-                    )} />
-                    <span className={cn(
-                      'inline-block w-3 h-3 rounded-full',
-                      opt.value === 'red-up' ? 'bg-green-500' : 'bg-red-500',
-                    )} />
-                  </span>
-                  <span>{opt.label}</span>
-                </div>
-                <span className="text-xs text-slate-400">{opt.desc}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function AiConfigSetting() {
-  const { config, setConfig, isConfigured } = useProviderConfig()
-  const [open, setOpen] = useState(false)
-  const [draft, setDraft] = useState<ProviderConfig>(config)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setDraft(config)
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open, config])
-
-  function save() {
-    setConfig(draft)
-    setOpen(false)
-  }
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={cn(
-          'flex items-center w-full px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
-          'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
-        )}
-      >
-        <Bot className="mr-3 h-5 w-5 text-slate-400" />
-        AI 配置
-        {!isConfigured && (
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-600">
-            未配置
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute bottom-full left-0 mb-2 w-72 bg-white rounded-xl border border-slate-200 shadow-lg p-4 z-50 space-y-3">
-          <p className="text-xs font-medium text-slate-400 uppercase">AI Provider 配置</p>
-
-          {/* Provider */}
-          <div className="grid grid-cols-2 gap-1.5">
-            {(['anthropic', 'openai'] as AiProvider[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setDraft((d) => ({ ...d, provider: p }))}
-                className={cn(
-                  'py-1.5 rounded-lg text-sm border transition-colors',
-                  draft.provider === p
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-50',
-                )}
-              >
-                {p === 'anthropic' ? 'Anthropic' : 'OpenAI 兼容'}
-              </button>
-            ))}
-          </div>
-
-          {/* API Key */}
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">API Key</label>
-            <input
-              type="password"
-              value={draft.api_key}
-              onChange={(e) => setDraft((d) => ({ ...d, api_key: e.target.value }))}
-              placeholder={draft.provider === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
-              className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          {/* OpenAI-compatible extra fields */}
-          {draft.provider === 'openai' && (
-            <>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">Base URL</label>
-                <input
-                  type="text"
-                  value={draft.base_url}
-                  onChange={(e) => setDraft((d) => ({ ...d, base_url: e.target.value }))}
-                  placeholder="https://api.openai.com/v1"
-                  className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">编排模型</label>
-                <input
-                  type="text"
-                  value={draft.model}
-                  onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
-                  placeholder="deepseek-v4-flash"
-                  className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">分析模型（留空=同上）</label>
-                <input
-                  type="text"
-                  value={draft.analysis_model}
-                  onChange={(e) => setDraft((d) => ({ ...d, analysis_model: e.target.value }))}
-                  placeholder="deepseek-v4-pro"
-                  className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </>
-          )}
-
-          <button
-            onClick={save}
-            className="w-full py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-          >
-            保存
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function CronStatusBadge() {
-  const { data: status } = useCronStatus()
-
-  if (!status) return null
-
-  const lastTime = status.last_pull_at
-    ? new Date(status.last_pull_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-    : null
-
-  return (
-    <div className="px-3 pt-2 pb-1 text-xs text-slate-400 space-y-0.5">
-      <div className="flex items-center gap-1.5">
-        <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', status.is_active ? 'bg-green-400 animate-pulse' : 'bg-slate-300')} />
-        <span className="truncate">{status.is_active ? '拉取中' : '开市自动拉取'}</span>
-        {status.pull_count > 0 && (
-          <span className="ml-auto shrink-0 tabular-nums">{status.pull_count}次</span>
-        )}
-      </div>
-      {lastTime && (
-        <p className="pl-3 text-slate-300">最近 {lastTime}</p>
-      )}
-      {status.last_error && (
-        <p className="pl-3 text-red-300 truncate" title={status.last_error}>⚠ 上次失败</p>
-      )}
-    </div>
-  )
-}
 
 export function Layout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
@@ -336,6 +115,7 @@ export function Layout() {
                   ⚠ 快照拉取失败
                 </p>
               )}
+              <AiConfigSetting />
               <ColorSchemeSetting />
             </div>
           </div>

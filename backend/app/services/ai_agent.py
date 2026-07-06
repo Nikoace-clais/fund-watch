@@ -26,10 +26,28 @@ from typing import Any, AsyncGenerator
 import anthropic
 import openai
 
+from ..core import extract_json, sse
 from ..fund_source import fetch_fund_detail, fetch_fund_ranking, fetch_nav_history
-from .metrics import max_drawdown
 
 logger = logging.getLogger(__name__)
+
+
+def max_drawdown(nav_list: list[float]) -> float:
+    """Maximum peak-to-trough drawdown as a positive percentage.
+
+    Example: 32.5 means -32.5% from peak. Returns 0.0 if fewer than 2 points.
+    """
+    if len(nav_list) < 2:
+        return 0.0
+    peak = nav_list[0]
+    max_dd = 0.0
+    for v in nav_list:
+        if v > peak:
+            peak = v
+        dd = (peak - v) / peak if peak > 0 else 0.0
+        if dd > max_dd:
+            max_dd = dd
+    return round(max_dd * 100, 2)
 
 MAX_ROUNDS = 6
 _MAX_SEARCH = 15  # ponytail: cap candidates per search call
@@ -164,20 +182,16 @@ def _store_to_table(store: dict[str, dict[str, Any]]) -> str:
 # ── SSE helpers ───────────────────────────────────────────────────────────────
 
 
-def _sse(obj: dict[str, Any]) -> str:
-    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
-
-
 def _step(text: str) -> str:
-    return _sse({"type": "step", "text": text})
+    return sse({"type": "step", "text": text})
 
 
 def _result(data: dict[str, Any]) -> str:
-    return _sse({"type": "result", "data": data})
+    return sse({"type": "result", "data": data})
 
 
 def _err(text: str) -> str:
-    return _sse({"type": "error", "text": text})
+    return sse({"type": "error", "text": text})
 
 
 def _step_text(tc: _TC, res: Any) -> str:
@@ -272,30 +286,6 @@ _ANALYSIS_ANT: list[dict[str, Any]] = [
 ]
 
 
-# ── Argument parse (tolerates trailing content from thinking models) ───────────
-
-
-def _parse(raw: str) -> dict[str, Any]:
-    s = raw.strip()
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(s)
-        return obj
-    except json.JSONDecodeError:
-        # Fallback: extract first balanced {...} block (handles mid-string corruption)
-        depth = 0
-        for i, ch in enumerate(s):
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        return json.loads(s[: i + 1])
-                    except json.JSONDecodeError:
-                        break
-        raise ValueError(f"模型返回了无法解析的 JSON: {s[:120]}")
-
-
 # ── LLM call helpers ──────────────────────────────────────────────────────────
 
 
@@ -327,7 +317,7 @@ async def _call_oai(
         [tc.function.name for tc in (msg.tool_calls or [])],
     )
     tcs = [
-        _TC(id=tc.id, name=tc.function.name, args=_parse(tc.function.arguments))
+        _TC(id=tc.id, name=tc.function.name, args=extract_json(tc.function.arguments))
         for tc in (msg.tool_calls or [])
     ]
     asst: dict[str, Any] = {"role": "assistant", "content": msg.content}

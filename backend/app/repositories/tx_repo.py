@@ -131,13 +131,6 @@ def delete_all_for_code(conn: sqlite3.Connection, code: str) -> None:
     conn.execute("DELETE FROM transactions WHERE code=?", (code,))
 
 
-def count_for_code(conn: sqlite3.Connection, code: str) -> int:
-    """Global transaction count for a fund, across all portfolios."""
-    return conn.execute(
-        "SELECT COUNT(*) as c FROM transactions WHERE code=?", (code,)
-    ).fetchone()["c"]
-
-
 def count_bulk_for_codes(conn: sqlite3.Connection, codes: list[str]) -> dict[str, int]:
     """Global transaction count per code, one query for the whole batch."""
     if not codes:

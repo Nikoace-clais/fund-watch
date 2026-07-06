@@ -99,11 +99,6 @@ export function deleteFund(code: string, portfolioId?: number) {
   return request<{ ok: boolean }>(`/api/funds/${code}${qs}`, { method: 'DELETE' })
 }
 
-// Pull snapshots
-export function pullSnapshots() {
-  return request<{ ok: boolean }>('/api/snapshots/pull', { method: 'POST' })
-}
-
 // Search funds by name/code
 export function searchFunds(q: string) {
   return request<{ results: Array<{ code: string; name: string; type?: string }> }>(`/api/funds/search?q=${encodeURIComponent(q)}`)
@@ -158,7 +153,7 @@ export function fetchPortfolioHistory(limit = 90, portfolioId?: number) {
   return request<{
     portfolio_id: number
     count: number
-    history: Array<{ date: string; total_value: number }>
+    history: Array<{ date: string; total_value: number; is_estimate?: boolean }>
   }>(`/api/portfolio/history?limit=${limit}${qs}`)
 }
 
@@ -170,14 +165,6 @@ export function fetchMarketIndices() {
 // Cron / scheduler status
 export function fetchCronStatus() {
   return request<CronStatus>('/api/cron/status')
-}
-
-// Snapshots history (intraday)
-export function fetchSnapshots(code: string, limit = 200) {
-  return request<{
-    code: string; count: number
-    items: Array<{ gsz?: number; gszzl?: number; gztime?: string; captured_at: string }>
-  }>(`/api/snapshots/${code}?limit=${limit}`)
 }
 
 export function fetchTransactions(code: string, portfolioId?: number) {

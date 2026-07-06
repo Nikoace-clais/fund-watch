@@ -1,20 +1,10 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router'
+import { useMemo } from 'react'
 import { BookOpen, Trash2 } from 'lucide-react'
-import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  createColumnHelper,
-  type SortingState,
-  type RowSelectionState,
-} from '@tanstack/react-table'
+import type { ColumnDef } from '@tanstack/react-table'
 import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
-import { Checkbox } from './Checkbox'
 import { SortHead } from './SortHead'
-import { BatchBar } from './BatchBar'
-import { DataTable } from './DataTable'
+import { FundTableCard, nameColumn, selectColumn } from './FundTableCard'
 
 export type WatchOnlyItem = {
   code: string
@@ -22,8 +12,6 @@ export type WatchOnlyItem = {
   gszzl?: number
   gsz?: number
 }
-
-const helper = createColumnHelper<WatchOnlyItem>()
 
 export function WatchTable({
   items,
@@ -41,45 +29,14 @@ export function WatchTable({
   onBatchDelete: (codes: string[], clearSelection: () => void) => void
 }) {
   const { colorFor } = useColor()
-  const [sorting, setSorting] = useState<SortingState>([{ id: 'gszzl', desc: true }])
-  const [selection, setSelection] = useState<RowSelectionState>({})
 
-  const columns = useMemo(
+  const columns = useMemo<ColumnDef<WatchOnlyItem>[]>(
     () => [
-      helper.display({
-        id: 'select',
-        size: 44,
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllRowsSelected()}
-            indeterminate={table.getIsSomeRowsSelected()}
-            onChange={table.getToggleAllRowsSelectedHandler()}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox checked={row.getIsSelected()} onChange={row.getToggleSelectedHandler()} />
-        ),
-      }),
-      helper.accessor((row) => row.name || row.code, {
-        id: 'name',
-        header: ({ column }) => (
-          <SortHead column={column} tooltip="按基金名称首字母排序">基金名称</SortHead>
-        ),
-        cell: ({ row }) => {
-          const it = row.original
-          return (
-            <div>
-              <Link to={`/funds/${it.code}`} className="text-sm font-medium text-slate-900 hover:text-blue-600">
-                {it.name || it.code}
-              </Link>
-              <p className="text-xs text-slate-400 mt-0.5">{it.code}</p>
-            </div>
-          )
-        },
-        sortingFn: (a, b) =>
-          (a.original.name || a.original.code).localeCompare(b.original.name || b.original.code, 'zh-CN'),
-      }),
-      helper.accessor('gsz', {
+      selectColumn(),
+      nameColumn(),
+      {
+        id: 'gsz',
+        accessorKey: 'gsz',
         size: 120,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按当前估算净值从高到低排序">
@@ -93,8 +50,10 @@ export function WatchTable({
             </p>
           </div>
         ),
-      }),
-      helper.accessor('gszzl', {
+      },
+      {
+        id: 'gszzl',
+        accessorKey: 'gszzl',
         size: 110,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按今日估算涨跌幅从高到低排序">
@@ -111,8 +70,8 @@ export function WatchTable({
             </div>
           )
         },
-      }),
-      helper.display({
+      },
+      {
         id: 'actions',
         size: 80,
         header: () => <div className="text-center font-medium">操作</div>,
@@ -141,41 +100,20 @@ export function WatchTable({
             </div>
           )
         },
-      }),
+      },
     ],
     [colorFor, onEditHolding, onDelete, deleting],
   )
 
-  const table = useReactTable({
-    data: items,
-    columns,
-    state: { sorting, rowSelection: selection },
-    onSortingChange: setSorting,
-    onRowSelectionChange: setSelection,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    enableRowSelection: true,
-    getRowId: (row) => row.code,
-    sortDescFirst: true,
-    ...({ sortUndefined: 'last' } as object),
-  })
-
-  const selectedCodes = table.getSelectedRowModel().rows.map((r) => r.original.code)
-
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h2 className="text-lg font-semibold text-slate-800">自选（未持仓）</h2>
-      </div>
-
-      <BatchBar
-        count={selectedCodes.length}
-        onDelete={() => onBatchDelete(selectedCodes, () => setSelection({}))}
-        onClear={() => setSelection({})}
-        deleting={batchDeleting}
-      />
-
-      <DataTable table={table} cellPadding="px-6" />
-    </div>
+    <FundTableCard
+      title="自选（未持仓）"
+      items={items}
+      columns={columns}
+      initialSorting={[{ id: 'gszzl', desc: true }]}
+      batchDeleting={batchDeleting}
+      onBatchDelete={onBatchDelete}
+      cellPadding="px-6"
+    />
   )
 }

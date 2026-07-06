@@ -15,6 +15,7 @@ dependencies = [
     "openai>=2.44.0",
     "paddleocr>=3.5",
     "paddlepaddle>=3.2.2,<3.3.0",
+    # paddlex 运行时 import cv2 但未声明依赖(其 ocr-core extra 未启用),必须显式提供
     "opencv-python-headless>=4.10",
 ]
 

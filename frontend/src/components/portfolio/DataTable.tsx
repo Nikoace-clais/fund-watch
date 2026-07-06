@@ -1,11 +1,25 @@
-import { flexRender, type Table } from '@tanstack/react-table'
+import { Fragment, type ReactNode } from 'react'
+import { flexRender, type Row, type Table } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
 
-/** 渲染 TanStack Table 实例的通用表格;name/select 列左对齐,actions 居中,其余右对齐 */
-export function DataTable<T>({ table, cellPadding = 'px-4' }: { table: Table<T>; cellPadding?: string }) {
+const LEFT_ALIGN_IDS = new Set(['name', 'select', 'expand'])
+
+/** 渲染 TanStack Table 实例的通用表格;name/select/expand 列左对齐,actions 居中,其余右对齐。
+ * renderSubRow 可选,用于在每行下方插入展开内容(如 HoldingsXray 的重叠持仓明细)。 */
+export function DataTable<T>({
+  table,
+  cellPadding = 'px-4',
+  rowClassName,
+  renderSubRow,
+}: {
+  table: Table<T>
+  cellPadding?: string
+  rowClassName?: (row: Row<T>) => string | undefined
+  renderSubRow?: (row: Row<T>) => ReactNode
+}) {
   const alignClass = (columnId: string) =>
     cn(
-      columnId === 'name' || columnId === 'select' ? 'text-left' : 'text-right',
+      LEFT_ALIGN_IDS.has(columnId) ? 'text-left' : 'text-right',
       columnId === 'actions' && 'text-center',
     )
 
@@ -29,18 +43,31 @@ export function DataTable<T>({ table, cellPadding = 'px-4' }: { table: Table<T>;
           ))}
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {table.getRowModel().rows.map((row) => (
-            <tr
-              key={row.id}
-              className={cn('transition-colors', row.getIsSelected() ? 'bg-blue-50' : 'hover:bg-slate-50')}
-            >
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} className={cn(cellPadding, 'py-3', alignClass(cell.column.id))}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {table.getRowModel().rows.map((row) => {
+            const tr = (
+              <tr
+                key={renderSubRow ? undefined : row.id}
+                className={cn(
+                  'transition-colors',
+                  rowClassName?.(row),
+                  row.getIsSelected() ? 'bg-blue-50' : 'hover:bg-slate-50',
+                )}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <td key={cell.id} className={cn(cellPadding, 'py-3', alignClass(cell.column.id))}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                ))}
+              </tr>
+            )
+            if (!renderSubRow) return tr
+            return (
+              <Fragment key={row.id}>
+                {tr}
+                {renderSubRow(row)}
+              </Fragment>
+            )
+          })}
         </tbody>
       </table>
     </div>

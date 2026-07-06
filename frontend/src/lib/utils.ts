@@ -5,6 +5,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Shared categorical palette for pie/bar charts (cycled via idx % length). */
+export const CHART_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
+
 export function formatCNY(value: number) {
   return new Intl.NumberFormat('zh-CN', {
     style: 'currency',

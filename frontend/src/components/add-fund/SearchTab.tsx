@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Search, Plus, Check, AlertCircle } from 'lucide-react'
+import { Search, Plus, Check } from 'lucide-react'
+import { ErrorBanner } from '@/components/PageState'
 import { searchFunds } from '@/lib/api'
 import { useAddFund } from '@/lib/queries'
 import { cn } from '@/lib/utils'
@@ -66,12 +67,7 @@ export function SearchTab({ portfolioId, existingCodes }: { portfolioId?: number
         />
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 text-sm text-red-500">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          {error}
-        </div>
-      )}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
 
       {loading && (
         <p className="text-sm text-slate-400 text-center py-4">搜索中...</p>

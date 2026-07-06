@@ -1,8 +1,6 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import type { PortfolioItem } from '@/lib/api'
-import { formatCNY } from '@/lib/utils'
-
-const PIE_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899']
+import { CHART_COLORS as PIE_COLORS, formatCNY } from '@/lib/utils'
 
 export function AllocationPie({
   items,
