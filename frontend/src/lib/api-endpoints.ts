@@ -153,7 +153,7 @@ export function fetchPortfolioHistory(limit = 90, portfolioId?: number) {
   return request<{
     portfolio_id: number
     count: number
-    history: Array<{ date: string; total_value: number }>
+    history: Array<{ date: string; total_value: number; is_estimate?: boolean }>
   }>(`/api/portfolio/history?limit=${limit}${qs}`)
 }
 

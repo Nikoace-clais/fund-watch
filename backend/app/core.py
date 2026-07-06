@@ -53,7 +53,7 @@ async def fetch_502(coro: Awaitable[T]) -> T:
     try:
         return await coro
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 def sse(obj: dict[str, Any]) -> str:

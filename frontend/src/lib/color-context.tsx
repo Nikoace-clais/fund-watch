@@ -10,6 +10,8 @@ type ColorContextValue = {
   colorFor: (value: number) => string
   /** Tailwind badge classes (bg + text + border) for a return value */
   badgeClassFor: (value: number) => string
+  /** Hex color for SVG/canvas contexts where a Tailwind class won't work */
+  hexFor: (isUp: boolean) => string
 }
 
 const STORAGE_KEY = 'fund-watch-color-scheme'
@@ -54,8 +56,18 @@ export function ColorProvider({ children }: { children: ReactNode }) {
     [scheme],
   )
 
+  const hexFor = useCallback(
+    (isUp: boolean) => {
+      const red = '#ef4444'
+      const green = '#22c55e'
+      if (scheme === 'red-up') return isUp ? red : green
+      return isUp ? green : red
+    },
+    [scheme],
+  )
+
   return (
-    <ColorContext.Provider value={{ scheme, setScheme, colorFor, badgeClassFor }}>
+    <ColorContext.Provider value={{ scheme, setScheme, colorFor, badgeClassFor, hexFor }}>
       {children}
     </ColorContext.Provider>
   )

@@ -14,6 +14,7 @@ export function ErrorBanner({
 }) {
   return (
     <div
+      role={variant === 'error' ? 'alert' : 'status'}
       className={cn(
         'flex items-center gap-2 px-4 py-3 border rounded-xl text-sm',
         variant === 'error'

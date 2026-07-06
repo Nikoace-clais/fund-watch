@@ -167,6 +167,8 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   if (preview) {
     return (
       <div className="space-y-4">
+        {error && <ErrorBanner>{error}</ErrorBanner>}
+
         {/* Header Stats */}
         <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
           <div className="flex items-center space-x-4">

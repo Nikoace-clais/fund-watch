@@ -395,6 +395,7 @@ async def compute_history(conn: sqlite3.Connection, pf_id: int, limit: int) -> d
             today_total += imp_shares * gsz
         else:
             today_total += imported_funds[code]
+    today_is_estimate = today not in date_totals
     if today_total > 0:
         date_totals.setdefault(today, today_total)
 
@@ -403,7 +404,15 @@ async def compute_history(conn: sqlite3.Connection, pf_id: int, limit: int) -> d
         "portfolio_id": pf_id,
         "count": len(sorted_items),
         "history": [
-            {"date": date, "total_value": float(value.quantize(Decimal("0.01")))}
+            {
+                "date": date,
+                "total_value": float(value.quantize(Decimal("0.01"))),
+                **(
+                    {"is_estimate": True}
+                    if date == today and today_is_estimate
+                    else {}
+                ),
+            }
             for date, value in sorted_items
         ],
     }

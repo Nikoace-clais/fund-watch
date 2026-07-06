@@ -115,6 +115,7 @@ export function Layout() {
                   ⚠ 快照拉取失败
                 </p>
               )}
+              <AiConfigSetting />
               <ColorSchemeSetting />
             </div>
           </div>
