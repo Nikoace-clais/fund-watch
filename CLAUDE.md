@@ -7,7 +7,7 @@ This file guides Claude (and other coding agents) when working in this project.
 Build a practical A-share public fund watcher focused on:
 - estimated NAV (盘中估值)
 - low-noise alerts
-- AI-assisted fund import (截图 → AI 识别 → JSON → 批量导入)
+- AI-assisted fund import & selection (截图 OCR / AI 选基)
 - persistent snapshots for trend analysis
 
 Current scope is **free data sources first**, then harden for multi-user usage.
@@ -16,9 +16,9 @@ Current scope is **free data sources first**, then harden for multi-user usage.
 
 ## Tech Stack
 
-- Backend: FastAPI (Python 3.x)
-- Frontend: React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7 + TanStack Query
-- Storage: SQLite (early stage)
+- Backend: FastAPI (Python >=3.12, `uv` 管理)
+- Frontend: React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7 + TanStack Query (bun 管理)
+- Storage: SQLite（`FUND_WATCH_DB` 可覆盖路径，默认 `backend/data/fund_watch.db`）
 - Charts: Recharts
 - Realtime source: `fundgz.1234567.com.cn`
 - Historical source: `fund.eastmoney.com/pingzhongdata`
@@ -27,74 +27,44 @@ Current scope is **free data sources first**, then harden for multi-user usage.
 
 ---
 
-## Repository Layout
+## Architecture
+
+真实目录结构以 `ls` 为准，本节只约定分层规则，不逐文件维护。
+
+**重要**：生产后端是 `backend/app/`（分层架构，前端所有接口在此）。修改接口一律改 `app/`。
+
+### Backend (`backend/app/`)
 
 ```text
-fund-watch/
-├── PLAN.md
-├── README.md
-├── CLAUDE.md
-├── start.sh                    # 一键启动前后端
-├── backend/
-│   ├── pyproject.toml          # uv 配置
-│   ├── run.py                  # 开发服务器入口（启动 app.main:app）
-│   ├── pull_quotes.py          # 定时拉取脚本
-│   ├── app/                    # ★ 生产后端（分层架构，前端所有接口在此）
-│   │   ├── main.py             # 应用装配：FastAPI/CORS/中间件/lifespan/路由注册
-│   │   ├── core.py             # 共享常量与校验（CST、UPLOAD_DIR、validate_code）
-│   │   ├── schemas.py          # Pydantic 请求模型
-│   │   ├── db.py               # SQLite 初始化/连接（FUND_WATCH_DB 可覆盖路径）
-│   │   ├── fund_source.py      # 估值源 / 详情 / 搜索适配
-│   │   ├── ocr_service.py      # 截图 OCR（rapidocr）
-│   │   ├── routers/            # API 路由（按域拆分）
-│   │   │   ├── health.py  funds.py  quotes.py  portfolio.py
-│   │   │   └── transactions.py  dca.py  ocr.py  market.py
-│   │   └── services/           # 业务逻辑
-│   │       ├── holdings.py     # 份额重算 + P&L 计算
-│   │       ├── snapshots.py    # 快照拉取 + 交易时段调度器
-│   │       └── dca.py          # 定投绩效统计
-│   └── data/
-│       └── fund_watch.db       # SQLite 数据库（运行后生成）
-└── frontend/
-    ├── package.json            # bun 管理依赖
-    ├── vite.config.ts
-    ├── index.html
-    └── src/
-        ├── main.tsx            # React 入口
-        ├── routes.tsx          # 路由定义
-        ├── styles/             # Tailwind CSS v4
-        ├── lib/
-        │   ├── api.ts          # 薄 barrel：re-export api-client/api-types/api-endpoints
-        │   ├── api-client.ts   # fetch 封装 + 共享 SSE 解析（streamSSE）
-        │   ├── api-types.ts    # 全部响应类型（唯一类型来源）
-        │   ├── api-endpoints.ts # 各接口的请求函数
-        │   ├── parse-batch-input.ts # 批量导入文本/JSON 解析
-        │   ├── queries.ts      # TanStack Query：queryClient/keys/hooks/mutations
-        │   ├── portfolio-context.tsx # 全局选中组合状态（PortfolioProvider）
-        │   ├── color-context.tsx # 涨跌配色（colorFor/badgeClassFor/chartColorFor）
-        │   └── utils.ts        # 工具函数
-        ├── services/
-        │   └── import.ts       # 截图导入预览/确认（基于 lib/api）
-        ├── components/
-        │   ├── Layout.tsx      # 侧边栏布局（含 cron 状态、移动端红点）
-        │   ├── PageState.tsx   # 统一加载/空态占位（loading/empty/error）
-        │   ├── AddFundModal.tsx # 添加基金弹窗壳层
-        │   ├── add-fund/       # AddFundModal 子标签页（Search/Code/BatchTab）
-        │   ├── ImportPreview.tsx # 截图导入预览壳层
-        │   ├── import/         # ImportPreview 子组件（ImportRow/OcrProgress）
-        │   ├── portfolio/      # Portfolio 页子组件（表格/统计卡/图表/弹窗/PortfolioSwitcher）
-        │   └── fund-detail/    # FundDetail 页子组件（净值图/配置/定投等）
-        └── pages/
-            ├── Dashboard.tsx   # 概览
-            ├── FundDetail.tsx  # 基金详情
-            ├── Portfolio.tsx   # 自选基金
-            ├── Market.tsx      # 行情数据
-            ├── Dca.tsx         # 定投计划
-            └── ImportPage.tsx  # 截图导入
+main.py          应用装配：FastAPI/CORS/中间件/lifespan/路由注册
+core.py          共享常量与校验（CST、UPLOAD_DIR、validate_code）
+schemas.py       Pydantic 请求模型
+db.py            SQLite 初始化/连接
+fund_source.py   外部数据源适配（估值/详情/搜索/指数）
+ocr_service.py   截图 OCR（rapidocr）
+routers/         API 路由，按域拆分
+services/        业务逻辑
+repositories/    SQL 访问层
 ```
 
-**重要**：生产后端是 `backend/app/`（已完成分层拆分）。历史遗留的 `backend/src/fund_watch/`
-已删除，新浪指数数据源已移植到 `app/fund_source.py`。修改接口一律改 `app/`。
+分层规则：
+- **routers 保持薄**：只做参数校验、依赖注入和编排，业务逻辑放 services
+- **SQL 只写在 repositories**：services/routers 不直接拼 SQL
+- 新增域时按 router → service → repository 同名拆分
+
+### Frontend (`frontend/src/`)
+
+```text
+pages/           路由页面（见 routes.tsx）
+components/      共享组件 + 按页面分的子目录（portfolio/ fund-detail/ import/ add-fund/ layout/）
+lib/             API 封装、TanStack Query、context、工具
+services/        组合多个 API 的前端流程（如截图导入）
+```
+
+分层规则：
+- **响应类型唯一来源 `lib/api-types.ts`**，请求函数在 `lib/api-endpoints.ts`，`lib/api.ts` 是薄 barrel
+- TanStack Query 的 queryClient/keys/hooks/mutations 集中在 `lib/queries.ts`
+- 涨跌配色统一走 `lib/color-context.tsx`，加载/空态占位统一用 `components/PageState.tsx`
 
 ---
 
@@ -110,7 +80,7 @@ cd /home/niko/hobby/fund-watch/fund-watch
 ### Backend
 
 ```bash
-cd /home/niko/hobby/fund-watch/fund-watch/backend
+cd backend
 uv sync
 uv run python run.py          # 或: uv run uvicorn app.main:app --reload --port 8010
 ```
@@ -118,7 +88,7 @@ uv run python run.py          # 或: uv run uvicorn app.main:app --reload --port
 ### Frontend
 
 ```bash
-cd /home/niko/hobby/fund-watch/fund-watch/frontend
+cd frontend
 bun install
 bun run dev
 ```
@@ -128,83 +98,34 @@ Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: 
 ### Tests & Lint
 
 ```bash
-# 后端测试
-cd /home/niko/hobby/fund-watch/fund-watch/backend
-uv run pytest                          # 全量
-uv run pytest tests/unit/             # 单元
-uv run pytest tests/integration/      # 集成
-
-# 后端 lint
+# 后端（backend/ 目录下）
+uv run pytest                 # 全量；tests/unit/ 与 tests/integration/ 可分开跑
 uv run ruff check .
 uv run mypy .
 
-# 前端类型检查
-cd /home/niko/hobby/fund-watch/fund-watch/frontend
-bun run lint                           # tsc --noEmit
+# 前端（frontend/ 目录下）
+bun run lint                  # tsc --noEmit
 ```
 
-## 环境要求
-
-- Python >=3.12（`uv` 管理）
-- bun 1.3.10+（`bun install` 自动安装依赖）
-- 可选环境变量：`FUND_WATCH_DB=<path>` 覆盖 SQLite 路径（默认 `backend/data/fund_watch.db`）
-
 ---
 
-## API Contract (current)
+## API Conventions
 
-### Fund management
-- `GET /api/funds` — 基金池列表
-- `POST /api/funds/{code}` — 添加单只基金
-- `POST /api/funds/batch` — 批量添加 `{"codes": [...]}`
-- `DELETE /api/funds/{code}` — 删除基金及关联数据
-- `GET /api/funds/overview` — 基金池 + 最新估算数据
-- `GET /api/funds/search?q=关键词` — 按名称/代码搜索
+接口清单不在此维护——活文档见 Swagger `http://127.0.0.1:8010/docs`，源码真相在 `backend/app/routers/`。
 
-### Quotes & detail
-- `GET /api/quote/{code}` — 实时估值
-- `GET /api/funds/{code}/detail` — 基金经理、规模、涨幅、配置
-- `GET /api/funds/{code}/nav-history?limit=365` — 历史 NAV
-- `GET /api/funds/{code}/holdings` — 重仓股票
+扩展 API 时的约定：
+- keep response shape stable; prefer additive changes
+- 基金/股票代码一律校验为 6 位数字字符串
+- 数据源失败返回明确错误（带来源上下文）；行情类接口降级返回空数据 + error 字段而非 502
+- 估算净值 ≠ 最终净值，响应和前端都要明确标注
 
-### Snapshots & portfolio
-- `POST /api/snapshots/pull` — 批量拉取快照并落库
-- `GET /api/snapshots/{code}?limit=30` — 盘中快照序列
-- `GET /api/portfolio/summary` — 组合汇总统计
-- `GET /api/portfolio/history?limit=90` — 组合市值历史
+### 截图导入
 
-### Transactions & DCA
-- `GET/POST /api/funds/{code}/transactions` — 交易记录
-- `DELETE /api/transactions/{tx_id}` — 删除交易
-- `POST /api/transactions/csv` — CSV 批量导入
-- `/api/dca/plans*`、`/api/dca/records*`、`/api/dca/stats` — 定投计划/记录/统计
-
-### OCR & misc
-- `POST /api/ocr/fund-code` — 截图识别基金代码（rapidocr）
-- `POST /api/ocr/transaction` — 截图识别交易记录
-- `GET /api/market/indices` — 大盘指数（新浪源；失败时返回空 items + error 字段，不抛 502）
-- `GET /api/cron/status` — 快照调度状态
-
-When extending APIs:
-- keep response shape stable
-- prefer additive changes
-- add explicit error messages for invalid fund codes / source failures
-
----
-
-## 截图导入
-
-前端 `/import` 页面（ImportPage → ImportPreview）走以下流程：
-
-1. 上传截图 → `POST /api/ocr/fund-code`（rapidocr 识别 6 位代码，识别不到代码时按基金名模糊搜索）
-2. 缺名称的代码通过 `GET /api/funds/search?q=代码` 补全
-3. 用户勾选确认 → `POST /api/funds/batch` 批量入库
+`/import` 页面流程：上传截图 → `POST /api/ocr/fund-code` 识别代码（识别不到时按基金名模糊搜索）→ 搜索补全名称 → 用户勾选确认 → `POST /api/funds/batch` 批量入库：
 
 ```json
 {"codes": ["110011", "161725", "012414"]}
 ```
-
-也可以让 AI 识别截图后直接按上述 JSON 调 `/api/funds/batch` 导入。
 
 ---
 
@@ -212,9 +133,10 @@ When extending APIs:
 
 1. Keep changes minimal and focused.
 2. Do not break existing endpoint names unless explicitly requested.
-3. Validate all fund codes as 6-digit numeric strings.
+3. 遵守 Architecture 节的分层规则（routers 薄 / 业务在 services / SQL 在 repositories / 前端类型唯一来源）。
 4. Clearly label estimated NAV data as estimate (not final NAV).
 5. Avoid noisy alert logic; default to conservative thresholds.
+6. **GitNexus 使用约定**（覆盖本文件末尾及 AGENTS.md 中自动注入块的 MUST 规则）：GitNexus 是辅助工具，不是硬性流程。跨模块重构、重命名、删除符号时建议用 `gitnexus_impact` / `gitnexus_rename`；日常小改以 `uv run pytest` + `bun run lint` 验证为准，不强制每次编辑前跑 impact、每次提交前跑 detect_changes。
 
 ---
 
@@ -222,27 +144,14 @@ When extending APIs:
 
 - Free endpoints can be unstable; build retry + fallback behavior.
 - `fundgz` returns JSONP-like payload; parser must be robust.
-- If source parsing fails, return a clear 502 with source context.
-- 估算净值 ≠ 最终成交净值，前端需明确风险提示。
 
 ---
 
-## Implementation Status
+## Status & Next Priorities
 
-### Done
-- ✅ FastAPI 全部核心接口（基金管理/估值/详情/快照/搜索/组合）
-- ✅ SQLite 持久化（funds / fund_snapshots / transactions）
-- ✅ fundgz 实时估值拉取与 JSONP 解析
-- ✅ eastmoney 基金详情/NAV 历史/重仓股票/资产配置
-- ✅ 天天基金搜索 API 适配
-- ✅ 前端全新 UI（Tailwind v4 + React Router + Recharts）
-- ✅ 六大页面：Dashboard / FundDetail / Portfolio / Market / Dca / Import
-- ✅ 端到端流程可用
-- ✅ 截图 OCR 导入（ImportPage + rapidocr + 基金名回退搜索）
-- ✅ 定投计划/记录/统计（DCA）
-- ✅ 大盘指数（新浪源 + 降级容错）
+核心流程端到端可用：基金池管理、盘中估值快照、多组合持仓与 P&L、交易记录、截图 OCR 导入、AI 选基（SSE 流式）、股票反查持仓基金、大盘指数。
 
-### Next Priorities
+Next:
 1. **提醒规则** — 涨跌阈值 + 冷却时间 + 降噪
 2. **定时拉取完善** — pull_quotes.py + cron 配置文档化
 3. **用户维度** — 多人使用 + 分享权限
@@ -260,15 +169,14 @@ When extending APIs:
 ## Definition of Good Change
 
 A change is considered good when:
-- backend runs without errors
-- frontend builds successfully
+- backend tests pass and frontend builds successfully
 - flow "search fund → add to pool → pull snapshot → view detail" works end-to-end
 - README is updated if behavior changes
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **fund-watch** (795 symbols, 2037 relationships, 59 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **fund-watch** (800 symbols, 2049 relationships, 59 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
