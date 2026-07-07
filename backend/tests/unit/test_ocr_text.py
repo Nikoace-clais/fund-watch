@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-import pytest
+from typing import Any
 
+import pytest
 from app import ocr_service
 
-_CFG = {"provider": "anthropic", "api_key": "test-key", "base_url": None, "model": None}
+_CFG: dict[str, Any] = {
+    "provider": "anthropic",
+    "api_key": "test-key",
+    "base_url": None,
+    "model": None,
+}
 
 
 @pytest.mark.asyncio

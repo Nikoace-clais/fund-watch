@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 from fastapi import APIRouter, Depends
 
@@ -21,7 +22,7 @@ router = APIRouter(tags=["portfolio"])
 async def portfolio_summary(
     portfolio_id: int | None = None,
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     """Aggregated portfolio stats for a specific portfolio."""
     pf_id = resolve_portfolio(conn, portfolio_id)
     return await compute_summary(conn, pf_id)
@@ -31,7 +32,7 @@ async def portfolio_summary(
 async def portfolio_holdings(
     portfolio_id: int | None = None,
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     """Stock-level X-ray: aggregate top-10 holdings across portfolio funds."""
     pf_id = resolve_portfolio(conn, portfolio_id)
     return await compute_holdings_xray(conn, pf_id)
@@ -42,7 +43,7 @@ async def portfolio_history(
     portfolio_id: int | None = None,
     limit: int = 90,
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     """Portfolio value history: holdings × NAV per date, plus today's estimate."""
     pf_id = resolve_portfolio(conn, portfolio_id)
     return await compute_history(conn, pf_id, limit)

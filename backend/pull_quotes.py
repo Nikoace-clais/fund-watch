@@ -21,7 +21,10 @@ async def main(api: str) -> None:
         resp = await client.post(f"{api}/api/snapshots/pull")
         resp.raise_for_status()
         data = resp.json()
-    print(f"ok — inserted={data.get('inserted')}, codes={data.get('codes')}, at={data.get('captured_at')}")
+    print(
+        f"ok — inserted={data.get('inserted')}, codes={data.get('codes')}, "
+        f"at={data.get('captured_at')}"
+    )
 
 
 if __name__ == "__main__":

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 
-def list_all(conn: sqlite3.Connection) -> list[dict]:
+def list_all(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         """SELECT p.id, p.name, p.created_at,
                   COUNT(pos.id) AS fund_count

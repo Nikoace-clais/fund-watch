@@ -7,6 +7,7 @@ import logging
 import sqlite3
 import time
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -37,12 +38,14 @@ router = APIRouter(tags=["funds"])
 
 
 @router.get("/api/funds")
-def list_funds(conn: sqlite3.Connection = Depends(get_request_conn)) -> dict:
+def list_funds(conn: sqlite3.Connection = Depends(get_request_conn)) -> dict[str, Any]:
     return {"items": funds_repo.list_funds(conn)}
 
 
 @router.get("/api/funds/overview")
-async def funds_overview(conn: sqlite3.Connection = Depends(get_request_conn)) -> dict:
+async def funds_overview(
+    conn: sqlite3.Connection = Depends(get_request_conn),
+) -> dict[str, Any]:
     funds = funds_repo.list_funds(conn)
     codes = [f["code"] for f in funds]
 
@@ -51,7 +54,7 @@ async def funds_overview(conn: sqlite3.Connection = Depends(get_request_conn)) -
     snapshot_map = snapshot_repo.latest_bulk(conn, codes)
     tx_count_map = tx_repo.count_bulk_for_codes(conn, codes)
 
-    async def _fetch_one(f: dict) -> dict:
+    async def _fetch_one(f: dict[str, Any]) -> dict[str, Any]:
         code = f["code"]
         latest_snapshot = snapshot_map.get(code)
 
@@ -85,7 +88,7 @@ async def funds_overview(conn: sqlite3.Connection = Depends(get_request_conn)) -
 
 
 @router.get("/api/funds/search")
-async def search_funds(q: str = "") -> dict:
+async def search_funds(q: str = "") -> dict[str, Any]:
     """Search funds by name or code keyword via eastmoney."""
     q = q.strip()
     if not q:
@@ -97,21 +100,21 @@ async def search_funds(q: str = "") -> dict:
     except Exception as exc:
         raise HTTPException(
             status_code=502, detail=f"基金搜索源（eastmoney）请求失败: {exc}"
-        )
+        ) from exc
     return {"results": results}
 
 
 @router.post("/api/funds/batch")
 async def add_funds_batch(
     payload: BatchFundsPayload, conn: sqlite3.Connection = Depends(get_request_conn)
-) -> dict:
+) -> dict[str, Any]:
     return await import_funds_batch(conn, payload)
 
 
 @router.post("/api/funds/{code}")
 async def add_fund(
     code: str, conn: sqlite3.Connection = Depends(get_request_conn)
-) -> dict:
+) -> dict[str, Any]:
     """Add a fund to the global registry (watchlist).
 
     Position data lives in /api/funds/batch.
@@ -147,7 +150,7 @@ def delete_fund(
     code: str,
     portfolio_id: int | None = Query(default=None),
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     """Remove a fund from the watchlist."""
     code = validate_code(code)
     if not funds_repo.get_fund(conn, code):
@@ -171,21 +174,21 @@ def delete_fund(
 
 
 @router.get("/api/funds/{code}/holdings")
-async def get_fund_holdings(code: str) -> dict:
+async def get_fund_holdings(code: str) -> dict[str, Any]:
     code = validate_code(code)
     holdings = await fetch_502(fetch_fund_holdings(code))
     return {"code": code, "count": len(holdings), "holdings": holdings}
 
 
 @router.get("/api/funds/{code}/detail")
-async def get_fund_detail(code: str) -> dict:
+async def get_fund_detail(code: str) -> dict[str, Any]:
     """Comprehensive fund detail: manager, size, period returns, asset allocation."""
     code = validate_code(code)
     return await fetch_502(fetch_fund_detail(code))
 
 
 @router.get("/api/funds/{code}/nav-history")
-async def get_nav_history(code: str, limit: int = 365) -> dict:
+async def get_nav_history(code: str, limit: int = 365) -> dict[str, Any]:
     """Historical NAV data for charting."""
     code = validate_code(code)
     limit = max(1, min(limit, 1000))
@@ -194,12 +197,14 @@ async def get_nav_history(code: str, limit: int = 365) -> dict:
 
 
 @router.get("/api/funds/{code}/nav-on")
-async def get_nav_on_date(code: str, date: str) -> dict:
+async def get_nav_on_date(code: str, date: str) -> dict[str, Any]:
     """Return the NAV for a specific date (YYYY-MM-DD)."""
     code = validate_code(code)
     try:
         datetime.strptime(date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="date 必须是有效的 YYYY-MM-DD 日期")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="date 必须是有效的 YYYY-MM-DD 日期"
+        ) from exc
     nav = await fetch_502(fetch_nav_on_date(code, date))
     return {"code": code, "date": date, "nav": nav}

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime
+from typing import Any
 
 
 def insert(
@@ -26,8 +27,8 @@ def insert(
         raise ValueError(f"invalid fund code: {code}")
     try:
         datetime.strptime(trade_date, "%Y-%m-%d")
-    except ValueError:
-        raise ValueError(f"invalid trade_date: {trade_date}")
+    except ValueError as exc:
+        raise ValueError(f"invalid trade_date: {trade_date}") from exc
     conn.execute(
         "INSERT INTO transactions"
         "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
@@ -48,7 +49,9 @@ def insert(
     )
 
 
-def list_by_code(conn: sqlite3.Connection, portfolio_id: int, code: str) -> list[dict]:
+def list_by_code(
+    conn: sqlite3.Connection, portfolio_id: int, code: str
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT * FROM transactions"
         " WHERE portfolio_id=? AND code=? ORDER BY trade_date DESC, id DESC",
@@ -59,7 +62,7 @@ def list_by_code(conn: sqlite3.Connection, portfolio_id: int, code: str) -> list
 
 def list_shares_by_direction(
     conn: sqlite3.Connection, portfolio_id: int, code: str
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """direction+shares rows for a (portfolio, code), used to net the holding."""
     rows = conn.execute(
         "SELECT direction, shares FROM transactions WHERE portfolio_id=? AND code=?",
@@ -68,7 +71,9 @@ def list_shares_by_direction(
     return [dict(r) for r in rows]
 
 
-def list_for_pnl(conn: sqlite3.Connection, portfolio_id: int, code: str) -> list[dict]:
+def list_for_pnl(
+    conn: sqlite3.Connection, portfolio_id: int, code: str
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT direction, nav, shares, amount, fee FROM transactions"
         " WHERE portfolio_id=? AND code=? ORDER BY trade_date",
@@ -79,7 +84,7 @@ def list_for_pnl(conn: sqlite3.Connection, portfolio_id: int, code: str) -> list
 
 def list_for_pnl_bulk(
     conn: sqlite3.Connection, portfolio_id: int, codes: list[str]
-) -> dict[str, list[dict]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Grouped transaction rows for P&L, one query for the whole batch."""
     if not codes:
         return {}
@@ -89,13 +94,15 @@ def list_for_pnl_bulk(
         f" WHERE portfolio_id=? AND code IN ({placeholders}) ORDER BY trade_date",
         (portfolio_id, *codes),
     ).fetchall()
-    grouped: dict[str, list[dict]] = {c: [] for c in codes}
+    grouped: dict[str, list[dict[str, Any]]] = {c: [] for c in codes}
     for r in rows:
         grouped[r["code"]].append(dict(r))
     return grouped
 
 
-def list_for_portfolio(conn: sqlite3.Connection, portfolio_id: int) -> list[dict]:
+def list_for_portfolio(
+    conn: sqlite3.Connection, portfolio_id: int
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT code, direction, trade_date, shares"
         " FROM transactions WHERE portfolio_id=? ORDER BY trade_date ASC",
@@ -104,7 +111,7 @@ def list_for_portfolio(conn: sqlite3.Connection, portfolio_id: int) -> list[dict
     return [dict(r) for r in rows]
 
 
-def get(conn: sqlite3.Connection, tx_id: int) -> dict | None:
+def get(conn: sqlite3.Connection, tx_id: int) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT code, portfolio_id, direction, shares FROM transactions WHERE id=?",
         (tx_id,),
@@ -147,10 +154,11 @@ def count_bulk_for_codes(conn: sqlite3.Connection, codes: list[str]) -> dict[str
 def count_for_portfolio_code(
     conn: sqlite3.Connection, portfolio_id: int, code: str
 ) -> int:
-    return conn.execute(
+    row = conn.execute(
         "SELECT COUNT(*) as c FROM transactions WHERE portfolio_id=? AND code=?",
         (portfolio_id, code),
-    ).fetchone()["c"]
+    ).fetchone()
+    return int(row["c"])
 
 
 def find_duplicate(

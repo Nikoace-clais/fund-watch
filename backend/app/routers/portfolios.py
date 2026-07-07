@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,14 +20,16 @@ class PortfolioPayload(BaseModel):
 
 
 @router.get("/api/portfolios")
-def list_portfolios(conn: sqlite3.Connection = Depends(get_request_conn)) -> dict:
+def list_portfolios(
+    conn: sqlite3.Connection = Depends(get_request_conn),
+) -> dict[str, Any]:
     return {"items": portfolios_repo.list_all(conn)}
 
 
 @router.post("/api/portfolios")
 def create_portfolio(
     payload: PortfolioPayload, conn: sqlite3.Connection = Depends(get_request_conn)
-) -> dict:
+) -> dict[str, Any]:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="组合名称不能为空")
@@ -40,7 +43,7 @@ def rename_portfolio(
     portfolio_id: int,
     payload: PortfolioPayload,
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="组合名称不能为空")
@@ -53,7 +56,7 @@ def rename_portfolio(
 @router.delete("/api/portfolios/{portfolio_id}")
 def delete_portfolio(
     portfolio_id: int, conn: sqlite3.Connection = Depends(get_request_conn)
-) -> dict:
+) -> dict[str, Any]:
     if not portfolios_repo.exists(conn, portfolio_id):
         raise HTTPException(status_code=404, detail="组合不存在")
     positions_repo.delete_all_for_portfolio(conn, portfolio_id)

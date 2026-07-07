@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from ..core import CST
 from ..db import get_conn, prune_old_snapshots
@@ -13,7 +14,7 @@ from ..repositories import funds_repo, snapshot_repo
 
 logger = logging.getLogger(__name__)
 
-cron_state: dict = {
+cron_state: dict[str, Any] = {
     "last_pull_at": None,
     "pull_count": 0,
     "last_error": None,
@@ -37,14 +38,14 @@ def in_trading_hours() -> bool:
     return morning or afternoon
 
 
-async def pull_all_snapshots() -> dict:
+async def pull_all_snapshots() -> dict[str, Any]:
     """Fetch realtime estimates for every watched fund and persist them."""
     with get_conn() as conn:
         codes = funds_repo.list_codes(conn)
 
     captured_at = datetime.now(timezone.utc).isoformat()
 
-    async def _safe_fetch(code: str) -> tuple[str, dict | None]:
+    async def _safe_fetch(code: str) -> tuple[str, dict[str, Any] | None]:
         try:
             return code, await fetch_realtime_estimate(code)
         except Exception:

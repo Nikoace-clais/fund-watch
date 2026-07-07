@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 from fastapi import APIRouter, Depends
 
@@ -21,13 +22,13 @@ router = APIRouter(tags=["quotes"])
 
 
 @router.get("/api/quote/{code}")
-async def quote(code: str) -> dict:
+async def quote(code: str) -> dict[str, Any]:
     code = validate_code(code)
     return await fetch_502(fetch_realtime_estimate(code))
 
 
 @router.post("/api/snapshots/pull")
-async def pull_snapshots() -> dict:
+async def pull_snapshots() -> dict[str, Any]:
     return await pull_all_snapshots()
 
 
@@ -36,7 +37,7 @@ def get_snapshots(
     code: str,
     limit: int = 50,
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     code = validate_code(code)
     limit = max(1, min(limit, 500))
     items = snapshot_repo.list_by_code(conn, code, limit)
@@ -45,7 +46,7 @@ def get_snapshots(
 
 
 @router.get("/api/cron/status")
-def cron_status() -> dict:
+def cron_status() -> dict[str, Any]:
     """Return the snapshot scheduler state."""
     return {
         "interval_minutes": PULL_INTERVAL_MINUTES,

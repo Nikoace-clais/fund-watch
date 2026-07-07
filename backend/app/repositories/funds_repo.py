@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 
-def list_funds(conn: sqlite3.Connection) -> list[dict]:
+def list_funds(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT code, name, sector, created_at FROM funds ORDER BY created_at DESC"
     ).fetchall()
@@ -17,7 +18,7 @@ def list_codes(conn: sqlite3.Connection) -> list[str]:
     return [r["code"] for r in rows]
 
 
-def get_fund(conn: sqlite3.Connection, code: str) -> dict | None:
+def get_fund(conn: sqlite3.Connection, code: str) -> dict[str, Any] | None:
     row = conn.execute(
         "SELECT code, name, sector, created_at FROM funds WHERE code=?", (code,)
     ).fetchone()

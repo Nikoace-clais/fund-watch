@@ -72,13 +72,23 @@ select = [
     "I",   # isort
     "N",   # pep8-naming
     "W",   # pycodestyle warnings
+    "B",   # flake8-bugbear
 ]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's Depends()/File() default-arg pattern is idiomatic, not a mutable-default bug.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+# No type stubs published for paddleocr (types-paddleocr doesn't exist on PyPI).
+module = "paddleocr"
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

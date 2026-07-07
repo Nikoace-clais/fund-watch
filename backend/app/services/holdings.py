@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import sqlite3
 from decimal import Decimal
+from typing import Any
 
 from ..repositories import positions_repo, tx_repo
 
 
-def _net_shares(rows: list[dict]) -> Decimal:
+def _net_shares(rows: list[dict[str, Any]]) -> Decimal:
     holding = Decimal("0")
     for r in rows:
         s = Decimal(r["shares"])
@@ -39,8 +40,8 @@ def compute_pnl(
     portfolio_id: int,
     code: str,
     current_nav: str | None = None,
-    rows: list[dict] | None = None,
-) -> dict:
+    rows: list[dict[str, Any]] | None = None,
+) -> dict[str, str | None]:
     """Compute full P&L (realized + unrealized) for a (portfolio_id, code) position.
 
     Pass `rows` (e.g. from tx_repo.list_for_pnl_bulk) when the caller already

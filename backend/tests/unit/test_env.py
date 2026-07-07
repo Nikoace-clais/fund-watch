@@ -1,14 +1,14 @@
 """Test environment setup."""
 
 
-def test_uv_environment():
+def test_uv_environment() -> None:
     """Verify we're running in a virtual environment (uv-managed)."""
     import sys
 
     assert sys.prefix != sys.base_prefix
 
 
-def test_imports_work():
+def test_imports_work() -> None:
     """Verify all dependencies can be imported."""
     import fastapi
     import httpx
@@ -19,7 +19,7 @@ def test_imports_work():
     assert httpx.__version__
 
 
-def test_project_structure_exists():
+def test_project_structure_exists() -> None:
     """Verify new project structure is in place."""
     from pathlib import Path
 

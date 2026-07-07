@@ -8,6 +8,7 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
@@ -30,7 +31,7 @@ def list_transactions(
     code: str,
     portfolio_id: int | None = Query(default=None),
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     code = validate_code(code)
     pf_id = resolve_portfolio(conn, portfolio_id)
     items = tx_repo.list_by_code(conn, pf_id, code)
@@ -42,7 +43,7 @@ def add_transaction(
     code: str,
     payload: AddTransactionPayload,
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     code = validate_code(code)
     pf_id = resolve_portfolio(conn, payload.portfolio_id)
 
@@ -53,17 +54,17 @@ def add_transaction(
         raise HTTPException(status_code=400, detail="trade_date must be YYYY-MM-DD")
     try:
         datetime.strptime(payload.trade_date, "%Y-%m-%d")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="trade_date 不是有效日期")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="trade_date 不是有效日期") from exc
 
     try:
         nav_d = Decimal(payload.nav)
         shares_d = Decimal(payload.shares)
         fee_d = Decimal(payload.fee)
-    except InvalidOperation:
+    except InvalidOperation as exc:
         raise HTTPException(
             status_code=400, detail="invalid numeric value for nav/shares/fee"
-        )
+        ) from exc
 
     if nav_d <= 0 or shares_d <= 0 or fee_d < 0:
         raise HTTPException(
@@ -105,7 +106,7 @@ def add_transaction(
 @router.delete("/api/transactions/{tx_id}")
 def delete_transaction(
     tx_id: int, conn: sqlite3.Connection = Depends(get_request_conn)
-) -> dict:
+) -> dict[str, Any]:
     row = tx_repo.get(conn, tx_id)
     if not row:
         raise HTTPException(status_code=404, detail="transaction not found")
@@ -129,7 +130,7 @@ async def get_pnl(
     code: str,
     portfolio_id: int | None = Query(default=None),
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     code = validate_code(code)
     pf_id = resolve_portfolio(conn, portfolio_id)
     current_nav = None
@@ -152,7 +153,7 @@ async def import_csv(
     file: UploadFile = File(...),
     portfolio_id: int | None = Query(default=None),
     conn: sqlite3.Connection = Depends(get_request_conn),
-) -> dict:
+) -> dict[str, Any]:
     pf_id = resolve_portfolio(conn, portfolio_id)
     content = (await file.read()).decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(content))

@@ -9,9 +9,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from .core import UPLOAD_DIR
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     warm_up_ocr()  # start PaddleOCR model download in background thread
@@ -81,7 +82,9 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def log_requests(request: Request, call_next):
+async def log_requests(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     t0 = time.perf_counter()
     response = await call_next(request)
     elapsed = time.perf_counter() - t0

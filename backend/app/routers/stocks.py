@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 from fastapi import APIRouter, HTTPException
 
@@ -12,7 +14,7 @@ router = APIRouter(tags=["stocks"])
 
 
 @router.get("/api/stocks/{code}/funds")
-async def funds_holding_stock(code: str, limit: int = 50) -> dict:
+async def funds_holding_stock(code: str, limit: int = 50) -> dict[str, Any]:
     """List public funds that hold *code* (6-digit stock code), by position value."""
     # ponytail: validate_code 复用,股票代码同为 6 位数字
     code = validate_code(code)

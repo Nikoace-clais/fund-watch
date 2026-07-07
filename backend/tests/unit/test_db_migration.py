@@ -7,7 +7,9 @@ these two steps would silently discard un-migrated holdings.
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 
+import pytest
 from app.db import init_db
 
 
@@ -39,7 +41,9 @@ def _seed_legacy_db(db_path: str) -> None:
     conn.close()
 
 
-def test_legacy_holdings_survive_column_drop(tmp_path, monkeypatch):
+def test_legacy_holdings_survive_column_drop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import app.db as app_db
 
     db_path = tmp_path / "legacy.db"
@@ -53,16 +57,20 @@ def test_legacy_holdings_survive_column_drop(tmp_path, monkeypatch):
         assert cols == {"code", "name", "created_at", "sector"}
 
         pos = conn.execute(
-            "SELECT holding_shares, imported_holding_amount FROM positions WHERE code=?",
+            "SELECT holding_shares, imported_holding_amount "
+            "FROM positions WHERE code=?",
             ("110011",),
         ).fetchone()
         assert pos["holding_shares"] == "1000.00"
         assert pos["imported_holding_amount"] == 5000.0
 
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == app_db.SCHEMA_VERSION
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        assert version == app_db.SCHEMA_VERSION
 
 
-def test_fresh_install_ends_with_no_legacy_columns(tmp_path, monkeypatch):
+def test_fresh_install_ends_with_no_legacy_columns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import app.db as app_db
 
     monkeypatch.setattr(app_db, "DB_PATH", tmp_path / "fresh.db")

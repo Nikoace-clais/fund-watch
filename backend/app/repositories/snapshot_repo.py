@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import Any
 
 
-def latest_bulk(conn: sqlite3.Connection, codes: list[str]) -> dict[str, dict]:
+def latest_bulk(
+    conn: sqlite3.Connection, codes: list[str]
+) -> dict[str, dict[str, Any]]:
     """Latest snapshot per code, one query for the whole batch (no N+1)."""
     if not codes:
         return {}
@@ -39,7 +42,9 @@ def insert(
     )
 
 
-def list_by_code(conn: sqlite3.Connection, code: str, limit: int) -> list[dict]:
+def list_by_code(
+    conn: sqlite3.Connection, code: str, limit: int
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT code,name,dwjz,gsz,gszzl,gztime,captured_at

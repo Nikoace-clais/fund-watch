@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -14,7 +15,7 @@ router = APIRouter(tags=["market"])
 
 
 @router.get("/api/market/indices")
-async def market_indices() -> dict:
+async def market_indices() -> dict[str, Any]:
     """Major domestic and overseas market indices from Sina Finance."""
     try:
         items = await fetch_market_indices()

@@ -52,7 +52,9 @@ class TestFunds:
 
     def test_batch_route_not_shadowed_by_code_route(self, app_client):
         # "batch" must hit the batch endpoint, not be parsed as a fund code
-        resp = app_client.post("/api/funds/batch", json={"codes": ["badcode"], "funds": []})
+        resp = app_client.post(
+            "/api/funds/batch", json={"codes": ["badcode"], "funds": []}
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
@@ -130,28 +132,54 @@ class TestTransactions:
     def test_sell_more_than_holding_rejected(self, app_client):
         _add_fund(app_client)
         app_client.post("/api/portfolios", json={"name": "组合A"})
-        app_client.post("/api/funds/110011/transactions", json={
-            "direction": "buy", "trade_date": "2026-06-01", "nav": "1.5", "shares": "100",
-        })
-        resp = app_client.post("/api/funds/110011/transactions", json={
-            "direction": "sell", "trade_date": "2026-06-02", "nav": "1.6", "shares": "200",
-        })
+        app_client.post(
+            "/api/funds/110011/transactions",
+            json={
+                "direction": "buy",
+                "trade_date": "2026-06-01",
+                "nav": "1.5",
+                "shares": "100",
+            },
+        )
+        resp = app_client.post(
+            "/api/funds/110011/transactions",
+            json={
+                "direction": "sell",
+                "trade_date": "2026-06-02",
+                "nav": "1.6",
+                "shares": "200",
+            },
+        )
         assert resp.status_code == 400
 
     def test_transaction_for_missing_fund_404(self, app_client):
-        resp = app_client.post("/api/funds/123456/transactions", json={
-            "direction": "buy", "trade_date": "2026-06-01", "nav": "1.5", "shares": "100",
-        })
+        resp = app_client.post(
+            "/api/funds/123456/transactions",
+            json={
+                "direction": "buy",
+                "trade_date": "2026-06-01",
+                "nav": "1.5",
+                "shares": "100",
+            },
+        )
         assert resp.status_code == 404
 
     def test_delete_transaction(self, app_client):
         _add_fund(app_client)
         app_client.post("/api/portfolios", json={"name": "组合A"})
-        buy_resp = app_client.post("/api/funds/110011/transactions", json={
-            "direction": "buy", "trade_date": "2026-06-01", "nav": "1.5", "shares": "100",
-        })
+        buy_resp = app_client.post(
+            "/api/funds/110011/transactions",
+            json={
+                "direction": "buy",
+                "trade_date": "2026-06-01",
+                "nav": "1.5",
+                "shares": "100",
+            },
+        )
         pf_id = buy_resp.json()["portfolio_id"]
-        tx_id = app_client.get("/api/funds/110011/transactions").json()["items"][0]["id"]
+        tx_id = app_client.get("/api/funds/110011/transactions").json()["items"][0][
+            "id"
+        ]
         resp = app_client.delete(f"/api/transactions/{tx_id}")
         assert resp.status_code == 200
         # After deletion, holding_shares should be NULL in positions

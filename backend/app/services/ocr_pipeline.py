@@ -13,7 +13,7 @@ import re as _re
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 from uuid import uuid4
 
 from fastapi.concurrency import run_in_threadpool
@@ -65,13 +65,15 @@ def _share_class(name: str) -> str:
     return m.group(1) if m else ""
 
 
-def _pick_best(ocr_name: str, candidates: list[dict]) -> dict | None:
+def _pick_best(
+    ocr_name: str, candidates: list[dict[str, Any]]
+) -> dict[str, Any] | None:
     """Highest similarity to ocr_name; boost matching share class by 0.15."""
     if not candidates:
         return None
     want_cls = _share_class(ocr_name)
 
-    def _score(c: dict) -> float:
+    def _score(c: dict[str, Any]) -> float:
         base = SequenceMatcher(None, ocr_name, c.get("name", "")).ratio()
         cls_match = want_cls and _share_class(c.get("name", "")) == want_cls
         return base + (0.15 if cls_match else 0.0)
@@ -79,12 +81,12 @@ def _pick_best(ocr_name: str, candidates: list[dict]) -> dict | None:
     return max(candidates, key=_score)
 
 
-async def _resolve_fund_by_name(ocr_name: str) -> dict | None:
+async def _resolve_fund_by_name(ocr_name: str) -> dict[str, Any] | None:
     """Search eastmoney for ocr_name; fall back to normalized prefix on miss.
 
     Returns {code, name, type, similarity} or None.
     """
-    cands: list[dict] = []
+    cands: list[dict[str, Any]] = []
     try:
         cands = await search_fund_by_name(ocr_name, limit=5)
     except Exception as exc:
@@ -120,7 +122,7 @@ def build_cfg(
     base_url: str | None,
     model: str | None,
     review_model: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     resolved = api_key or (
         os.environ.get("ANTHROPIC_API_KEY") if provider == "anthropic" else None
     ) or ""
@@ -140,7 +142,7 @@ def ai_error(exc: Exception) -> str:
     return msg
 
 
-async def _resolve_code(code: str) -> dict | None:
+async def _resolve_code(code: str) -> dict[str, Any] | None:
     """Verify a 6-digit candidate against the fund search source.
 
     Drops codes the source doesn't recognise (guards against hallucination).
@@ -162,10 +164,10 @@ def _sse(type_: str, **kwargs: object) -> str:
 
 async def ocr_fund_generator(
     files_data: list[tuple[str, bytes]],  # [(filename, bytes), ...]
-    cfg: dict,
+    cfg: dict[str, Any],
 ) -> AsyncGenerator[str, None]:
     """Async generator yielding SSE events for the fund OCR pipeline."""
-    all_funds: list[dict] = []
+    all_funds: list[dict[str, Any]] = []
     all_raw_texts: list[str] = []
     seen_keys: set[str] = set()
 
@@ -209,7 +211,7 @@ async def ocr_fund_generator(
     log.info("分类结果: 有代码=%d 仅名称=%d", len(code_funds), len(name_funds))
 
     # ── Verify code funds ────────────────────────────────────────────────
-    matched_funds: list[dict] = []
+    matched_funds: list[dict[str, Any]] = []
     codes: list[str] = []
     truncated: list[str] = []
     if code_funds:
@@ -221,7 +223,7 @@ async def ocr_fund_generator(
         infos = await asyncio.gather(
             *[_resolve_code(f["code"]) for f in code_funds[:_VERIFY_LIMIT]]
         )
-        for item, info in zip(code_funds[:_VERIFY_LIMIT], infos):
+        for item, info in zip(code_funds[:_VERIFY_LIMIT], infos, strict=False):
             if info is None:
                 log.info("代码验证失败(幻觉?): %s", item["code"])
                 continue
@@ -234,8 +236,8 @@ async def ocr_fund_generator(
             })
 
     # ── Resolve name-only funds via search ───────────────────────────────
-    name_matches: list[dict] = []
-    no_hit: list[dict] = []
+    name_matches: list[dict[str, Any]] = []
+    no_hit: list[dict[str, Any]] = []
 
     if name_funds:
         yield _sse(
@@ -278,7 +280,7 @@ async def ocr_fund_generator(
             full_name: str = hint["full_name"]
             pro_code: str | None = hint["code"]
 
-            verified: dict | None = None
+            verified: dict[str, Any] | None = None
             if pro_code:
                 verified = await _resolve_code(pro_code)
                 if verified:
@@ -380,7 +382,7 @@ async def ocr_fund_generator(
         )
         conn.commit()
 
-    result_data: dict = {
+    result_data: dict[str, Any] = {
         "ok": True,
         "image": image_names,
         "matched_codes": codes,

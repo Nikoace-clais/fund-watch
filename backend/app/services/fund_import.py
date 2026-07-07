@@ -9,6 +9,7 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 async def import_funds_batch(
     conn: sqlite3.Connection, payload: BatchFundsPayload
-) -> dict:
+) -> dict[str, Any]:
     """Resolve and persist a batch of funds; returns the API response payload."""
     # ponytail: writes are interleaved with several awaited HTTP calls below,
     # so the request-scoped connection's write transaction stays open longer
@@ -91,9 +92,10 @@ async def import_funds_batch(
         else:
             unresolved.append(str(item.code or item.name or "unknown"))
 
-    extra: dict[str, BatchFundItem] = {
-        item.code.strip(): item for item in resolved_items
-    }  # type: ignore[union-attr]
+    extra: dict[str, BatchFundItem] = {}
+    for item in resolved_items:
+        assert item.code is not None
+        extra[item.code.strip()] = item
     all_codes: list[str] = list(extra.keys())
     for c in payload.codes:
         c = c.strip()
@@ -134,7 +136,7 @@ async def import_funds_batch(
     actually_added: list[str] = []
     for code in valid:
         name, sector = fund_info_map.get(code, (None, None))
-        item = extra.get(code)
+        entry = extra.get(code)
 
         if not funds_repo.get_fund(conn, code) and not name:
             invalid.append(code)
@@ -149,18 +151,18 @@ async def import_funds_batch(
             now,
             amount=float(amt) if amt is not None else None,
             imported_holding_amount=(
-                float(item.holding_amount)
-                if item and item.holding_amount is not None
+                float(entry.holding_amount)
+                if entry and entry.holding_amount is not None
                 else None
             ),
             imported_cumulative_return=(
-                float(item.cumulative_return)
-                if item and item.cumulative_return is not None
+                float(entry.cumulative_return)
+                if entry and entry.cumulative_return is not None
                 else None
             ),
             imported_holding_return=(
-                float(item.holding_return)
-                if item and item.holding_return is not None
+                float(entry.holding_return)
+                if entry and entry.holding_return is not None
                 else None
             ),
         )
@@ -171,15 +173,17 @@ async def import_funds_batch(
     nav_skipped: list[str] = []
     candidates: list[tuple[str, Decimal]] = []
     for code in actually_added:
-        item = extra.get(code)
-        if not item or item.holding_amount is None or item.holding_amount <= 0:
+        entry = extra.get(code)
+        if not entry or entry.holding_amount is None or entry.holding_amount <= 0:
             continue
         if tx_repo.count_for_portfolio_code(conn, pf_id, code) > 0:
             nav_skipped.append(f"{code}（已有交易记录，跳过）")
             continue
-        candidates.append((code, item.holding_amount))
+        candidates.append((code, entry.holding_amount))
 
-    async def _safe_fetch_nav(code: str) -> tuple[str, dict | None, Exception | None]:
+    async def _safe_fetch_nav(
+        code: str,
+    ) -> tuple[str, dict[str, Any] | None, Exception | None]:
         try:
             return code, await fetch_latest_nav(code), None
         except Exception as e:

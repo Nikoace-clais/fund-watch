@@ -9,6 +9,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from ..core import CST
 from ..fund_source import (
@@ -23,7 +24,7 @@ from .stock_industry_service import get_stock_industries
 logger = logging.getLogger(__name__)
 
 
-async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict:
+async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any]:
     """Aggregated portfolio stats: current value, cost, P&L, per-fund breakdown."""
     funds = positions_repo.list_holdings_with_shares(conn, pf_id)
 
@@ -35,12 +36,12 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict:
         if f.get("holding_shares") and Decimal(f["holding_shares"]) > 0
     ]
     tx_rows_by_code = tx_repo.list_for_pnl_bulk(conn, pf_id, codes)
-    pnl_map: dict[str, dict] = {
+    pnl_map: dict[str, dict[str, Any]] = {
         code: compute_pnl(conn, pf_id, code, rows=tx_rows_by_code.get(code, []))
         for code in codes
     }
 
-    async def _fetch_fund_item(f: dict) -> dict | None:
+    async def _fetch_fund_item(f: dict[str, Any]) -> dict[str, Any] | None:
         code = f["code"]
         shares = Decimal(f["holding_shares"]) if f["holding_shares"] else Decimal("0")
         if shares <= 0:
@@ -89,7 +90,7 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict:
         time.perf_counter() - t0,
     )
 
-    items: list[dict] = []
+    items: list[dict[str, Any]] = []
     total_current = Decimal("0")
     total_cost = Decimal("0")
     total_current_with_cost = Decimal("0")
@@ -108,7 +109,7 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict:
 
     notx_funds = positions_repo.list_imported_positions(conn, pf_id)
 
-    async def _fetch_notx(f: dict) -> dict:
+    async def _fetch_notx(f: dict[str, Any]) -> dict[str, Any]:
         code = f["code"]
         amount = Decimal(str(f["holding_amount"]))
         daily_change = Decimal("0")
@@ -180,14 +181,16 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict:
     }
 
 
-async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict:
+async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any]:
     """Stock-level X-ray: aggregate top-10 holdings across portfolio funds."""
     summary = await compute_summary(conn, pf_id)
-    items: list[dict] = summary.get("items", [])
+    items: list[dict[str, Any]] = summary.get("items", [])
 
     active = [it for it in items if it.get("current_value")]
 
-    async def _fetch(fund: dict) -> tuple[dict, list[dict]]:
+    async def _fetch(
+        fund: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         try:
             h = await fetch_fund_holdings(fund["code"])
         except Exception:
@@ -196,7 +199,7 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict:
 
     pairs = await asyncio.gather(*[_fetch(f) for f in active])
 
-    agg: dict[str, dict] = {}
+    agg: dict[str, dict[str, Any]] = {}
     coverage: dict[str, float] = {}
 
     for fund, holdings in pairs:
@@ -255,7 +258,7 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict:
             }
             for v in agg.values()
         ],
-        key=lambda x: float(x["exposure"]),  # type: ignore[arg-type]
+        key=lambda x: float(x["exposure"]),
         reverse=True,
     )
 
@@ -287,7 +290,9 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict:
     }
 
 
-async def compute_history(conn: sqlite3.Connection, pf_id: int, limit: int) -> dict:
+async def compute_history(
+    conn: sqlite3.Connection, pf_id: int, limit: int
+) -> dict[str, Any]:
     """Portfolio value history: holdings × NAV per date, plus today's estimate."""
     limit = max(1, min(limit, 365))
 
@@ -295,7 +300,7 @@ async def compute_history(conn: sqlite3.Connection, pf_id: int, limit: int) -> d
     current_holdings = positions_repo.current_holdings(conn, pf_id)
     imported_funds = positions_repo.imported_amounts(conn, pf_id)
 
-    tx_by_code: dict[str, list[dict]] = defaultdict(list)
+    tx_by_code: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for tx in transactions:
         tx_by_code[tx["code"]].append(tx)
 
@@ -400,7 +405,7 @@ async def compute_history(conn: sqlite3.Connection, pf_id: int, limit: int) -> d
         date_totals.setdefault(today, today_total)
 
     sorted_items = sorted(date_totals.items())
-    result: dict = {
+    result: dict[str, Any] = {
         "portfolio_id": pf_id,
         "count": len(sorted_items),
         "history": [

@@ -82,6 +82,7 @@ async def _text_json(
     """
     user_msg = f"{prompt}\n\n---\n{text}"
 
+    client: Any
     if provider == "anthropic":
         import anthropic
 
@@ -129,7 +130,9 @@ async def _text_json(
     try:
         return _parse_json(raw)
     except ValueError:
-        log.warning("AI returned non-JSON (provider=%s model=%s): %r", provider, model, raw)
+        log.warning(
+            "AI returned non-JSON (provider=%s model=%s): %r", provider, model, raw
+        )
         raise
 
 
@@ -172,7 +175,7 @@ _TX_PROMPT = """\
 async def extract_funds_from_text(
     text: str,
     cfg: dict[str, Any],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Return [{code, name, amount}] parsed from OCR text.
 
     code is "" for name-only entries (e.g. Alipay screenshots without codes).
@@ -219,7 +222,7 @@ async def extract_funds_from_text(
 async def extract_transaction_from_text(
     text: str,
     cfg: dict[str, Any],
-) -> dict:
+) -> dict[str, Any]:
     """Return tx_dict parsed from OCR text."""
     result = await _text_json(
         text,
@@ -267,9 +270,9 @@ _IDENTIFY_PROMPT = """\
 
 async def resolve_unknown_fund_names(
     ocr_text: str,
-    unknown: list[dict],
+    unknown: list[dict[str, Any]],
     cfg: dict[str, Any],
-) -> dict[int, dict]:
+) -> dict[int, dict[str, Any]]:
     """Ask Pro model to identify fund name + code for OCR names with no search hit.
 
     unknown items: {index, name}
@@ -300,15 +303,22 @@ async def resolve_unknown_fund_names(
         log.warning("Pro未命中识别失败(%s)", exc)
         return {}
 
-    out: dict[int, dict] = {}
+    out: dict[int, dict[str, Any]] = {}
     for item in (result.get("items") or [] if isinstance(result, dict) else []):
         idx = item.get("index")
         name = (item.get("full_name") or "").strip()
         raw_code = str(item.get("code") or "").strip()
         code = raw_code if is_valid_code(raw_code) else None
         if idx is not None and name:
-            ocr_name = unknown[idx]["name"] if isinstance(idx, int) and idx < len(unknown) else "?"
-            log.info("Pro识别 #%d: 「%s」→ 名称=「%s」代码=%s", idx, ocr_name, name, code or "未知")
+            is_known = isinstance(idx, int) and idx < len(unknown)
+            ocr_name = unknown[idx]["name"] if is_known else "?"
+            log.info(
+                "Pro识别 #%d: 「%s」→ 名称=「%s」代码=%s",
+                idx,
+                ocr_name,
+                name,
+                code or "未知",
+            )
             out[idx] = {"full_name": name, "code": code}
     return out
 
@@ -316,7 +326,8 @@ async def resolve_unknown_fund_names(
 # ── Stage 2: Pro model review ────────────────────────────────────────────────
 
 _REVIEW_PROMPT = """\
-你是基金信息核查员。以下是从 App 截图 OCR 识别出的文字，以及系统对每条基金的初步匹配结果。
+你是基金信息核查员。以下是从 App 截图 OCR 识别出的文字，\
+以及系统对每条基金的初步匹配结果。
 
 请逐条判断：初步匹配的基金是否就是截图里描述的那只基金？
 
@@ -326,7 +337,8 @@ _REVIEW_PROMPT = """\
 
 规则：
 - ok=true：匹配正确，corrected_name 填 null
-- ok=false：匹配错误，corrected_name 填正确基金的**完整中文名称**（不要输出代码，不要输出英文缩写）
+- ok=false：匹配错误，corrected_name 填正确基金的**完整中文名称**\
+（不要输出代码，不要输出英文缩写）
 - 若截图文字不足以判断，填 ok=true（保守策略，不要过度纠正）
 - corrected_name 只输出基金全名，例如「招商中证白酒指数（LOF）A」\
 """
@@ -334,9 +346,9 @@ _REVIEW_PROMPT = """\
 
 async def review_fund_matches(
     ocr_text: str,
-    preliminary: list[dict],
+    preliminary: list[dict[str, Any]],
     cfg: dict[str, Any],
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Stage 2: Pro model verifies preliminary matches and corrects wrong ones.
 
     preliminary items: {index, ocr_name, code, name, ...}
@@ -356,7 +368,8 @@ async def review_fund_matches(
     lines = ["OCR原文：", ocr_text, "", "初步匹配结果："]
     for item in preliminary:
         lines.append(
-            f"#{item['index']} OCR识别名称:「{item['ocr_name']}」→ 匹配为:「{item['name']}」({item['code']})"
+            f"#{item['index']} OCR识别名称:「{item['ocr_name']}」"
+            f"→ 匹配为:「{item['name']}」({item['code']})"
         )
     user_content = "\n".join(lines)
 
@@ -377,30 +390,30 @@ async def review_fund_matches(
             item["review"] = "unreviewed"
         return preliminary
 
-    reviews: list[dict] = []
+    reviews: list[dict[str, Any]] = []
     if isinstance(result, dict):
         reviews = result.get("reviews") or []
 
     idx_map = {item["index"]: item for item in preliminary}
     for rv in reviews:
         idx = rv.get("index")
-        item = idx_map.get(idx)
-        if item is None:
+        entry = idx_map.get(idx)
+        if entry is None:
             continue
         if rv.get("ok"):
-            item["review"] = "confirmed"
-            log.info("Pro核对 #%d: ✓ 确认「%s」(%s)", idx, item["name"], item["code"])
+            entry["review"] = "confirmed"
+            log.info("Pro核对 #%d: ✓ 确认「%s」(%s)", idx, entry["name"], entry["code"])
         else:
             corrected = (rv.get("corrected_name") or "").strip()
             if corrected:
-                item["review"] = "corrected"
-                item["corrected_name"] = corrected
+                entry["review"] = "corrected"
+                entry["corrected_name"] = corrected
                 log.info(
                     "Pro核对 #%d: ✗ 「%s」(%s) → 纠正为「%s」(待搜索)",
-                    idx, item["name"], item["code"], corrected,
+                    idx, entry["name"], entry["code"], corrected,
                 )
             else:
-                item["review"] = "confirmed"  # no correction offered → keep
+                entry["review"] = "confirmed"  # no correction offered → keep
     # Fill any not returned by model
     for item in preliminary:
         if "review" not in item:
@@ -414,7 +427,7 @@ if __name__ == "__main__":
     # _parse_json self-check
     try:
         _parse_json("")
-        assert False, "空串应抛出 ValueError"
+        raise AssertionError("空串应抛出 ValueError")
     except ValueError as e:
         assert "空响应" in str(e), e
 

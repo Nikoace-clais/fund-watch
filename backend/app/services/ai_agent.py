@@ -130,7 +130,9 @@ async def _dispatch(tc: _TC, store: dict[str, dict[str, Any]]) -> Any:
 # ── Merge LLM rankings with accumulated store ─────────────────────────────────
 
 
-def _merge(rankings: list[dict], store: dict[str, dict]) -> list[dict]:
+def _merge(
+    rankings: list[dict[str, Any]], store: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
     recs = []
     for r in rankings:
         m = store.get(r["code"], {})
@@ -257,14 +259,14 @@ _P_REC: dict[str, Any] = {
 }
 
 
-def _oai_tool(name: str, desc: str, params: dict) -> dict[str, Any]:
+def _oai_tool(name: str, desc: str, params: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "function",
         "function": {"name": name, "description": desc, "parameters": params},
     }
 
 
-def _ant_tool(name: str, desc: str, params: dict) -> dict[str, Any]:
+def _ant_tool(name: str, desc: str, params: dict[str, Any]) -> dict[str, Any]:
     return {"name": name, "description": desc, "input_schema": params}
 
 
@@ -290,8 +292,8 @@ _ANALYSIS_ANT: list[dict[str, Any]] = [
 
 
 async def _call_oai(
-    messages: list,
-    tools: list,
+    messages: list[Any],
+    tools: list[Any],
     api_key: str,
     base_url: str | None,
     model: str | None,
@@ -308,20 +310,23 @@ async def _call_oai(
     )
     msg = resp.choices[0].message
     u = resp.usage
+    # We only ever declare function-type tools (see _oai_tool), so every
+    # tool_call the model returns is the function variant, not the custom one.
+    fn_calls = [tc for tc in (msg.tool_calls or []) if tc.type == "function"]
     logger.debug(
         "[oai] cache_hit=%s cache_miss=%s output=%s content=%s tool_calls=%s",
         getattr(u, "prompt_cache_hit_tokens", None),
         getattr(u, "prompt_cache_miss_tokens", None),
         u.completion_tokens if u else None,
         msg.content,
-        [tc.function.name for tc in (msg.tool_calls or [])],
+        [tc.function.name for tc in fn_calls],
     )
     tcs = [
         _TC(id=tc.id, name=tc.function.name, args=extract_json(tc.function.arguments))
-        for tc in (msg.tool_calls or [])
+        for tc in fn_calls
     ]
     asst: dict[str, Any] = {"role": "assistant", "content": msg.content}
-    if msg.tool_calls:
+    if fn_calls:
         asst["tool_calls"] = [
             {
                 "id": tc.id,
@@ -331,14 +336,14 @@ async def _call_oai(
                     "arguments": tc.function.arguments,
                 },
             }
-            for tc in msg.tool_calls
+            for tc in fn_calls
         ]
     return asst, tcs
 
 
 async def _call_ant(
-    messages: list,
-    tools: list,
+    messages: list[Any],
+    tools: list[Any],
     api_key: str,
     model: str | None,
     system: str | None = None,
@@ -362,9 +367,11 @@ async def _call_ant(
     return resp.content, tcs
 
 
-def _append_oai(messages: list, asst: dict, tcs: list[_TC], results: list) -> list:
+def _append_oai(
+    messages: list[Any], asst: dict[str, Any], tcs: list[_TC], results: list[Any]
+) -> list[Any]:
     messages.append(asst)
-    for tc, r in zip(tcs, results):
+    for tc, r in zip(tcs, results, strict=False):
         messages.append(
             {
                 "role": "tool",
@@ -375,7 +382,9 @@ def _append_oai(messages: list, asst: dict, tcs: list[_TC], results: list) -> li
     return messages
 
 
-def _append_ant(messages: list, content: Any, tcs: list[_TC], results: list) -> list:
+def _append_ant(
+    messages: list[Any], content: Any, tcs: list[_TC], results: list[Any]
+) -> list[Any]:
     messages.append({"role": "assistant", "content": content})
     messages.append(
         {
@@ -386,7 +395,7 @@ def _append_ant(messages: list, content: Any, tcs: list[_TC], results: list) -> 
                     "tool_use_id": tc.id,
                     "content": json.dumps(r, ensure_ascii=False),
                 }
-                for tc, r in zip(tcs, results)
+                for tc, r in zip(tcs, results, strict=False)
             ],
         }
     )
@@ -449,7 +458,7 @@ def _review_msg(initial: dict[str, Any]) -> str:
 async def _single_call(
     system: str,
     user: str,
-    tools: list,
+    tools: list[Any],
     is_oai: bool,
     api_key: str,
     base_url: str | None,
@@ -548,7 +557,7 @@ async def _agent_loop_inner(
         results = await asyncio.gather(*[_dispatch(tc, store) for tc in tcs])
 
         finished = False
-        for tc, res in zip(tcs, results):
+        for tc, res in zip(tcs, results, strict=False):
             yield _step(_step_text(tc, res))
             if tc.name == "finish_research":
                 finished = True

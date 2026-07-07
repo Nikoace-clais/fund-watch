@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
@@ -18,7 +20,7 @@ router = APIRouter(tags=["ocr"])
 
 
 @router.get("/api/ocr/status")
-def ocr_status() -> dict:
+def ocr_status() -> dict[str, Any]:
     return {"ready": is_ready()}
 
 
@@ -48,7 +50,7 @@ async def ocr_transaction(
     api_key: str | None = Form(None),
     base_url: str | None = Form(None),
     model: str | None = Form(None),
-) -> dict:
+) -> dict[str, Any]:
     cfg = build_cfg(provider, api_key, base_url, model)
     image_bytes = await file.read()
 

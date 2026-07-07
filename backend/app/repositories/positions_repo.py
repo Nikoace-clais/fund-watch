@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from decimal import Decimal
+from typing import Any
 
 
 def ensure_exists(
@@ -42,7 +43,8 @@ def upsert(
         " VALUES(?, ?, ?)",
         (portfolio_id, code, created_at),
     )
-    updates, params = [], []
+    updates: list[str] = []
+    params: list[Any] = []
     if amount is not None:
         updates.append("amount=?")
         params.append(amount)
@@ -89,7 +91,7 @@ def delete_all_for_code(conn: sqlite3.Connection, code: str) -> None:
 
 def list_holdings_with_shares(
     conn: sqlite3.Connection, portfolio_id: int
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Positions with a computed holding (have transactions), joined to fund name."""
     rows = conn.execute(
         """SELECT pos.code, f.name, pos.holding_shares
@@ -102,7 +104,9 @@ def list_holdings_with_shares(
     return [dict(r) for r in rows]
 
 
-def list_imported_positions(conn: sqlite3.Connection, portfolio_id: int) -> list[dict]:
+def list_imported_positions(
+    conn: sqlite3.Connection, portfolio_id: int
+) -> list[dict[str, Any]]:
     """Imported positions without transactions (holding_amount > 0)."""
     rows = conn.execute(
         """SELECT pos.code, f.name,

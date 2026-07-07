@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,12 +13,12 @@ from app.services.stock_industry_service import get_stock_industries
 
 # ── secid prefix helper ───────────────────────────────────────────────────────
 
-def test_secid_shanghai():
+def test_secid_shanghai() -> None:
     assert _secid("600519") == "1"  # 贵州茅台
     assert _secid("900001") == "1"  # B shares (9x)
 
 
-def test_secid_shenzhen():
+def test_secid_shenzhen() -> None:
     assert _secid("000858") == "0"  # 五粮液
     assert _secid("300750") == "0"  # CATL
     assert _secid("430047") == "0"  # 北交所
@@ -26,7 +27,7 @@ def test_secid_shenzhen():
 # ── fetch_stock_industries: hits local table, skips API ──────────────────────
 
 @pytest.fixture()
-def tmp_db(tmp_path):
+def tmp_db(tmp_path: Path) -> str:
     db = tmp_path / "test.db"
     conn = sqlite3.connect(db)
     conn.execute(
@@ -52,7 +53,7 @@ def tmp_db(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_hits_local_table_no_api(tmp_db):
+async def test_hits_local_table_no_api(tmp_db: str) -> None:
     """Table hit → API client must NOT be called."""
     with (
         patch.dict(os.environ, {"FUND_WATCH_DB": tmp_db}),
@@ -65,7 +66,7 @@ async def test_hits_local_table_no_api(tmp_db):
 
 
 @pytest.mark.asyncio
-async def test_unknown_code_skipped_gracefully(tmp_db):
+async def test_unknown_code_skipped_gracefully(tmp_db: str) -> None:
     """Unknown code with failed API → returns partial result, no crash."""
     mock_resp = MagicMock()
     mock_resp.raise_for_status = lambda: None
@@ -86,7 +87,9 @@ async def test_unknown_code_skipped_gracefully(tmp_db):
 
 
 @pytest.mark.asyncio
-async def test_fetch_success_writes_back_and_then_hits_local_table(tmp_db):
+async def test_fetch_success_writes_back_and_then_hits_local_table(
+    tmp_db: str,
+) -> None:
     """New code fetched from the API is written to stock_industry, and a
     subsequent lookup for the same code hits the local table instead of
     calling the API again."""

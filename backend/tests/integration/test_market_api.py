@@ -6,13 +6,12 @@ US (gb_) and Nikkei (b_NKY).
 """
 import asyncio
 
-import httpx
-import pytest
-from fastapi.testclient import TestClient
-
 import app.db as app_db
 import app.fund_source as fund_source
+import httpx
+import pytest
 from app.main import app as fastapi_app
+from fastapi.testclient import TestClient
 
 # Real samples captured from hq.sinajs.cn on 2026-06-10
 _US_NKY_LINES = (
@@ -35,12 +34,18 @@ _US_NKY_LINES = (
 # A-share lines follow the parser's expectation:
 # parts[1] = previous_close, parts[3] = current
 _A_SHARE_LINES = (
-    'var hq_str_sh000001="上证指数,3400.0000,3398.0000,3434.0000,3450.0000,3380.0000,0,0,1,2";\n'
-    'var hq_str_sz399001="深证成指,11000.0000,10990.0000,11110.0000,11200.0000,10900.0000,0,0,1,2";\n'
-    'var hq_str_sz399006="创业板指,2200.0000,2190.0000,2178.0000,2210.0000,2170.0000,0,0,1,2";\n'
-    'var hq_str_sh000300="沪深300,4000.0000,3990.0000,4040.0000,4050.0000,3980.0000,0,0,1,2";\n'
-    'var hq_str_sh000016="上证50,2700.0000,2690.0000,2727.0000,2730.0000,2680.0000,0,0,1,2";\n'
-    'var hq_str_sh000905="中证500,6000.0000,5990.0000,6060.0000,6070.0000,5980.0000,0,0,1,2";\n'
+    'var hq_str_sh000001="上证指数,3400.0000,3398.0000,3434.0000,3450.0000,'
+    '3380.0000,0,0,1,2";\n'
+    'var hq_str_sz399001="深证成指,11000.0000,10990.0000,11110.0000,11200.0000,'
+    '10900.0000,0,0,1,2";\n'
+    'var hq_str_sz399006="创业板指,2200.0000,2190.0000,2178.0000,2210.0000,'
+    '2170.0000,0,0,1,2";\n'
+    'var hq_str_sh000300="沪深300,4000.0000,3990.0000,4040.0000,4050.0000,'
+    '3980.0000,0,0,1,2";\n'
+    'var hq_str_sh000016="上证50,2700.0000,2690.0000,2727.0000,2730.0000,'
+    '2680.0000,0,0,1,2";\n'
+    'var hq_str_sh000905="中证500,6000.0000,5990.0000,6060.0000,6070.0000,'
+    '5980.0000,0,0,1,2";\n'
 )
 
 # HK line: parts[6] = current, parts[7] = change, parts[8] = change_percent
@@ -134,7 +139,9 @@ class TestMarketIndices:
         assert sse["change"] == 34.0
         assert sse["change_percent"] == 1.0
 
-    def test_network_failure_returns_empty_items(self, market_client, httpx_mock, no_retry_sleep):
+    def test_network_failure_returns_empty_items(
+        self, market_client, httpx_mock, no_retry_sleep
+    ):
         # Cover all 3 retry attempts
         for _ in range(3):
             httpx_mock.add_exception(httpx.ConnectError("connection refused"))
