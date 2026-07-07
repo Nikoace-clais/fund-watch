@@ -7,6 +7,7 @@ import type {
   CronStatus,
   FundDetailData,
   FundOverviewItem,
+  FundPnl,
   MarketIndex,
   NavPoint,
   OcrCfg,
@@ -123,6 +124,12 @@ export function batchAddFunds(
       }),
     },
   )
+}
+
+// Fund P&L (holding shares, etc.)
+export function fetchFundPnl(code: string, portfolioId?: number) {
+  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  return request<FundPnl>(`/api/funds/${code}/pnl${qs}`)
 }
 
 // NAV on a specific date

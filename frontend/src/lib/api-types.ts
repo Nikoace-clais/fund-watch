@@ -134,6 +134,13 @@ export type PortfolioHoldings = {
   stocks: HoldingXrayStock[]; sectors: HoldingXraySector[]; coverage: Record<string, number>
 }
 
+export type FundPnl = {
+  code: string
+  portfolio_id: number
+  has_transactions: boolean
+  holding_shares?: string
+}
+
 export type OcrCfg = { provider?: string; api_key?: string; base_url?: string; model?: string; analysis_model?: string }
 
 export type OcrNameMatch = {
