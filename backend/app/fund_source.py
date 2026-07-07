@@ -208,14 +208,16 @@ async def fetch_fund_info(code: str) -> dict[str, Any]:
 HOLDINGS_URL = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10"
 
 # Parse: 序号 / 股票代码 / 股票名称 / 占净值比例 / 持股数 / 持仓市值
+# A股行用 tol/tor class，QDII 行全部是 toc class，故 class 无关匹配；
+# 代码支持 A股6位数字 / 港股5位数字 / 美股字母（如 AAPL、BRK.B）
 _HOLDING_ROW_RE = re.compile(
     r"<tr><td>\d+</td>"  # 序号
-    r"<td>.*?>([\d]{6})</a></td>"  # 股票代码
-    r"<td class='tol'>.*?>([^<]+)</a></td>"  # 股票名称
+    r"<td[^>]*>.*?>([A-Z0-9.]+)</a></td>"  # 股票代码
+    r"<td[^>]*>.*?>([^<]+)</a></td>"  # 股票名称
     r".*?"
-    r"<td class='tor'>([\d.]+)%</td>"  # 占净值比例
-    r"<td class='tor'>([\d,.]+)</td>"  # 持股数(万股)
-    r"<td class='tor'>([\d,.]+)</td></tr>",  # 持仓市值(万元)
+    r"<td[^>]*>([\d.]+)%</td>"  # 占净值比例
+    r"<td[^>]*>([\d,.]+)</td>"  # 持股数(万股)
+    r"<td[^>]*>([\d,.]+)</td></tr>",  # 持仓市值(万元)
     re.DOTALL,
 )
 
@@ -362,7 +364,7 @@ async def fetch_fund_detail(code: str) -> dict[str, Any]:
     return result
 
 
-def _extract_js_array(text: str, var_name: str) -> list | None:
+def _extract_js_array(text: str, var_name: str) -> list[Any] | None:
     """Extract a JS array variable from text using bracket matching."""
     idx = text.find(f"var {var_name}")
     if idx < 0:
@@ -387,7 +389,8 @@ def _extract_js_array(text: str, var_name: str) -> list | None:
     if end == 0:
         return None
     try:
-        return json.loads(rest[:end])
+        parsed: list[Any] = json.loads(rest[:end])
+        return parsed
     except json.JSONDecodeError:
         return None
 
@@ -661,7 +664,7 @@ async def _fetch_ranking_mobile(fund_type: str, page_size: int) -> list[dict[str
         "_fetch_ranking_mobile [ft=%s, n=%s] %.3fs", fund_type, page_size, elapsed
     )
 
-    datas: list[dict] = data.get("Datas") or []
+    datas: list[dict[str, Any]] = data.get("Datas") or []
     kw = _MOBILE_TYPE_KW.get(fund_type)
     if kw:
         datas = [f for f in datas if kw in f.get("SHORTNAME", "")]
