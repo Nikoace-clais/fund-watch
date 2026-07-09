@@ -101,7 +101,7 @@ Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: 
 # 后端（backend/ 目录下）
 uv run pytest                 # 全量；tests/unit/ 与 tests/integration/ 可分开跑
 uv run ruff check .
-uv run mypy .
+uv run ty check               # 类型检查(Astral ty,覆盖 app/ 与 tests/)
 
 # 前端（frontend/ 目录下）
 bun run lint                  # tsc --noEmit

@@ -92,9 +92,13 @@ async def _text_json(
             max_tokens=8192,
             messages=[{"role": "user", "content": user_msg}],
         )
+        from anthropic.types import TextBlock
+
         # content[0] isn't always a text block (e.g. thinking blocks) and can
         # be empty; scan for the first text block instead of indexing blindly.
-        raw = next((block.text for block in resp.content if hasattr(block, "text")), "")
+        raw = next(
+            (block.text for block in resp.content if isinstance(block, TextBlock)), ""
+        )
     else:
         import openai
 

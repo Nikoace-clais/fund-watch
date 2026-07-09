@@ -60,7 +60,7 @@ describe('ImportPreview Component', () => {
 
     fireEvent.change(input, { target: { files: [file] } });
 
-    expect(screen.getByText(/正在识别截图/i)).toBeInTheDocument();
+    expect(screen.getByText(/准备中/i)).toBeInTheDocument();
 
     resolvePromise!();
   });

@@ -1,0 +1,13 @@
+services:
+  fund-watch:
+    build: .
+    image: ghcr.io/nikoace-clais/fund-watch:latest
+    ports:
+      - "8010:8010"
+    volumes:
+      # SQLite 数据库 + 截图上传都在 backend/data 下,挂一个卷即全部持久化
+      - ./data:/app/backend/data
+    restart: unless-stopped
+    # AI 选基/OCR 文本抽取需要 ANTHROPIC_API_KEY / OPENAI_API_KEY 时,
+    # 在同目录放 .env 并解开下一行:
+    # env_file: .env

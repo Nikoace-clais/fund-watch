@@ -11,9 +11,12 @@ import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .core import UPLOAD_DIR
 from .db import init_db
@@ -113,3 +116,20 @@ app.include_router(ai.router)
 app.include_router(ocr.router)
 app.include_router(market.router)
 app.include_router(stocks.router)
+
+# ── Static frontend (Docker single-image deploy) ────────────────────────────
+# backend/static/ only exists inside the built image (frontend dist copied
+# in at build time); absent in local dev, so this whole block is a no-op then.
+_STATIC_DIR = Path(__file__).resolve().parents[1] / "static"
+
+if _STATIC_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=_STATIC_DIR / "assets"), name="assets")
+
+    @app.get("/{path:path}")
+    async def spa_fallback(path: str) -> FileResponse:
+        """Serve a static file if it exists, else fall back to index.html
+        so React Router can handle client-side routes."""
+        candidate = (_STATIC_DIR / path).resolve()
+        if candidate.is_file() and candidate.is_relative_to(_STATIC_DIR):
+            return FileResponse(candidate)
+        return FileResponse(_STATIC_DIR / "index.html")

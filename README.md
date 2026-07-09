@@ -1,5 +1,7 @@
 # Fund Watch — 智投基金
 
+[![CI](https://github.com/Nikoace-clais/fund-watch/actions/workflows/ci.yml/badge.svg)](https://github.com/Nikoace-clais/fund-watch/actions/workflows/ci.yml)
+
 A 股公募基金盘中估值监控 + 自选组合管理工具。
 
 ## 功能概览
@@ -71,6 +73,20 @@ fund-watch/
 | 前端页面 | http://127.0.0.1:5173 |
 | API 文档 | http://127.0.0.1:8010/docs |
 | 健康检查 | http://127.0.0.1:8010/api/health |
+
+## Docker 部署
+
+单镜像形态:前端静态产物打进后端镜像,uvicorn 同源服务 API + 页面,无需配置 CORS。
+
+```bash
+docker compose up -d          # 本地构建并启动
+# 或直接用 CI 推送的镜像(main 分支每次合并自动构建):
+docker pull ghcr.io/nikoace-clais/fund-watch:latest
+```
+
+- 访问 `http://<host>:8010`,数据(SQLite + 上传截图)持久化在 `./data` 卷
+- AI 选基 / OCR 文本抽取需要 key:在 compose 同目录放 `.env`(`ANTHROPIC_API_KEY=...`),并解开 `docker-compose.yml` 中 `env_file` 注释
+- 仅构建 linux/amd64;PaddleOCR 模型首次启动时后台自动下载,容器需要外网
 
 ## 前端页面
 

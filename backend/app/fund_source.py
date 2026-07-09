@@ -113,7 +113,8 @@ PINGZHONG_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
 # Raw pingzhongdata text is shared by fetch_fund_info/fetch_fund_detail/
 # fetch_nav_history — a short TTL coalesces the near-simultaneous calls a
 # fund-detail page load triggers into a single download.
-_pingzhong_cache: TTLCache[str, str] = TTLCache(maxsize=200, ttl=60)
+# ty: cachetools 存根的 __init__ 重载让 ty 0.0.57 推断出错误的泛型参数,误报
+_pingzhong_cache: TTLCache[str, str] = TTLCache(maxsize=200, ttl=60)  # ty: ignore[invalid-assignment]
 _pingzhong_locks: dict[str, asyncio.Lock] = {}
 
 

@@ -16,7 +16,7 @@
 |---|---|---|
 | 无告警/提醒 | 后端无任何 alert/notify 代码，无 alerts 表 | 核心定位「低噪提醒」缺失 |
 | 历史数据 30 天即删 | `snapshots.py::prune_old_snapshots(keep_days=30)`；历史净值不落库（每次现拉 + 10min TTL） | 回测/基准/归因/离线告警全被卡死 |
-| 无生产部署形态 | 仅 start.sh 本地脚本，无 Docker/compose，CORS 硬编码 localhost | 无法 NAS 部署 |
+| ~~无生产部署形态~~ | ~~仅 start.sh 本地脚本~~ 已解决：Docker 单镜像 + compose + CI 推 GHCR（2026-07） | ~~无法 NAS 部署~~ |
 | 无用户/认证 | 无 users 表、无 auth 中间件；AI/OCR 密钥前端 localStorage 携带 | 多人使用不可行 |
 
 ### 次级缺陷
@@ -53,7 +53,7 @@
 
 ### 中期（2-6 个月）——从「看板」到「NAS 自托管分析工具」
 
-6. [ ] **Docker 化**：Dockerfile + compose（backend + 前端静态产物），CORS/端口环境变量化，NAS 一键部署。
+6. [x] **Docker 化**：多阶段 Dockerfile + compose 单镜像（前端静态产物同源服务，无需 CORS 配置），CI 推 GHCR，NAS 一键部署。（2026-07 完成，见 `docs/plans/2026-07-07-ci-docker-design.md`）
 7. [ ] **基准比较**：组合/单基金 vs 沪深300、中证500、偏股混合基金指数（依赖 #1 净值库）。
 8. [ ] **收益率算法升级**：XIRR（资金加权）+ TTWR（时间加权）。
 9. [ ] **目标配置与漂移**：设定目标资产配置，偏离超阈值时提醒（复用 #2 告警通道）。

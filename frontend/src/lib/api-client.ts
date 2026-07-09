@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-export const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8010'
+export const API = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8010'
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, init)
