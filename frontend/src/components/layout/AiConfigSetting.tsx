@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useProviderConfig, type ProviderConfig, type AiProvider } from '@/lib/provider-config'
+import {
+  useProviderConfig,
+  type ProviderConfig,
+  type AiProvider,
+} from '@/lib/provider-config'
 import { SettingsDropdown } from './SettingsDropdown'
 
 export function AiConfigSetting() {
@@ -47,7 +51,9 @@ function AiConfigPanel({
 
   return (
     <>
-      <p className="text-xs font-medium text-slate-400 uppercase">AI Provider 配置</p>
+      <p className="text-xs font-medium text-slate-400 uppercase">
+        AI Provider 配置
+      </p>
 
       {/* Provider */}
       <div className="grid grid-cols-2 gap-1.5">
@@ -83,31 +89,43 @@ function AiConfigPanel({
       {draft.provider === 'openai' && (
         <>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Base URL</label>
+            <label className="block text-xs text-slate-500 mb-1">
+              Base URL
+            </label>
             <input
               type="text"
               value={draft.base_url}
-              onChange={(e) => setDraft((d) => ({ ...d, base_url: e.target.value }))}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, base_url: e.target.value }))
+              }
               placeholder="https://api.openai.com/v1"
               className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">编排模型</label>
+            <label className="block text-xs text-slate-500 mb-1">
+              编排模型
+            </label>
             <input
               type="text"
               value={draft.model}
-              onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, model: e.target.value }))
+              }
               placeholder="deepseek-v4-flash"
               className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">分析模型（留空=同上）</label>
+            <label className="block text-xs text-slate-500 mb-1">
+              分析模型（留空=同上）
+            </label>
             <input
               type="text"
               value={draft.analysis_model}
-              onChange={(e) => setDraft((d) => ({ ...d, analysis_model: e.target.value }))}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, analysis_model: e.target.value }))
+              }
               placeholder="deepseek-v4-pro"
               className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />

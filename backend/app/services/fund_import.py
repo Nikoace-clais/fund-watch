@@ -189,9 +189,7 @@ async def import_funds_batch(
         except Exception as e:
             return code, None, e
 
-    nav_results = await asyncio.gather(
-        *[_safe_fetch_nav(c) for c, _ in candidates]
-    )
+    nav_results = await asyncio.gather(*[_safe_fetch_nav(c) for c, _ in candidates])
     holding_amounts = dict(candidates)
 
     for code, latest, err in nav_results:

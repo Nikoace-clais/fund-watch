@@ -60,8 +60,7 @@ def upsert(
     if updates:
         params += [portfolio_id, code]
         conn.execute(
-            f"UPDATE positions SET {','.join(updates)}"
-            " WHERE portfolio_id=? AND code=?",
+            f"UPDATE positions SET {','.join(updates)} WHERE portfolio_id=? AND code=?",
             params,
         )
 
@@ -137,9 +136,7 @@ def list_watch_only_codes(conn: sqlite3.Connection, portfolio_id: int) -> list[s
     return [r["code"] for r in rows]
 
 
-def current_holdings(
-    conn: sqlite3.Connection, portfolio_id: int
-) -> dict[str, Decimal]:
+def current_holdings(conn: sqlite3.Connection, portfolio_id: int) -> dict[str, Decimal]:
     """code -> holding_shares for positions with a positive computed holding."""
     rows = conn.execute(
         "SELECT code, holding_shares FROM positions"
@@ -153,9 +150,7 @@ def current_holdings(
     }
 
 
-def imported_amounts(
-    conn: sqlite3.Connection, portfolio_id: int
-) -> dict[str, Decimal]:
+def imported_amounts(conn: sqlite3.Connection, portfolio_id: int) -> dict[str, Decimal]:
     """code -> imported holding amount, for positions without transactions."""
     rows = conn.execute(
         """SELECT code,

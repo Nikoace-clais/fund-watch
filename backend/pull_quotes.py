@@ -7,6 +7,7 @@ Can also be called from system cron as a fallback when the in-process
 scheduler is not running:
     */5 9-15 * * 1-5  cd /path/to/backend && uv run python pull_quotes.py
 """
+
 from __future__ import annotations
 
 import argparse

@@ -19,8 +19,8 @@ class BatchFundsPayload(BaseModel):
     codes: list[str] = []
     amounts: dict[str, Decimal] | None = None
     funds: list[BatchFundItem] = []
-    portfolio_id: int | None = None      # attach to existing portfolio
-    portfolio_name: str | None = None    # or create a new one with this name
+    portfolio_id: int | None = None  # attach to existing portfolio
+    portfolio_name: str | None = None  # or create a new one with this name
 
 
 class AddTransactionPayload(BaseModel):

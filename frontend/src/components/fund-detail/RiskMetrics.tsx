@@ -5,8 +5,8 @@ import { computeRiskMetrics } from '@/lib/fund-metrics'
 
 function returnGrade(v: number) {
   if (v >= 20) return '🚀'
-  if (v >= 5)  return '📈'
-  if (v >= 0)  return '😐'
+  if (v >= 5) return '📈'
+  if (v >= 0) return '😐'
   return '📉'
 }
 
@@ -28,7 +28,7 @@ function sharpeGrade(v: number) {
   if (v >= 1.5) return '🏆'
   if (v >= 1.0) return '⭐'
   if (v >= 0.5) return '👍'
-  if (v >= 0)   return '😐'
+  if (v >= 0) return '😐'
   return '⚠️'
 }
 
@@ -40,8 +40,16 @@ type Props = {
 }
 
 function MetricCard({
-  label, value, grade, hint,
-}: { label: string; value: string; grade: string; hint?: string }) {
+  label,
+  value,
+  grade,
+  hint,
+}: {
+  label: string
+  value: string
+  grade: string
+  hint?: string
+}) {
   return (
     <div className="text-center p-3 bg-slate-50 rounded-lg" title={hint}>
       <p className="text-xs text-slate-400 mb-1">{label}</p>
@@ -61,7 +69,9 @@ function PowerBar({ label, score }: { label: string; score: number }) {
           style={{ width: `${score}%` }}
         />
       </div>
-      <span className="w-8 text-right text-slate-600 font-medium">{score.toFixed(0)}</span>
+      <span className="w-8 text-right text-slate-600 font-medium">
+        {score.toFixed(0)}
+      </span>
     </div>
   )
 }
@@ -72,13 +82,13 @@ export function RiskMetrics({ history, detail }: Props) {
   const fmt = (v: number | null, suffix = '%') =>
     v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}${suffix}` : '--'
 
-  const fmtSharpe = (v: number | null) =>
-    v != null ? v.toFixed(2) : '--'
+  const fmtSharpe = (v: number | null) => (v != null ? v.toFixed(2) : '--')
 
   const hasPower =
     detail.manager_power_scores &&
     detail.manager_power_categories &&
-    detail.manager_power_scores.length === detail.manager_power_categories.length
+    detail.manager_power_scores.length ===
+      detail.manager_power_categories.length
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
@@ -93,7 +103,11 @@ export function RiskMetrics({ history, detail }: Props) {
           <MetricCard
             label="年化收益率"
             value={fmt(metrics.annualReturn)}
-            grade={metrics.annualReturn != null ? returnGrade(metrics.annualReturn) : '–'}
+            grade={
+              metrics.annualReturn != null
+                ? returnGrade(metrics.annualReturn)
+                : '–'
+            }
             hint="≥20%🚀 ≥5%📈 ≥0%😐 <0%📉"
           />
           <MetricCard
@@ -121,7 +135,9 @@ export function RiskMetrics({ history, detail }: Props) {
 
       {hasPower && (
         <div className="space-y-2 pt-1 border-t border-slate-100">
-          <p className="text-xs font-medium text-slate-500">基金经理能力（天天基金评分）</p>
+          <p className="text-xs font-medium text-slate-500">
+            基金经理能力（天天基金评分）
+          </p>
           {detail.manager_power_categories!.map((cat, i) => (
             <PowerBar
               key={cat}

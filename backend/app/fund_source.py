@@ -139,6 +139,7 @@ async def _fetch_pingzhongdata_text(code: str) -> str:
         _pingzhong_cache[code] = text
         return text
 
+
 # Common fund sector keywords to extract from fund name
 _SECTOR_KEYWORDS = [
     "白酒",
@@ -809,9 +810,7 @@ def _recent_quarter_ends(n: int = 4) -> list[str]:
     return ends
 
 
-async def fetch_funds_holding_stock(
-    stock_code: str, limit: int = 50
-) -> dict[str, Any]:
+async def fetch_funds_holding_stock(stock_code: str, limit: int = 50) -> dict[str, Any]:
     """Return public funds holding *stock_code*, sorted by position value desc.
 
     Queries eastmoney datacenter (RPT_MAINDATA_MAIN_POSITIONDETAILS) with
@@ -839,7 +838,7 @@ async def fetch_funds_holding_stock(
             "filter": (
                 f'(SECURITY_CODE="{stock_code}")'
                 f"(REPORT_DATE='{qdate}')"
-                "(ORG_TYPE_CODE=\"1\")"
+                '(ORG_TYPE_CODE="1")'
             ),
             "source": "WEB",
             "client": "WEB",
@@ -907,7 +906,7 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
     data = json.loads(text)
 
     results: list[dict[str, Any]] = []
-    for item in (data.get("Datas") or []):
+    for item in data.get("Datas") or []:
         if len(results) >= limit:
             break
         code = item.get("CODE", "")

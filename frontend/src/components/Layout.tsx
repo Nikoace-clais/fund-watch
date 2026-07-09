@@ -1,5 +1,15 @@
 import { Outlet, Link, useLocation } from 'react-router'
-import { LineChart, PieChart, TrendingUp, Home, Menu, X, Sparkles, Camera, Search } from 'lucide-react'
+import {
+  LineChart,
+  PieChart,
+  TrendingUp,
+  Home,
+  Menu,
+  X,
+  Sparkles,
+  Camera,
+  Search,
+} from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useCronStatus } from '@/lib/queries'
@@ -29,7 +39,9 @@ export function Layout() {
       <aside className="hidden w-64 border-r border-slate-200 bg-white md:flex md:flex-col">
         <div className="flex h-16 items-center px-6 border-b border-slate-200">
           <LineChart className="h-6 w-6 text-blue-600 mr-2" />
-          <span className="text-xl font-bold text-slate-800 tracking-tight">智投基金</span>
+          <span className="text-xl font-bold text-slate-800 tracking-tight">
+            智投基金
+          </span>
         </div>
         <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
           {navigation.map((item) => {
@@ -46,7 +58,10 @@ export function Layout() {
                 )}
               >
                 <item.icon
-                  className={cn('mr-3 h-5 w-5 flex-shrink-0', isActive ? 'text-blue-600' : 'text-slate-400')}
+                  className={cn(
+                    'mr-3 h-5 w-5 flex-shrink-0',
+                    isActive ? 'text-blue-600' : 'text-slate-400',
+                  )}
                 />
                 {item.name}
               </Link>
@@ -73,7 +88,11 @@ export function Layout() {
             className="relative text-slate-500 hover:text-slate-600"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
-            {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {isMobileMenuOpen ? (
+              <X className="h-6 w-6" />
+            ) : (
+              <Menu className="h-6 w-6" />
+            )}
             {cronFailed && !isMobileMenuOpen && (
               <span
                 className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500"
@@ -101,7 +120,10 @@ export function Layout() {
                     )}
                   >
                     <item.icon
-                      className={cn('mr-4 h-5 w-5 flex-shrink-0', isActive ? 'text-blue-600' : 'text-slate-400')}
+                      className={cn(
+                        'mr-4 h-5 w-5 flex-shrink-0',
+                        isActive ? 'text-blue-600' : 'text-slate-400',
+                      )}
                     />
                     {item.name}
                   </Link>
@@ -111,7 +133,10 @@ export function Layout() {
             {/* Mobile settings */}
             <div className="px-4 pb-3 border-t border-slate-100 pt-2">
               {cronFailed && (
-                <p className="px-3 py-1.5 text-xs text-red-500 truncate" title={cronStatus?.last_error ?? undefined}>
+                <p
+                  className="px-3 py-1.5 text-xs text-red-500 truncate"
+                  title={cronStatus?.last_error ?? undefined}
+                >
                   ⚠ 快照拉取失败
                 </p>
               )}

@@ -3,6 +3,7 @@
 Uses an isolated temp SQLite DB and stubs out all external data-source
 calls so tests run fully offline.
 """
+
 import app.db as app_db
 import app.routers.funds as funds_router
 import app.services.fund_import as fund_import_svc
@@ -104,6 +105,7 @@ class TestFunds:
 def _get_position_shares(code: str, portfolio_id: int) -> str | None:
     """Helper: read holding_shares directly from positions table."""
     import app.db as _db
+
     with _db.get_conn() as conn:
         row = conn.execute(
             "SELECT holding_shares FROM positions WHERE portfolio_id=? AND code=?",
@@ -116,10 +118,16 @@ class TestTransactions:
     def test_buy_recomputes_holding_shares(self, app_client):
         _add_fund(app_client)
         app_client.post("/api/portfolios", json={"name": "组合A"})
-        resp = app_client.post("/api/funds/110011/transactions", json={
-            "direction": "buy", "trade_date": "2026-06-01",
-            "nav": "1.5000", "shares": "1000", "fee": "1.5",
-        })
+        resp = app_client.post(
+            "/api/funds/110011/transactions",
+            json={
+                "direction": "buy",
+                "trade_date": "2026-06-01",
+                "nav": "1.5000",
+                "shares": "1000",
+                "fee": "1.5",
+            },
+        )
         assert resp.status_code == 200
         pf_id = resp.json()["portfolio_id"]
         # holding_shares is now in positions table, not funds

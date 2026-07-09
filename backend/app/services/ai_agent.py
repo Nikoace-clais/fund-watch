@@ -49,6 +49,7 @@ def max_drawdown(nav_list: list[float]) -> float:
             max_dd = dd
     return round(max_dd * 100, 2)
 
+
 MAX_ROUNDS = 6
 _MAX_SEARCH = 15  # ponytail: cap candidates per search call
 _THEME_FUND_TYPE: dict[str, str] = {"QDII": "qdii", "债": "zq", "货币": "hb"}

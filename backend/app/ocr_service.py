@@ -11,7 +11,7 @@ from .core import extract_json as _parse_json
 from .core import is_valid_code
 
 # ponytail: disable oneDNN — causes RuntimeError: std::exception on WSL2 / some CPUs
-#os.environ.setdefault("FLAGS_use_mkldnn", "0")
+# os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
 log = logging.getLogger(__name__)
 
@@ -124,7 +124,9 @@ async def _text_json(
             # silently return empty content when json_object isn't supported
             log.warning(
                 "AI空响应(provider=%s model=%s finish_reason=%s)，去掉json_object重试",
-                provider, model, choice.finish_reason,
+                provider,
+                model,
+                choice.finish_reason,
             )
             req.pop("response_format")
             resp2 = await client.chat.completions.create(**req)
@@ -308,7 +310,7 @@ async def resolve_unknown_fund_names(
         return {}
 
     out: dict[int, dict[str, Any]] = {}
-    for item in (result.get("items") or [] if isinstance(result, dict) else []):
+    for item in result.get("items") or [] if isinstance(result, dict) else []:
         idx = item.get("index")
         name = (item.get("full_name") or "").strip()
         raw_code = str(item.get("code") or "").strip()
@@ -414,7 +416,10 @@ async def review_fund_matches(
                 entry["corrected_name"] = corrected
                 log.info(
                     "Pro核对 #%d: ✗ 「%s」(%s) → 纠正为「%s」(待搜索)",
-                    idx, entry["name"], entry["code"], corrected,
+                    idx,
+                    entry["name"],
+                    entry["code"],
+                    corrected,
                 )
             else:
                 entry["review"] = "confirmed"  # no correction offered → keep
@@ -437,6 +442,6 @@ if __name__ == "__main__":
 
     assert _parse_json('{"a":1}') == {"a": 1}
     assert _parse_json("```json\n[1,2]\n```") == [1, 2]
-    assert _parse_json("prefix {\"x\": 2} suffix") == {"x": 2}
+    assert _parse_json('prefix {"x": 2} suffix') == {"x": 2}
     print("_parse_json 自检通过")
     sys.exit(0)

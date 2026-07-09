@@ -1,4 +1,5 @@
 """Tests for the shared pingzhongdata cache and TTLCache eviction (PR2)."""
+
 from __future__ import annotations
 
 from collections.abc import Generator

@@ -1,4 +1,9 @@
-import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { isTradingHours } from './utils'
 import {
@@ -44,16 +49,21 @@ export const queryClient = new QueryClient({
 export const keys = {
   portfolios: ['portfolios'] as const,
   fundsOverview: ['funds', 'overview'] as const,
-  portfolioSummary: (pf?: number) => ['portfolio', 'summary', pf ?? null] as const,
-  portfolioHoldings: (pf?: number) => ['portfolio', 'holdings', pf ?? null] as const,
-  portfolioHistory: (limit: number, pf?: number) => ['portfolio', 'history', limit, pf ?? null] as const,
+  portfolioSummary: (pf?: number) =>
+    ['portfolio', 'summary', pf ?? null] as const,
+  portfolioHoldings: (pf?: number) =>
+    ['portfolio', 'holdings', pf ?? null] as const,
+  portfolioHistory: (limit: number, pf?: number) =>
+    ['portfolio', 'history', limit, pf ?? null] as const,
   marketIndices: ['market', 'indices'] as const,
   cronStatus: ['cron', 'status'] as const,
   fundDetail: (code: string) => ['fund', code, 'detail'] as const,
-  navHistory: (code: string, limit: number) => ['fund', code, 'nav-history', limit] as const,
+  navHistory: (code: string, limit: number) =>
+    ['fund', code, 'nav-history', limit] as const,
   fundHoldings: (code: string) => ['fund', code, 'holdings'] as const,
   quote: (code: string) => ['fund', code, 'quote'] as const,
-  transactions: (code: string, pf?: number) => ['fund', code, 'transactions', pf ?? null] as const,
+  transactions: (code: string, pf?: number) =>
+    ['fund', code, 'transactions', pf ?? null] as const,
   ocrStatus: ['ocr-status'] as const,
   stockFunds: (stockCode: string) => ['stock-funds', stockCode] as const,
 }
@@ -151,7 +161,11 @@ export function useQuote(code: string | undefined) {
   })
 }
 
-export function useTransactions(code: string | undefined, portfolioId?: number, enabled = true) {
+export function useTransactions(
+  code: string | undefined,
+  portfolioId?: number,
+  enabled = true,
+) {
   return useQuery({
     queryKey: keys.transactions(code ?? '', portfolioId),
     queryFn: () => fetchTransactions(code!, portfolioId),
@@ -207,8 +221,13 @@ export function useAddFund(portfolioId?: number) {
 export function useDeleteFund(invalidatePortfolioId?: number) {
   const invalidate = useInvalidatePortfolio(invalidatePortfolioId)
   return useMutation({
-    mutationFn: ({ code, scopeToPortfolio }: { code: string; scopeToPortfolio?: number }) =>
-      deleteFund(code, scopeToPortfolio),
+    mutationFn: ({
+      code,
+      scopeToPortfolio,
+    }: {
+      code: string
+      scopeToPortfolio?: number
+    }) => deleteFund(code, scopeToPortfolio),
     onSuccess: invalidate,
   })
 }
@@ -232,8 +251,13 @@ export function useBatchAddFunds(portfolioId?: number) {
 export function useAddTransaction(portfolioId?: number) {
   const invalidate = useInvalidatePortfolio(portfolioId)
   return useMutation({
-    mutationFn: ({ code, payload }: { code: string; payload: Parameters<typeof addTransaction>[1] }) =>
-      addTransaction(code, payload),
+    mutationFn: ({
+      code,
+      payload,
+    }: {
+      code: string
+      payload: Parameters<typeof addTransaction>[1]
+    }) => addTransaction(code, payload),
     onSuccess: invalidate,
   })
 }
@@ -255,7 +279,9 @@ export function useDeleteTxConfirm(portfolioId?: number) {
       onError: (err: Error) => alert(err.message || '删除失败'),
     })
   }
-  const deletingId = deleteTransaction.isPending ? (deleteTransaction.variables ?? null) : null
+  const deletingId = deleteTransaction.isPending
+    ? (deleteTransaction.variables ?? null)
+    : null
   return { handleDelete, deletingId }
 }
 
@@ -270,7 +296,8 @@ export function useCreatePortfolio() {
 export function useRenamePortfolio() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, name }: { id: number; name: string }) => renamePortfolio(id, name),
+    mutationFn: ({ id, name }: { id: number; name: string }) =>
+      renamePortfolio(id, name),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.portfolios }),
   })
 }

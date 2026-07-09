@@ -1,33 +1,39 @@
 import type { ProviderConfig } from '@/lib/provider-config'
-import { streamOcrFundCode, batchAddFunds, searchFunds, type OcrStep, type OcrResult } from '@/lib/api'
+import {
+  streamOcrFundCode,
+  batchAddFunds,
+  searchFunds,
+  type OcrStep,
+  type OcrResult,
+} from '@/lib/api'
 
 export type { OcrStep }
 
 export interface ImportPreviewItem {
-  code: string;
-  name: string;
-  type: string;
-  confidence: number;
-  source: 'code' | 'name_match' | 'table';
-  needs_review: boolean;
-  review?: 'confirmed' | 'corrected' | 'unreviewed';
-  ocr_name?: string;       // original OCR name before correction
-  similarity?: number;     // name match similarity (0-1)
-  amount?: number | null;  // holding amount from OCR, drives 持仓 vs 未持仓
+  code: string
+  name: string
+  type: string
+  confidence: number
+  source: 'code' | 'name_match' | 'table'
+  needs_review: boolean
+  review?: 'confirmed' | 'corrected' | 'unreviewed'
+  ocr_name?: string // original OCR name before correction
+  similarity?: number // name match similarity (0-1)
+  amount?: number | null // holding amount from OCR, drives 持仓 vs 未持仓
 }
 
 export interface ImportPreviewResult {
-  funds: ImportPreviewItem[];
-  total_confidence: number;
-  needs_review: boolean;
-  total_count: number;
+  funds: ImportPreviewItem[]
+  total_confidence: number
+  needs_review: boolean
+  total_count: number
 }
 
 export interface ImportConfirmResult {
-  success: boolean;
-  added: number;
-  total: number;
-  invalid: string[];
+  success: boolean
+  added: number
+  total: number
+  invalid: string[]
 }
 
 // Single source of truth for the high/medium confidence cutoffs — used both
@@ -45,13 +51,15 @@ export async function previewImport(
   cfg?: ProviderConfig,
   onStep?: (s: OcrStep) => void,
 ): Promise<ImportPreviewResult> {
-  const ocrCfg = cfg ? {
-    provider: cfg.provider,
-    api_key: cfg.api_key,
-    base_url: cfg.base_url,
-    model: cfg.model,
-    analysis_model: cfg.analysis_model || undefined,
-  } : undefined
+  const ocrCfg = cfg
+    ? {
+        provider: cfg.provider,
+        api_key: cfg.api_key,
+        base_url: cfg.base_url,
+        model: cfg.model,
+        analysis_model: cfg.analysis_model || undefined,
+      }
+    : undefined
 
   const ocr = await new Promise<OcrResult>((resolve, reject) => {
     streamOcrFundCode(files, ocrCfg, {
@@ -62,7 +70,7 @@ export async function previewImport(
   })
   // Build amount lookup from matched_funds (covers both code & name_match sources)
   const amountByCode = new Map(
-    ocr.matched_funds.map((f) => [f.code, f.amount ?? null])
+    ocr.matched_funds.map((f) => [f.code, f.amount ?? null]),
   )
   const nameMatched = new Map(ocr.name_matches.map((m) => [m.code, m]))
 
@@ -76,10 +84,13 @@ export async function previewImport(
       // matched by fuzzy fund-name search — confidence shaped by Pro review result
       const review = nm.review ?? 'unreviewed'
       const confidence =
-        review === 'confirmed' ? 0.92
-        : review === 'corrected' ? 0.85
-        : nm.similarity >= 0.8 ? 0.78
-        : 0.60
+        review === 'confirmed'
+          ? 0.92
+          : review === 'corrected'
+            ? 0.85
+            : nm.similarity >= 0.8
+              ? 0.78
+              : 0.6
       items.push({
         code,
         name: nm.name,
@@ -166,11 +177,29 @@ export async function confirmImport(
 }
 
 export function formatConfidence(confidence: number): string {
-  return `${Math.round(confidence * 100)}%`;
+  return `${Math.round(confidence * 100)}%`
 }
 
-export function getConfidenceInfo(confidence: number): { color: string; label: string; className: string } {
-  if (confidence >= HIGH_CONFIDENCE) return { color: 'text-green-600', label: '高置信度', className: 'bg-green-100 text-green-800' };
-  if (confidence >= MEDIUM_CONFIDENCE) return { color: 'text-yellow-600', label: '中置信度', className: 'bg-yellow-100 text-yellow-800' };
-  return { color: 'text-red-600', label: '需确认', className: 'bg-red-100 text-red-800' };
+export function getConfidenceInfo(confidence: number): {
+  color: string
+  label: string
+  className: string
+} {
+  if (confidence >= HIGH_CONFIDENCE)
+    return {
+      color: 'text-green-600',
+      label: '高置信度',
+      className: 'bg-green-100 text-green-800',
+    }
+  if (confidence >= MEDIUM_CONFIDENCE)
+    return {
+      color: 'text-yellow-600',
+      label: '中置信度',
+      className: 'bg-yellow-100 text-yellow-800',
+    }
+  return {
+    color: 'text-red-600',
+    label: '需确认',
+    className: 'bg-red-100 text-red-800',
+  }
 }

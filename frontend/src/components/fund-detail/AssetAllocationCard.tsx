@@ -1,5 +1,12 @@
 import { useMemo } from 'react'
-import { PieChart as RechartsPieChart, Pie, Cell, Legend, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  Legend,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
 import { PieChart } from 'lucide-react'
 import type { FundDetailData } from '@/lib/api'
 import { CHART_COLORS as PIE_COLORS } from '@/lib/utils'

@@ -56,7 +56,11 @@ export function WatchTable({
         accessorKey: 'gszzl',
         size: 110,
         header: ({ column }) => (
-          <SortHead column={column} right tooltip="按今日估算涨跌幅从高到低排序">
+          <SortHead
+            column={column}
+            right
+            tooltip="按今日估算涨跌幅从高到低排序"
+          >
             <span className="text-right leading-tight">日涨跌幅</span>
           </SortHead>
         ),
@@ -64,9 +68,13 @@ export function WatchTable({
           const v = row.original.gszzl
           return (
             <div className="text-right">
-              {v != null
-                ? <p className={cn('text-sm font-medium', colorFor(v))}>{formatPercent(v)}</p>
-                : <p className="text-sm text-slate-300">—</p>}
+              {v != null ? (
+                <p className={cn('text-sm font-medium', colorFor(v))}>
+                  {formatPercent(v)}
+                </p>
+              ) : (
+                <p className="text-sm text-slate-300">—</p>
+              )}
             </div>
           )
         },
@@ -80,7 +88,9 @@ export function WatchTable({
           return (
             <div className="flex items-center justify-center gap-1">
               <button
-                onClick={() => onEditHolding({ code: it.code, name: it.name, nav: it.gsz })}
+                onClick={() =>
+                  onEditHolding({ code: it.code, name: it.name, nav: it.gsz })
+                }
                 className="p-1.5 rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
                 title="记录持仓"
               >

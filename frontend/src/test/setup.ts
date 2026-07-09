@@ -1,8 +1,8 @@
-import '@testing-library/jest-dom';
-import { vi } from 'vitest';
+import '@testing-library/jest-dom'
+import { vi } from 'vitest'
 
 // Mock fetch globally
-global.fetch = vi.fn();
+global.fetch = vi.fn()
 
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
@@ -17,4 +17,4 @@ Object.defineProperty(window, 'matchMedia', {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   })),
-});
+})

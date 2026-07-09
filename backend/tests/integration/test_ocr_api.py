@@ -8,6 +8,7 @@ name-search fallback merge and the ocr_records insert.
 /api/ocr/fund-code streams SSE events (step/error/result); tests parse the
 final `result` event's payload.
 """
+
 import io
 import json
 
@@ -42,7 +43,8 @@ def fake_search(monkeypatch):
 
     async def _search(q, limit=1):
         hits = [
-            f for f in _FUNDS.values()
+            f
+            for f in _FUNDS.values()
             if f["code"] == q or q in f["name"] or f["name"] in q
         ]
         return hits[:limit]
@@ -69,7 +71,7 @@ def _sse_result(resp) -> dict:
     for line in resp.text.splitlines():
         if not line.startswith("data: "):
             continue
-        evt = json.loads(line[len("data: "):])
+        evt = json.loads(line[len("data: ") :])
         if evt["type"] == "error":
             raise AssertionError(f"pipeline error: {evt.get('text')}")
         if evt["type"] == "result":
@@ -80,7 +82,8 @@ def _sse_result(resp) -> dict:
 class TestOcrFundCode:
     def test_codes_found_and_verified(self, ocr_client, fake_search, monkeypatch):
         monkeypatch.setattr(
-            ocr_router, "extract_funds_from_text",
+            ocr_router,
+            "extract_funds_from_text",
             _fund_ai([{"code": "005827", "name": "", "amount": 1234.56}]),
         )
 
@@ -98,7 +101,8 @@ class TestOcrFundCode:
     def test_false_positive_code_dropped(self, ocr_client, fake_search, monkeypatch):
         # 100056 is an amount fragment, not a fund; source doesn't know it
         monkeypatch.setattr(
-            ocr_router, "extract_funds_from_text",
+            ocr_router,
+            "extract_funds_from_text",
             _fund_ai([{"code": "100056", "name": "", "amount": None}]),
         )
 
@@ -109,7 +113,8 @@ class TestOcrFundCode:
 
     def test_source_down_keeps_candidate(self, ocr_client, monkeypatch):
         monkeypatch.setattr(
-            ocr_router, "extract_funds_from_text",
+            ocr_router,
+            "extract_funds_from_text",
             _fund_ai([{"code": "005827", "name": "", "amount": None}]),
         )
 
@@ -125,7 +130,8 @@ class TestOcrFundCode:
 
     def test_name_fallback_when_no_codes(self, ocr_client, fake_search, monkeypatch):
         monkeypatch.setattr(
-            ocr_router, "extract_funds_from_text",
+            ocr_router,
+            "extract_funds_from_text",
             _fund_ai([{"code": "", "name": "招商中证白酒指数A", "amount": None}]),
         )
 
@@ -136,15 +142,21 @@ class TestOcrFundCode:
         assert body["name_matches"][0]["ocr_name"] == "招商中证白酒指数A"
 
     def test_name_fallback_merges_with_codes(
-        self, ocr_client, fake_search, monkeypatch,
+        self,
+        ocr_client,
+        fake_search,
+        monkeypatch,
     ):
         # One fund recognized by code, another only by name -> both returned
         monkeypatch.setattr(
-            ocr_router, "extract_funds_from_text",
-            _fund_ai([
-                {"code": "005827", "name": "易方达蓝筹精选混合", "amount": 2000.0},
-                {"code": "", "name": "招商中证白酒指数A", "amount": None},
-            ]),
+            ocr_router,
+            "extract_funds_from_text",
+            _fund_ai(
+                [
+                    {"code": "005827", "name": "易方达蓝筹精选混合", "amount": 2000.0},
+                    {"code": "", "name": "招商中证白酒指数A", "amount": None},
+                ]
+            ),
         )
 
         resp = ocr_client.post("/api/ocr/fund-code", files=_png_files("files"))
@@ -153,7 +165,10 @@ class TestOcrFundCode:
         assert [m["code"] for m in body["name_matches"]] == ["161725"]
 
     def test_unique_filenames_for_concurrent_uploads(
-        self, ocr_client, monkeypatch, tmp_path,
+        self,
+        ocr_client,
+        monkeypatch,
+        tmp_path,
     ):
         monkeypatch.setattr(ocr_router, "extract_funds_from_text", _fund_ai([]))
         for _ in range(5):

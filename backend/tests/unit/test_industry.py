@@ -1,4 +1,5 @@
 """Tests for stock industry enrichment (get_stock_industries)."""
+
 from __future__ import annotations
 
 import os
@@ -13,6 +14,7 @@ from app.services.stock_industry_service import get_stock_industries
 
 # ── secid prefix helper ───────────────────────────────────────────────────────
 
+
 def test_secid_shanghai() -> None:
     assert _secid("600519") == "1"  # 贵州茅台
     assert _secid("900001") == "1"  # B shares (9x)
@@ -25,6 +27,7 @@ def test_secid_shenzhen() -> None:
 
 
 # ── fetch_stock_industries: hits local table, skips API ──────────────────────
+
 
 @pytest.fixture()
 def tmp_db(tmp_path: Path) -> str:

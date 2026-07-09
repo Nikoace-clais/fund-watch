@@ -1,167 +1,190 @@
-import { useState, useMemo, type DragEvent, type ChangeEvent, type FC } from 'react';
-import { Upload, FileImage, AlertCircle, KeyRound, Loader2 } from 'lucide-react';
-import type { ImportPreviewResult, OcrStep } from '../services/import';
-import { previewImport, confirmImport, HIGH_CONFIDENCE, MEDIUM_CONFIDENCE } from '../services/import';
-import { Checkbox } from './Checkbox';
-import { ErrorBanner } from './PageState';
-import { ImportRow } from './import/ImportRow';
-import { OcrProgress } from './import/OcrProgress';
-import { useOcrStatus, usePortfolios } from '@/lib/queries';
-import { useProviderConfig } from '@/lib/provider-config';
+import {
+  useState,
+  useMemo,
+  type DragEvent,
+  type ChangeEvent,
+  type FC,
+} from 'react'
+import { Upload, FileImage, AlertCircle, KeyRound, Loader2 } from 'lucide-react'
+import type { ImportPreviewResult, OcrStep } from '../services/import'
+import {
+  previewImport,
+  confirmImport,
+  HIGH_CONFIDENCE,
+  MEDIUM_CONFIDENCE,
+} from '../services/import'
+import { Checkbox } from './Checkbox'
+import { ErrorBanner } from './PageState'
+import { ImportRow } from './import/ImportRow'
+import { OcrProgress } from './import/OcrProgress'
+import { useOcrStatus, usePortfolios } from '@/lib/queries'
+import { useProviderConfig } from '@/lib/provider-config'
 
 interface ImportPreviewProps {
-  onImport?: (codes: string[]) => void;
-  initialData?: ImportPreviewResult;
+  onImport?: (codes: string[]) => void
+  initialData?: ImportPreviewResult
 }
 
 export const ImportPreview: FC<ImportPreviewProps> = ({
   onImport,
   initialData,
 }) => {
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState<OcrStep | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ImportPreviewResult | null>(initialData || null);
+  const [isDragging, setIsDragging] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [currentStep, setCurrentStep] = useState<OcrStep | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [preview, setPreview] = useState<ImportPreviewResult | null>(
+    initialData || null,
+  )
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(() => {
     // Auto-select high confidence funds
     if (initialData) {
       return new Set(
         initialData.funds
           .filter((f) => f.confidence >= HIGH_CONFIDENCE)
-          .map((f) => f.code)
-      );
+          .map((f) => f.code),
+      )
     }
-    return new Set();
-  });
-  const [isConfirming, setIsConfirming] = useState(false);
+    return new Set()
+  })
+  const [isConfirming, setIsConfirming] = useState(false)
   // Portfolio selection for import
-  const { data: portfolios = [] } = usePortfolios();
-  const { config: providerConfig, isConfigured } = useProviderConfig();
-  const { data: ocrStatus } = useOcrStatus();
-  const ocrReady = ocrStatus?.ready ?? false;
+  const { data: portfolios = [] } = usePortfolios()
+  const { config: providerConfig, isConfigured } = useProviderConfig()
+  const { data: ocrStatus } = useOcrStatus()
+  const ocrReady = ocrStatus?.ready ?? false
   // 'new' = create new portfolio, or a number = existing portfolio id
-  const [importTarget, setImportTarget] = useState<'new' | number>('new');
-  const [newPfName, setNewPfName] = useState('');
+  const [importTarget, setImportTarget] = useState<'new' | number>('new')
+  const [newPfName, setNewPfName] = useState('')
 
   const handleDragOver = (e: DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+    e.preventDefault()
+    setIsDragging(true)
+  }
 
   const handleDragLeave = (e: DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
+    e.preventDefault()
+    setIsDragging(false)
+  }
 
   const handleDrop = async (e: DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const imgs = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
-    if (imgs.length) await processFiles(imgs);
-  };
+    e.preventDefault()
+    setIsDragging(false)
+    const imgs = Array.from(e.dataTransfer.files).filter((f) =>
+      f.type.startsWith('image/'),
+    )
+    if (imgs.length) await processFiles(imgs)
+  }
 
   const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
-    const imgs = Array.from(e.target.files || []);
-    if (imgs.length) await processFiles(imgs);
-  };
+    const imgs = Array.from(e.target.files || [])
+    if (imgs.length) await processFiles(imgs)
+  }
 
   const processFiles = async (imgs: File[]) => {
-    setIsLoading(true);
-    setError(null);
+    setIsLoading(true)
+    setError(null)
 
     try {
       const result = await previewImport(
         imgs,
         isConfigured ? providerConfig : undefined,
         setCurrentStep,
-      );
-      setCurrentStep(null);
-      setPreview(result);
+      )
+      setCurrentStep(null)
+      setPreview(result)
       // Auto-select high confidence funds
       const autoSelected = new Set(
-        result.funds.filter((f) => f.confidence >= HIGH_CONFIDENCE).map((f) => f.code)
-      );
-      setSelectedCodes(autoSelected);
+        result.funds
+          .filter((f) => f.confidence >= HIGH_CONFIDENCE)
+          .map((f) => f.code),
+      )
+      setSelectedCodes(autoSelected)
     } catch (err) {
-      setCurrentStep(null);
-      setError(err instanceof Error ? err.message : '处理失败');
+      setCurrentStep(null)
+      setError(err instanceof Error ? err.message : '处理失败')
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const toggleSelection = (code: string) => {
     setSelectedCodes((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       if (next.has(code)) {
-        next.delete(code);
+        next.delete(code)
       } else {
-        next.add(code);
+        next.add(code)
       }
-      return next;
-    });
-  };
+      return next
+    })
+  }
 
   const toggleSelectAll = () => {
-    if (!preview) return;
+    if (!preview) return
 
     if (selectedCodes.size === preview.funds.length) {
-      setSelectedCodes(new Set());
+      setSelectedCodes(new Set())
     } else {
-      setSelectedCodes(new Set(preview.funds.map((f) => f.code)));
+      setSelectedCodes(new Set(preview.funds.map((f) => f.code)))
     }
-  };
+  }
 
   const handleConfirm = async () => {
-    if (selectedCodes.size === 0) return;
+    if (selectedCodes.size === 0) return
 
-    setIsConfirming(true);
+    setIsConfirming(true)
     try {
       const items = (preview?.funds ?? [])
         .filter((f) => selectedCodes.has(f.code))
-        .map((f) => ({ code: f.code, amount: f.amount }));
-      const opts = importTarget === 'new'
-        ? { portfolioName: newPfName.trim() || undefined }
-        : { portfolioId: importTarget };
-      const result = await confirmImport(items, opts);
+        .map((f) => ({ code: f.code, amount: f.amount }))
+      const opts =
+        importTarget === 'new'
+          ? { portfolioName: newPfName.trim() || undefined }
+          : { portfolioId: importTarget }
+      const result = await confirmImport(items, opts)
       if (result.success) {
-        onImport?.(items.map((i) => i.code));
-        setPreview(null);
-        setSelectedCodes(new Set());
-        setNewPfName('');
-        setImportTarget('new');
+        onImport?.(items.map((i) => i.code))
+        setPreview(null)
+        setSelectedCodes(new Set())
+        setNewPfName('')
+        setImportTarget('new')
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '导入失败');
+      setError(err instanceof Error ? err.message : '导入失败')
     } finally {
-      setIsConfirming(false);
+      setIsConfirming(false)
     }
-  };
+  }
 
   const handleReset = () => {
-    setPreview(null);
-    setSelectedCodes(new Set());
-    setError(null);
-  };
+    setPreview(null)
+    setSelectedCodes(new Set())
+    setError(null)
+  }
 
-  const selectedCount = selectedCodes.size;
-  const totalCount = preview?.funds.length || 0;
+  const selectedCount = selectedCodes.size
+  const totalCount = preview?.funds.length || 0
 
   // Calculate stats
   const stats = useMemo(() => {
-    if (!preview) return null;
-    const highConfidence = preview.funds.filter((f) => f.confidence >= HIGH_CONFIDENCE).length;
+    if (!preview) return null
+    const highConfidence = preview.funds.filter(
+      (f) => f.confidence >= HIGH_CONFIDENCE,
+    ).length
     const mediumConfidence = preview.funds.filter(
-      (f) => f.confidence >= MEDIUM_CONFIDENCE && f.confidence < HIGH_CONFIDENCE
-    ).length;
-    const lowConfidence = preview.funds.filter((f) => f.confidence < MEDIUM_CONFIDENCE).length;
+      (f) =>
+        f.confidence >= MEDIUM_CONFIDENCE && f.confidence < HIGH_CONFIDENCE,
+    ).length
+    const lowConfidence = preview.funds.filter(
+      (f) => f.confidence < MEDIUM_CONFIDENCE,
+    ).length
 
-    return { highConfidence, mediumConfidence, lowConfidence };
-  }, [preview]);
+    return { highConfidence, mediumConfidence, lowConfidence }
+  }, [preview])
 
   if (isLoading) {
-    return <OcrProgress currentStep={currentStep} />;
+    return <OcrProgress currentStep={currentStep} />
   }
 
   if (preview) {
@@ -173,7 +196,8 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
           <div className="flex items-center space-x-4">
             <span className="text-sm text-slate-600">
-              识别到 <strong className="text-slate-900">{totalCount}</strong> 个基金
+              识别到 <strong className="text-slate-900">{totalCount}</strong>{' '}
+              个基金
             </span>
             {stats && (
               <div className="flex items-center space-x-2 text-xs">
@@ -214,8 +238,12 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
               <tr>
                 <th className="px-4 py-3 text-left">
                   <Checkbox
-                    checked={selectedCodes.size === totalCount && totalCount > 0}
-                    indeterminate={selectedCodes.size > 0 && selectedCodes.size < totalCount}
+                    checked={
+                      selectedCodes.size === totalCount && totalCount > 0
+                    }
+                    indeterminate={
+                      selectedCodes.size > 0 && selectedCodes.size < totalCount
+                    }
                     onChange={toggleSelectAll}
                     data-testid="select-all"
                   />
@@ -289,7 +317,8 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         {/* Footer Actions */}
         <div className="flex items-center justify-between pt-4">
           <div className="text-sm text-slate-600">
-            已选择 <strong className="text-slate-900">{selectedCount}</strong> 个基金
+            已选择 <strong className="text-slate-900">{selectedCount}</strong>{' '}
+            个基金
           </div>
           <div className="flex space-x-3">
             <button
@@ -315,7 +344,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
           </div>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -372,7 +401,9 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
           <KeyRound className="w-4 h-4 text-amber-600 mr-2 shrink-0" />
           <span className="text-sm text-amber-800">
             未配置 AI 密钥，识别将使用服务器默认配置（如无则失败）。可在{' '}
-            <a href="/ai-select" className="underline font-medium">AI 选基</a>{' '}
+            <a href="/ai-select" className="underline font-medium">
+              AI 选基
+            </a>{' '}
             页面右上角配置。
           </span>
         </div>
@@ -380,7 +411,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
 
       {error && <ErrorBanner className="mt-4">{error}</ErrorBanner>}
     </div>
-  );
-};
+  )
+}
 
-export default ImportPreview;
+export default ImportPreview

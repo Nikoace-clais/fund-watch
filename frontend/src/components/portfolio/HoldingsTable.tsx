@@ -33,7 +33,9 @@ export function HoldingsTable({
       selectColumn(),
       nameColumn((it) =>
         it.is_imported ? (
-          <span className="text-xs px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0">导入</span>
+          <span className="text-xs px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0">
+            导入
+          </span>
         ) : null,
       ),
       {
@@ -43,7 +45,9 @@ export function HoldingsTable({
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按当前估算净值从高到低排序">
             <span className="text-right leading-tight">
-              估算净值<br />份额
+              估算净值
+              <br />
+              份额
             </span>
           </SortHead>
         ),
@@ -51,12 +55,20 @@ export function HoldingsTable({
           const it = row.original
           return (
             <div className="text-right">
-              {it.nav != null
-                ? <p className="text-slate-800">{parseFloat(it.nav).toFixed(4)}</p>
-                : <p className="text-slate-300">—</p>}
-              {it.shares != null
-                ? <p className="text-xs text-slate-400 mt-0.5">{parseFloat(it.shares).toFixed(2)} 份</p>
-                : <p className="text-xs text-slate-300 mt-0.5">—</p>}
+              {it.nav != null ? (
+                <p className="text-slate-800">
+                  {parseFloat(it.nav).toFixed(4)}
+                </p>
+              ) : (
+                <p className="text-slate-300">—</p>
+              )}
+              {it.shares != null ? (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {parseFloat(it.shares).toFixed(2)} 份
+                </p>
+              ) : (
+                <p className="text-xs text-slate-300 mt-0.5">—</p>
+              )}
             </div>
           )
         },
@@ -68,7 +80,9 @@ export function HoldingsTable({
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按持仓市值从高到低排序">
             <span className="text-right leading-tight">
-              持仓金额<br />占比
+              持仓金额
+              <br />
+              占比
             </span>
           </SortHead>
         ),
@@ -88,9 +102,15 @@ export function HoldingsTable({
         accessorKey: 'daily_change',
         size: 120,
         header: ({ column }) => (
-          <SortHead column={column} right tooltip="按今日估算涨跌幅从高到低排序">
+          <SortHead
+            column={column}
+            right
+            tooltip="按今日估算涨跌幅从高到低排序"
+          >
             <span className="text-right leading-tight">
-              今日收益<br />涨跌幅
+              今日收益
+              <br />
+              涨跌幅
             </span>
           </SortHead>
         ),
@@ -101,20 +121,27 @@ export function HoldingsTable({
             <p className="text-right text-slate-300">—</p>
           ) : (
             <div className="text-right">
-              <p className={cn('font-medium', colorFor(dr))}>{formatCNYSigned(dr)}</p>
-              <p className={cn('text-xs mt-0.5', colorFor(it.daily_change))}>{formatPercent(it.daily_change)}</p>
+              <p className={cn('font-medium', colorFor(dr))}>
+                {formatCNYSigned(dr)}
+              </p>
+              <p className={cn('text-xs mt-0.5', colorFor(it.daily_change))}>
+                {formatPercent(it.daily_change)}
+              </p>
             </div>
           )
         },
       },
       {
         id: 'return_rate',
-        accessorFn: (row) => (row.return_rate != null ? parseFloat(row.return_rate) : null),
+        accessorFn: (row) =>
+          row.return_rate != null ? parseFloat(row.return_rate) : null,
         size: 110,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按累计收益率从高到低排序">
             <span className="text-right leading-tight">
-              累计收益<br />收益率
+              累计收益
+              <br />
+              收益率
             </span>
           </SortHead>
         ),
@@ -122,15 +149,24 @@ export function HoldingsTable({
           const it = row.original
           const tr = parseFloat(it.total_return)
           const rr = it.return_rate != null ? parseFloat(it.return_rate) : null
-          const cumRet = it.imported_cumulative_return != null ? parseFloat(it.imported_cumulative_return) : null
+          const cumRet =
+            it.imported_cumulative_return != null
+              ? parseFloat(it.imported_cumulative_return)
+              : null
           return (
             <div className="text-right">
-              <p className={cn('font-medium', colorFor(tr))}>{formatCNYSigned(tr)}</p>
-              {it.is_imported && cumRet != null
-                ? <p className="text-xs text-slate-400 mt-0.5">累计 {formatCNYSigned(cumRet)}</p>
-                : rr != null
-                  ? <p className={cn('text-xs mt-0.5', colorFor(rr))}>{formatPercent(rr)}</p>
-                  : null}
+              <p className={cn('font-medium', colorFor(tr))}>
+                {formatCNYSigned(tr)}
+              </p>
+              {it.is_imported && cumRet != null ? (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  累计 {formatCNYSigned(cumRet)}
+                </p>
+              ) : rr != null ? (
+                <p className={cn('text-xs mt-0.5', colorFor(rr))}>
+                  {formatPercent(rr)}
+                </p>
+              ) : null}
             </div>
           )
         },
@@ -151,7 +187,13 @@ export function HoldingsTable({
                 <History className="h-4 w-4" />
               </button>
               <button
-                onClick={() => onEditHolding({ code: it.code, name: it.name, nav: it.nav != null ? parseFloat(it.nav) : undefined })}
+                onClick={() =>
+                  onEditHolding({
+                    code: it.code,
+                    name: it.name,
+                    nav: it.nav != null ? parseFloat(it.nav) : undefined,
+                  })
+                }
                 className="p-1.5 rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
                 title="记录交易"
               >

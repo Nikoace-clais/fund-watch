@@ -1,6 +1,13 @@
 import { useMemo, useState } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceDot,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceDot,
 } from 'recharts'
 import { TrendingUp } from 'lucide-react'
 import type { NavPoint, Transaction } from '@/lib/api'
@@ -19,7 +26,13 @@ function formatDate(dateStr: string) {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-export function NavChart({ history, transactions }: { history: NavPoint[]; transactions: Transaction[] }) {
+export function NavChart({
+  history,
+  transactions,
+}: {
+  history: NavPoint[]
+  transactions: Transaction[]
+}) {
   const [range, setRange] = useState<number>(63) // default 3M
 
   const filteredHistory = useMemo(() => {
@@ -69,7 +82,10 @@ export function NavChart({ history, transactions }: { history: NavPoint[]; trans
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={filteredHistory} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+          <AreaChart
+            data={filteredHistory}
+            margin={{ top: 5, right: 10, left: 10, bottom: 5 }}
+          >
             <defs>
               <linearGradient id="navGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -111,7 +127,12 @@ export function NavChart({ history, transactions }: { history: NavPoint[]; trans
               strokeWidth={2}
               fill="url(#navGradient)"
               dot={false}
-              activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: '#3b82f6' }}
+              activeDot={{
+                r: 4,
+                strokeWidth: 2,
+                fill: '#fff',
+                stroke: '#3b82f6',
+              }}
             />
             {filteredHistory.flatMap((point) => {
               const txs = tradeMap.get(point.date)
@@ -128,7 +149,7 @@ export function NavChart({ history, transactions }: { history: NavPoint[]; trans
                   fill={color}
                   stroke="#fff"
                   strokeWidth={2}
-                />
+                />,
               ]
             })}
           </AreaChart>

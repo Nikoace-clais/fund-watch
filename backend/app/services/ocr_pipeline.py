@@ -35,9 +35,23 @@ _VERIFY_LIMIT = 40  # raised from 15 — search is now reliable enough
 
 # Structural keywords that mark the end of the brand+theme prefix
 _STRUCT_KWS = [
-    "ETF发起式联接", "ETF联接", "指数增强", "灵活配置",
-    "联接", "ETF", "指数", "股票", "混合", "债券",
-    "发起式", "发起", "QDII-FOF-LOF", "QDII-LOF", "QDII", "FOF", "LOF",
+    "ETF发起式联接",
+    "ETF联接",
+    "指数增强",
+    "灵活配置",
+    "联接",
+    "ETF",
+    "指数",
+    "股票",
+    "混合",
+    "债券",
+    "发起式",
+    "发起",
+    "QDII-FOF-LOF",
+    "QDII-LOF",
+    "QDII",
+    "FOF",
+    "LOF",
 ]
 
 
@@ -123,9 +137,11 @@ def build_cfg(
     model: str | None,
     review_model: str | None = None,
 ) -> dict[str, Any]:
-    resolved = api_key or (
-        os.environ.get("ANTHROPIC_API_KEY") if provider == "anthropic" else None
-    ) or ""
+    resolved = (
+        api_key
+        or (os.environ.get("ANTHROPIC_API_KEY") if provider == "anthropic" else None)
+        or ""
+    )
     return {
         "provider": provider,
         "api_key": resolved,
@@ -229,11 +245,13 @@ async def ocr_fund_generator(
                 continue
             log.info("代码验证通过: %s %s", info["code"], info.get("name", ""))
             codes.append(info["code"])
-            matched_funds.append({
-                "code": info["code"],
-                "name": info["name"] or item["name"],
-                "amount": item.get("amount"),
-            })
+            matched_funds.append(
+                {
+                    "code": info["code"],
+                    "name": info["name"] or item["name"],
+                    "amount": item.get("amount"),
+                }
+            )
 
     # ── Resolve name-only funds via search ───────────────────────────────
     name_matches: list[dict[str, Any]] = []
@@ -253,23 +271,39 @@ async def ocr_fund_generator(
                 log.info("名称未命中(待Pro识别): '%s'", fund["name"])
                 no_hit.append(fund)
                 continue
-            log.info("名称匹配: OCR='%s' → 搜索='%s'(%s) 相似度=%.2f",
-                     fund["name"], hit["name"], hit["code"], hit["similarity"])
+            log.info(
+                "名称匹配: OCR='%s' → 搜索='%s'(%s) 相似度=%.2f",
+                fund["name"],
+                hit["name"],
+                hit["code"],
+                hit["similarity"],
+            )
             entry = {
-                "code": hit["code"], "name": hit["name"], "type": hit.get("type"),
-                "ocr_name": fund["name"], "similarity": hit["similarity"],
+                "code": hit["code"],
+                "name": hit["name"],
+                "type": hit.get("type"),
+                "ocr_name": fund["name"],
+                "similarity": hit["similarity"],
                 "amount": fund.get("amount"),
             }
             name_matches.append(entry)
             if hit["code"] not in codes:
                 codes.append(hit["code"])
-                matched_funds.append({"code": hit["code"], "name": hit["name"],
-                                      "amount": fund.get("amount")})
+                matched_funds.append(
+                    {
+                        "code": hit["code"],
+                        "name": hit["name"],
+                        "amount": fund.get("amount"),
+                    }
+                )
 
     # ── Stage 1.5: Pro identifies unmatched names ────────────────────────
     if no_hit:
-        yield _sse("step", step="pro_identify",
-                   text=f"Pro 模型识别未命中基金（{len(no_hit)} 个）...")
+        yield _sse(
+            "step",
+            step="pro_identify",
+            text=f"Pro 模型识别未命中基金（{len(no_hit)} 个）...",
+        )
         unknown_input = [{"index": i, "name": f["name"]} for i, f in enumerate(no_hit)]
         identified = await resolve_unknown_fund_names(combined_raw, unknown_input, cfg)
         for i, fund in enumerate(no_hit):
@@ -284,8 +318,12 @@ async def ocr_fund_generator(
             if pro_code:
                 verified = await _resolve_code(pro_code)
                 if verified:
-                    log.info("Pro代码核验通过: OCR='%s' → %s '%s'",
-                             fund["name"], pro_code, verified["name"])
+                    log.info(
+                        "Pro代码核验通过: OCR='%s' → %s '%s'",
+                        fund["name"],
+                        pro_code,
+                        verified["name"],
+                    )
                 else:
                     log.info("Pro代码核验失败(幻觉?): %s，回退名称搜索", pro_code)
 
@@ -295,37 +333,60 @@ async def ocr_fund_generator(
                     log.info("Pro识别后仍未命中: '%s'", full_name)
                     continue
                 verified = {
-                    "code": vh["code"], "name": vh["name"], "type": vh.get("type"),
+                    "code": vh["code"],
+                    "name": vh["name"],
+                    "type": vh.get("type"),
                 }
-                log.info("Pro名称搜索命中: OCR='%s' → Pro='%s' → '%s'(%s)",
-                         fund["name"], full_name, verified["name"], verified["code"])
+                log.info(
+                    "Pro名称搜索命中: OCR='%s' → Pro='%s' → '%s'(%s)",
+                    fund["name"],
+                    full_name,
+                    verified["name"],
+                    verified["code"],
+                )
 
             similarity = SequenceMatcher(None, fund["name"], verified["name"]).ratio()
             entry = {
-                "code": verified["code"], "name": verified["name"],
+                "code": verified["code"],
+                "name": verified["name"],
                 "type": verified.get("type"),
-                "ocr_name": fund["name"], "similarity": round(similarity, 2),
-                "amount": fund.get("amount"), "review": "corrected",
+                "ocr_name": fund["name"],
+                "similarity": round(similarity, 2),
+                "amount": fund.get("amount"),
+                "review": "corrected",
                 "corrected_name": full_name,
             }
             name_matches.append(entry)
             if verified["code"] not in codes:
                 codes.append(verified["code"])
-                matched_funds.append({"code": verified["code"],
-                                      "name": verified["name"],
-                                      "amount": fund.get("amount")})
+                matched_funds.append(
+                    {
+                        "code": verified["code"],
+                        "name": verified["name"],
+                        "amount": fund.get("amount"),
+                    }
+                )
 
     # ── Stage 2: Pro review & correction ────────────────────────────────
     preliminary = [
-        {"index": i, "ocr_name": m["ocr_name"], "code": m["code"], "name": m["name"],
-         "similarity": m.get("similarity", 0.0), "amount": m.get("amount")}
+        {
+            "index": i,
+            "ocr_name": m["ocr_name"],
+            "code": m["code"],
+            "name": m["name"],
+            "similarity": m.get("similarity", 0.0),
+            "amount": m.get("amount"),
+        }
         for i, m in enumerate(name_matches)
         if "review" not in m  # skip already-reviewed items from Stage 1.5
     ]
 
     if preliminary:
-        yield _sse("step", step="pro_review",
-                   text=f"Pro 模型核查匹配结果（{len(preliminary)} 个）...")
+        yield _sse(
+            "step",
+            step="pro_review",
+            text=f"Pro 模型核查匹配结果（{len(preliminary)} 个）...",
+        )
         preliminary = await review_fund_matches(combined_raw, preliminary, cfg)
         for item in preliminary:
             if item.get("review") != "corrected":
@@ -344,8 +405,13 @@ async def ocr_fund_generator(
             item["similarity"] = SequenceMatcher(
                 None, item["ocr_name"], best["name"]
             ).ratio()
-            log.info("Pro纠正生效: '%s'(%s) → '%s'(%s)", old_name, old_code,
-                     best["name"], best["code"])
+            log.info(
+                "Pro纠正生效: '%s'(%s) → '%s'(%s)",
+                old_name,
+                old_code,
+                best["name"],
+                best["code"],
+            )
             if old_code in codes:
                 codes[codes.index(old_code)] = best["code"]
             else:
@@ -358,7 +424,9 @@ async def ocr_fund_generator(
         reviewed = {p["index"]: p for p in preliminary}
         name_matches = [
             {
-                "code": p["code"], "name": p["name"], "type": p.get("type"),
+                "code": p["code"],
+                "name": p["name"],
+                "type": p.get("type"),
                 "ocr_name": p["ocr_name"],
                 "similarity": round(p.get("similarity", 0.0), 2),
                 "review": p.get("review", "unreviewed"),

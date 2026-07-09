@@ -62,21 +62,36 @@ export function PageState({
 }) {
   if (error) {
     return (
-      <div className={cn('flex items-center justify-center py-32 text-red-400', className)}>
+      <div
+        className={cn(
+          'flex items-center justify-center py-32 text-red-400',
+          className,
+        )}
+      >
         {errorContent}
       </div>
     )
   }
   if (loading) {
     return (
-      <div className={cn('flex items-center justify-center py-32 text-slate-400', className)}>
+      <div
+        className={cn(
+          'flex items-center justify-center py-32 text-slate-400',
+          className,
+        )}
+      >
         加载中...
       </div>
     )
   }
   if (empty) {
     return (
-      <div className={cn('flex items-center justify-center py-32 text-slate-400', className)}>
+      <div
+        className={cn(
+          'flex items-center justify-center py-32 text-slate-400',
+          className,
+        )}
+      >
         {emptyContent}
       </div>
     )

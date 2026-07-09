@@ -12,7 +12,8 @@ export function useClickOutside(
   useEffect(() => {
     if (!active) return
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onOutsideRef.current()
+      if (ref.current && !ref.current.contains(e.target as Node))
+        onOutsideRef.current()
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)

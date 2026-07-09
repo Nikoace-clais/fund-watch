@@ -19,9 +19,20 @@ function IndexCard({ data }: { data: MarketIndex }) {
       <div className="text-2xl font-bold text-slate-900 tabular-nums">
         {formatNum2(data.value)}
       </div>
-      <div className={cn('flex items-center gap-3 text-sm font-medium tabular-nums', colorFor(data.change_percent))}>
-        <span>{sign}{data.change.toFixed(2)}</span>
-        <span>{sign}{data.change_percent.toFixed(2)}%</span>
+      <div
+        className={cn(
+          'flex items-center gap-3 text-sm font-medium tabular-nums',
+          colorFor(data.change_percent),
+        )}
+      >
+        <span>
+          {sign}
+          {data.change.toFixed(2)}
+        </span>
+        <span>
+          {sign}
+          {data.change_percent.toFixed(2)}%
+        </span>
       </div>
     </div>
   )
@@ -43,10 +54,21 @@ function SkeletonCard() {
 
 /* ---------- main page ---------- */
 export function Market() {
-  const { data, isLoading: loading, isFetching, error: queryError, refetch, dataUpdatedAt } = useMarketIndices()
+  const {
+    data,
+    isLoading: loading,
+    isFetching,
+    error: queryError,
+    refetch,
+    dataUpdatedAt,
+  } = useMarketIndices()
 
   const refreshing = isFetching && !loading
-  const error = queryError ? (queryError instanceof Error ? queryError.message : '获取行情数据失败') : null
+  const error = queryError
+    ? queryError instanceof Error
+      ? queryError.message
+      : '获取行情数据失败'
+    : null
   const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : null
 
   const items = data ?? []
@@ -69,7 +91,12 @@ export function Market() {
         <div className="flex items-center gap-3">
           {updatedAt && (
             <span className="text-xs text-slate-400">
-              更新于 {updatedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              更新于{' '}
+              {updatedAt.toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })}
             </span>
           )}
           <button
@@ -77,7 +104,9 @@ export function Market() {
             disabled={refreshing}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+            <RefreshCw
+              className={cn('h-4 w-4', refreshing && 'animate-spin')}
+            />
             刷新
           </button>
         </div>
@@ -108,7 +137,9 @@ export function Market() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {loading
             ? Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
-            : international.map((idx) => <IndexCard key={idx.code} data={idx} />)}
+            : international.map((idx) => (
+                <IndexCard key={idx.code} data={idx} />
+              ))}
         </div>
       </section>
 

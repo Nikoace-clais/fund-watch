@@ -12,7 +12,8 @@ export function TransactionsCard({
   onAddTx: () => void
 }) {
   const { selectedId } = useSelectedPortfolio()
-  const { handleDelete: handleDeleteTx, deletingId: deletingTx } = useDeleteTxConfirm(selectedId)
+  const { handleDelete: handleDeleteTx, deletingId: deletingTx } =
+    useDeleteTxConfirm(selectedId)
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
@@ -53,12 +54,14 @@ export function TransactionsCard({
                 <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
                   <td className="py-2.5 text-slate-600">{tx.trade_date}</td>
                   <td className="py-2.5">
-                    <span className={cn(
-                      'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-                      tx.direction === 'buy'
-                        ? 'bg-red-50 text-red-600'
-                        : 'bg-green-50 text-green-600',
-                    )}>
+                    <span
+                      className={cn(
+                        'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
+                        tx.direction === 'buy'
+                          ? 'bg-red-50 text-red-600'
+                          : 'bg-green-50 text-green-600',
+                      )}
+                    >
                       {tx.direction === 'buy' ? '买入' : '卖出'}
                     </span>
                   </td>
@@ -66,13 +69,17 @@ export function TransactionsCard({
                     {parseFloat(tx.nav).toFixed(4)}
                   </td>
                   <td className="py-2.5 text-right text-slate-700">
-                    {parseFloat(tx.shares).toLocaleString('zh-CN', { maximumFractionDigits: 2 })}
+                    {parseFloat(tx.shares).toLocaleString('zh-CN', {
+                      maximumFractionDigits: 2,
+                    })}
                   </td>
                   <td className="py-2.5 text-right text-slate-700">
                     {formatCNY(parseFloat(tx.amount))}
                   </td>
                   <td className="py-2.5 text-right text-slate-500">
-                    {parseFloat(tx.fee) > 0 ? formatCNY(parseFloat(tx.fee)) : '—'}
+                    {parseFloat(tx.fee) > 0
+                      ? formatCNY(parseFloat(tx.fee))
+                      : '—'}
                   </td>
                   <td className="py-2.5 pl-4 text-slate-400">
                     {tx.note || '—'}

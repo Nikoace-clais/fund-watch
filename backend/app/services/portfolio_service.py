@@ -413,9 +413,7 @@ async def compute_history(
                 "date": date,
                 "total_value": float(value.quantize(Decimal("0.01"))),
                 **(
-                    {"is_estimate": True}
-                    if date == today and today_is_estimate
-                    else {}
+                    {"is_estimate": True} if date == today and today_is_estimate else {}
                 ),
             }
             for date, value in sorted_items

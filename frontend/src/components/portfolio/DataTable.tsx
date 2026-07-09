@@ -28,15 +28,35 @@ export function DataTable<T>({
       <table className="w-full text-sm">
         <colgroup>
           {table.getVisibleLeafColumns().map((col) => (
-            <col key={col.id} style={col.id !== 'name' ? { width: `${col.getSize()}px` } : undefined} />
+            <col
+              key={col.id}
+              style={
+                col.id !== 'name' ? { width: `${col.getSize()}px` } : undefined
+              }
+            />
           ))}
         </colgroup>
         <thead>
           {table.getHeaderGroups().map((hg) => (
-            <tr key={hg.id} className="bg-slate-50 text-slate-500 text-xs uppercase">
+            <tr
+              key={hg.id}
+              className="bg-slate-50 text-slate-500 text-xs uppercase"
+            >
               {hg.headers.map((header) => (
-                <th key={header.id} className={cn(cellPadding, 'py-3 align-middle', alignClass(header.column.id))}>
-                  {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                <th
+                  key={header.id}
+                  className={cn(
+                    cellPadding,
+                    'py-3 align-middle',
+                    alignClass(header.column.id),
+                  )}
+                >
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
                 </th>
               ))}
             </tr>
@@ -54,7 +74,14 @@ export function DataTable<T>({
                 )}
               >
                 {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className={cn(cellPadding, 'py-3', alignClass(cell.column.id))}>
+                  <td
+                    key={cell.id}
+                    className={cn(
+                      cellPadding,
+                      'py-3',
+                      alignClass(cell.column.id),
+                    )}
+                  >
                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
                   </td>
                 ))}

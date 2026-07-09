@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from 'react'
 import type { Portfolio } from './api'
 import { usePortfolios } from './queries'
 import { getStoredString, setStoredString } from './storage'
@@ -47,6 +54,9 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
 
 export function useSelectedPortfolio() {
   const ctx = useContext(PortfolioContext)
-  if (!ctx) throw new Error('useSelectedPortfolio must be used within PortfolioProvider')
+  if (!ctx)
+    throw new Error(
+      'useSelectedPortfolio must be used within PortfolioProvider',
+    )
   return ctx
 }

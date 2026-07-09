@@ -14,7 +14,9 @@ export function BatchBar({
   if (count === 0) return null
   return (
     <div className="flex items-center gap-4 px-6 py-2.5 bg-blue-50 border-b border-blue-100">
-      <span className="text-sm font-medium text-blue-700">已选 {count} 只基金</span>
+      <span className="text-sm font-medium text-blue-700">
+        已选 {count} 只基金
+      </span>
       <div className="flex-1" />
       <button
         onClick={onDelete}

@@ -34,7 +34,11 @@ const PLACEHOLDER = `{"funds": [
 
 export function BatchTab({ portfolioId }: { portfolioId?: number }) {
   const [text, setText] = useState('')
-  const [result, setResult] = useState<{ added: string[]; invalid: string[]; warnings: string[] } | null>(null)
+  const [result, setResult] = useState<{
+    added: string[]
+    invalid: string[]
+    warnings: string[]
+  } | null>(null)
   const [error, setError] = useState('')
   const batchAddFunds = useBatchAddFunds(portfolioId)
   const loading = batchAddFunds.isPending
@@ -50,7 +54,12 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
     batchAddFunds.mutate(
       { codes, funds, opts: portfolioId != null ? { portfolioId } : undefined },
       {
-        onSuccess: (data) => setResult({ added: data.added, invalid: data.invalid ?? [], warnings: data.warnings ?? [] }),
+        onSuccess: (data) =>
+          setResult({
+            added: data.added,
+            invalid: data.invalid ?? [],
+            warnings: data.warnings ?? [],
+          }),
         onError: (err: Error) => setError(err.message || '导入失败'),
       },
     )
@@ -76,7 +85,11 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
           className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors"
         >
           <span>用 AI 识别截图？先复制提示词</span>
-          {showPrompt ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          {showPrompt ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
         </button>
         {showPrompt && (
           <div className="px-4 pb-3">
@@ -90,10 +103,14 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
                 copied
                   ? 'bg-green-100 text-green-700'
-                  : 'bg-white border border-blue-200 text-blue-600 hover:bg-blue-50'
+                  : 'bg-white border border-blue-200 text-blue-600 hover:bg-blue-50',
               )}
             >
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
               {copied ? '已复制' : '复制提示词'}
             </button>
           </div>
@@ -101,7 +118,9 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-600 mb-1.5">粘贴基金数据</label>
+        <label className="block text-sm font-medium text-slate-600 mb-1.5">
+          粘贴基金数据
+        </label>
         <textarea
           value={text}
           onChange={(e) => {
@@ -114,7 +133,8 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
           className="w-full px-4 py-3 border border-slate-200 rounded-lg text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
         <p className="mt-1.5 text-xs text-slate-400">
-          支持含持仓金额/累计收益/持有收益的 JSON，或旧格式 codes 数组，或纯代码列表
+          支持含持仓金额/累计收益/持有收益的 JSON，或旧格式 codes
+          数组，或纯代码列表
         </p>
       </div>
 
@@ -125,7 +145,7 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
           'w-full py-2.5 rounded-lg text-sm font-medium transition-colors',
           text.trim() && !loading
             ? 'bg-blue-600 text-white hover:bg-blue-700'
-            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            : 'bg-slate-100 text-slate-400 cursor-not-allowed',
         )}
       >
         {loading ? '导入中...' : '导入'}
@@ -138,20 +158,26 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
           {result.added.length > 0 && (
             <div className="flex items-start gap-2 px-3 py-2.5 bg-green-50 text-green-700 rounded-lg">
               <Check className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>成功添加 {result.added.length} 只：{result.added.join(', ')}</span>
+              <span>
+                成功添加 {result.added.length} 只：{result.added.join(', ')}
+              </span>
             </div>
           )}
           {result.invalid.length > 0 && (
             <div className="flex items-start gap-2 px-3 py-2.5 bg-slate-50 text-slate-500 rounded-lg">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>无法识别 {result.invalid.length} 项：{result.invalid.join(', ')}</span>
+              <span>
+                无法识别 {result.invalid.length} 项：{result.invalid.join(', ')}
+              </span>
             </div>
           )}
           {result.warnings.length > 0 && (
             <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 text-amber-700 rounded-lg">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div className="space-y-1">
-                {result.warnings.map((w, i) => <p key={i}>{w}</p>)}
+                {result.warnings.map((w, i) => (
+                  <p key={i}>{w}</p>
+                ))}
               </div>
             </div>
           )}

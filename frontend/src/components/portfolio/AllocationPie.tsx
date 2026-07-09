@@ -11,7 +11,10 @@ export function AllocationPie({
   totalCurrent: number
   fundCount: number
 }) {
-  const pieData = items.map((it) => ({ name: it.name || it.code, value: parseFloat(it.current_value) }))
+  const pieData = items.map((it) => ({
+    name: it.name || it.code,
+    value: parseFloat(it.current_value),
+  }))
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
@@ -19,12 +22,23 @@ export function AllocationPie({
       <div className="relative">
         <ResponsiveContainer width="100%" height={220}>
           <PieChart>
-            <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={90} dataKey="value" stroke="none">
+            <Pie
+              data={pieData}
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={90}
+              dataKey="value"
+              stroke="none"
+            >
               {pieData.map((_, idx) => (
                 <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={(value: number) => formatCNY(value)} wrapperStyle={{ zIndex: 10 }} />
+            <Tooltip
+              formatter={(value: number) => formatCNY(value)}
+              wrapperStyle={{ zIndex: 10 }}
+            />
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -37,12 +51,24 @@ export function AllocationPie({
           const cv = parseFloat(it.current_value)
           const pct = totalCurrent > 0 ? (cv / totalCurrent) * 100 : 0
           return (
-            <div key={it.code} className="flex items-center justify-between text-sm">
+            <div
+              key={it.code}
+              className="flex items-center justify-between text-sm"
+            >
               <div className="flex items-center gap-2">
-                <span className="inline-block h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }} />
-                <span className="text-slate-700 truncate max-w-[120px]">{it.name || it.code}</span>
+                <span
+                  className="inline-block h-3 w-3 rounded-full shrink-0"
+                  style={{
+                    backgroundColor: PIE_COLORS[idx % PIE_COLORS.length],
+                  }}
+                />
+                <span className="text-slate-700 truncate max-w-[120px]">
+                  {it.name || it.code}
+                </span>
               </div>
-              <span className="text-slate-500 font-medium">{pct.toFixed(1)}%</span>
+              <span className="text-slate-500 font-medium">
+                {pct.toFixed(1)}%
+              </span>
             </div>
           )
         })}

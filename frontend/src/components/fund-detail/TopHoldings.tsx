@@ -28,7 +28,7 @@ export function TopHoldings({ holdings }: { holdings: StockHolding[] }) {
                 <div
                   className="h-full bg-blue-500 rounded-full transition-all"
                   style={{
-                    width: `${Math.min((h.percentage ?? 0) / 15 * 100, 100)}%`,
+                    width: `${Math.min(((h.percentage ?? 0) / 15) * 100, 100)}%`,
                   }}
                 />
               </div>

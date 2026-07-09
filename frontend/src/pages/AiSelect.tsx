@@ -21,15 +21,40 @@ const EMPHASIS_OPTIONS = [
 // 被合并的词仍可通过下方自由输入框命中后端子串匹配
 const SECTOR_GROUPS = [
   { group: '消费医药', items: ['白酒', '食品饮料', '消费', '医药', '农业'] },
-  { group: '科技成长', items: ['半导体', '科技', '互联网', '传媒', '新能源', '汽车'] },
-  { group: '金融周期', items: ['银行', '证券', '金融', '地产', '煤炭', '钢铁', '有色', '化工', '电力'] },
+  {
+    group: '科技成长',
+    items: ['半导体', '科技', '互联网', '传媒', '新能源', '汽车'],
+  },
+  {
+    group: '金融周期',
+    items: [
+      '银行',
+      '证券',
+      '金融',
+      '地产',
+      '煤炭',
+      '钢铁',
+      '有色',
+      '化工',
+      '电力',
+    ],
+  },
   { group: '主题策略', items: ['军工', '环保', '养老', '红利'] },
-  { group: '宽基指数', items: ['沪深300', '中证500', '中证1000', '创业板', '科创'] },
+  {
+    group: '宽基指数',
+    items: ['沪深300', '中证500', '中证1000', '创业板', '科创'],
+  },
   { group: '海外 / QDII', items: ['港股', '纳斯达克', '标普', 'QDII'] },
   { group: '固收 / 货币', items: ['债', '货币'] },
 ]
 
-function RecCard({ rec, onAdd }: { rec: AiFundRec; onAdd: (code: string) => Promise<void> }) {
+function RecCard({
+  rec,
+  onAdd,
+}: {
+  rec: AiFundRec
+  onAdd: (code: string) => Promise<void>
+}) {
   const { colorFor } = useColor()
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
@@ -56,7 +81,9 @@ function RecCard({ rec, onAdd }: { rec: AiFundRec; onAdd: (code: string) => Prom
             {rec.rank}
           </span>
           <div className="min-w-0">
-            <p className="font-semibold text-slate-900 truncate">{rec.name || rec.code}</p>
+            <p className="font-semibold text-slate-900 truncate">
+              {rec.name || rec.code}
+            </p>
             <p className="text-xs text-slate-400 font-mono">{rec.code}</p>
           </div>
         </div>
@@ -77,7 +104,11 @@ function RecCard({ rec, onAdd }: { rec: AiFundRec; onAdd: (code: string) => Prom
                 : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60',
             )}
           >
-            {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+            {adding ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Plus className="h-3 w-3" />
+            )}
             {added ? '已加入' : '加入自选'}
           </button>
         </div>
@@ -85,31 +116,69 @@ function RecCard({ rec, onAdd }: { rec: AiFundRec; onAdd: (code: string) => Prom
 
       {/* Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-        <Metric label="近1年" value={fmt(rec.one_year_return)} className={colorFor(rec.one_year_return ?? 0)} />
-        <Metric label="近3年" value={fmt(rec.three_year_return)} className={colorFor(rec.three_year_return ?? 0)} />
-        <Metric label="最大回撤" value={rec.max_drawdown != null ? `-${fmt(rec.max_drawdown)}` : '--'} className="text-amber-600" />
+        <Metric
+          label="近1年"
+          value={fmt(rec.one_year_return)}
+          className={colorFor(rec.one_year_return ?? 0)}
+        />
+        <Metric
+          label="近3年"
+          value={fmt(rec.three_year_return)}
+          className={colorFor(rec.three_year_return ?? 0)}
+        />
+        <Metric
+          label="最大回撤"
+          value={rec.max_drawdown != null ? `-${fmt(rec.max_drawdown)}` : '--'}
+          className="text-amber-600"
+        />
         <Metric label="申购费率" value={rec.fee ?? '--'} />
       </div>
 
       {/* Manager / Size */}
       {(rec.manager || rec.size != null) && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-          {rec.manager && <span>经理：<span className="text-slate-700">{rec.manager}</span></span>}
-          {rec.size != null && <span>规模：<span className="text-slate-700">{rec.size.toFixed(2)} 亿</span></span>}
+          {rec.manager && (
+            <span>
+              经理：<span className="text-slate-700">{rec.manager}</span>
+            </span>
+          )}
+          {rec.size != null && (
+            <span>
+              规模：
+              <span className="text-slate-700">{rec.size.toFixed(2)} 亿</span>
+            </span>
+          )}
         </div>
       )}
 
       {/* AI reasoning */}
-      <p className="text-sm text-slate-600 leading-relaxed border-t border-slate-100 pt-3">{rec.reason}</p>
+      <p className="text-sm text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
+        {rec.reason}
+      </p>
     </div>
   )
 }
 
-function Metric({ label, value, className }: { label: string; value: string; className?: string }) {
+function Metric({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: string
+  className?: string
+}) {
   return (
     <div className="bg-slate-50 rounded-lg px-2 py-2">
       <p className="text-[10px] text-slate-400 mb-0.5">{label}</p>
-      <p className={cn('text-sm font-semibold tabular-nums', className ?? 'text-slate-900')}>{value}</p>
+      <p
+        className={cn(
+          'text-sm font-semibold tabular-nums',
+          className ?? 'text-slate-900',
+        )}
+      >
+        {value}
+      </p>
     </div>
   )
 }
@@ -124,7 +193,10 @@ export function AiSelect() {
   const [loading, setLoading] = useState(false)
   const [steps, setSteps] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ summary: string; recommendations: AiFundRec[] } | null>(null)
+  const [result, setResult] = useState<{
+    summary: string
+    recommendations: AiFundRec[]
+  } | null>(null)
 
   async function handleSelect() {
     if (!theme) return
@@ -144,7 +216,10 @@ export function AiSelect() {
       },
       {
         onStep: (text) => setSteps((prev) => [...prev, text]),
-        onResult: (data) => { setResult(data); setSteps([]) },
+        onResult: (data) => {
+          setResult(data)
+          setSteps([])
+        },
         onError: (text) => setError(text),
       },
     )
@@ -213,10 +288,14 @@ export function AiSelect() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
           {/* Theme selector */}
           <div className="space-y-3">
-            <label className="block text-sm font-medium text-slate-700">板块 / 主题</label>
+            <label className="block text-sm font-medium text-slate-700">
+              板块 / 主题
+            </label>
             {SECTOR_GROUPS.map(({ group, items }) => (
               <div key={group}>
-                <p className="text-[11px] text-slate-400 font-medium mb-1.5 uppercase tracking-wide">{group}</p>
+                <p className="text-[11px] text-slate-400 font-medium mb-1.5 uppercase tracking-wide">
+                  {group}
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   {items.map((item) => (
                     <button
@@ -246,7 +325,9 @@ export function AiSelect() {
 
           {/* Emphasis selector */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">着重点</label>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              着重点
+            </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {EMPHASIS_OPTIONS.map((opt) => (
                 <button
@@ -260,7 +341,9 @@ export function AiSelect() {
                   )}
                 >
                   <span className="font-medium">{opt.label}</span>
-                  <span className="text-[11px] mt-0.5 opacity-70">{opt.desc}</span>
+                  <span className="text-[11px] mt-0.5 opacity-70">
+                    {opt.desc}
+                  </span>
                 </button>
               ))}
             </div>
@@ -281,7 +364,10 @@ export function AiSelect() {
       {loading && steps.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-2 max-h-60 overflow-y-auto">
           {steps.map((s, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm text-slate-600">
+            <div
+              key={i}
+              className="flex items-center gap-2 text-sm text-slate-600"
+            >
               <span className="text-green-500 shrink-0">✓</span>
               <span>{s}</span>
             </div>
@@ -309,7 +395,9 @@ export function AiSelect() {
             <p className="text-xs font-medium text-blue-600 mb-1.5 flex items-center gap-1">
               <Sparkles className="h-3 w-3" /> AI 总体评述
             </p>
-            <p className="text-sm text-slate-700 leading-relaxed">{result.summary}</p>
+            <p className="text-sm text-slate-700 leading-relaxed">
+              {result.summary}
+            </p>
           </div>
 
           {/* Recommendation cards */}

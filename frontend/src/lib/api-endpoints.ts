@@ -36,14 +36,14 @@ export function fetchFundDetail(code: string) {
 // NAV history
 export function fetchNavHistory(code: string, limit = 365) {
   return request<{ code: string; count: number; history: NavPoint[] }>(
-    `/api/funds/${code}/nav-history?limit=${limit}`
+    `/api/funds/${code}/nav-history?limit=${limit}`,
   )
 }
 
 // Top holdings
 export function fetchFundHoldings(code: string) {
   return request<{ code: string; count: number; holdings: StockHolding[] }>(
-    `/api/funds/${code}/holdings`
+    `/api/funds/${code}/holdings`,
   )
 }
 
@@ -61,15 +61,20 @@ export function createPortfolio(name: string) {
 }
 
 export function renamePortfolio(id: number, name: string) {
-  return request<{ ok: boolean; id: number; name: string }>(`/api/portfolios/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
-  })
+  return request<{ ok: boolean; id: number; name: string }>(
+    `/api/portfolios/${id}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    },
+  )
 }
 
 export function deletePortfolio(id: number) {
-  return request<{ ok: boolean; id: number }>(`/api/portfolios/${id}`, { method: 'DELETE' })
+  return request<{ ok: boolean; id: number }>(`/api/portfolios/${id}`, {
+    method: 'DELETE',
+  })
 }
 
 // Portfolio summary
@@ -97,12 +102,16 @@ export function addFund(code: string) {
 // Delete fund
 export function deleteFund(code: string, portfolioId?: number) {
   const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
-  return request<{ ok: boolean }>(`/api/funds/${code}${qs}`, { method: 'DELETE' })
+  return request<{ ok: boolean }>(`/api/funds/${code}${qs}`, {
+    method: 'DELETE',
+  })
 }
 
 // Search funds by name/code
 export function searchFunds(q: string) {
-  return request<{ results: Array<{ code: string; name: string; type?: string }> }>(`/api/funds/search?q=${encodeURIComponent(q)}`)
+  return request<{
+    results: Array<{ code: string; name: string; type?: string }>
+  }>(`/api/funds/search?q=${encodeURIComponent(q)}`)
 }
 
 // Batch add funds
@@ -111,19 +120,22 @@ export function batchAddFunds(
   funds?: BatchFundItem[],
   opts?: { portfolioId?: number; portfolioName?: string },
 ) {
-  return request<{ ok: boolean; portfolio_id: number; added: string[]; invalid: string[]; warnings: string[] }>(
-    '/api/funds/batch',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        codes,
-        funds: funds ?? [],
-        portfolio_id: opts?.portfolioId,
-        portfolio_name: opts?.portfolioName,
-      }),
-    },
-  )
+  return request<{
+    ok: boolean
+    portfolio_id: number
+    added: string[]
+    invalid: string[]
+    warnings: string[]
+  }>('/api/funds/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      codes,
+      funds: funds ?? [],
+      portfolio_id: opts?.portfolioId,
+      portfolio_name: opts?.portfolioName,
+    }),
+  })
 }
 
 // Fund P&L (holding shares, etc.)
@@ -134,24 +146,32 @@ export function fetchFundPnl(code: string, portfolioId?: number) {
 
 // NAV on a specific date
 export function fetchNavOnDate(code: string, date: string) {
-  return request<{ code: string; date: string; nav: number | null }>(`/api/funds/${code}/nav-on?date=${date}`)
+  return request<{ code: string; date: string; nav: number | null }>(
+    `/api/funds/${code}/nav-on?date=${date}`,
+  )
 }
 
 // Add transaction (buy/sell)
-export function addTransaction(code: string, payload: {
-  direction: 'buy' | 'sell'
-  trade_date: string
-  nav: string
-  shares: string
-  fee?: string
-  note?: string
-  portfolio_id?: number
-}) {
-  return request<{ ok: boolean; code: string }>(`/api/funds/${code}/transactions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ fee: '0', ...payload }),
-  })
+export function addTransaction(
+  code: string,
+  payload: {
+    direction: 'buy' | 'sell'
+    trade_date: string
+    nav: string
+    shares: string
+    fee?: string
+    note?: string
+    portfolio_id?: number
+  },
+) {
+  return request<{ ok: boolean; code: string }>(
+    `/api/funds/${code}/transactions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fee: '0', ...payload }),
+    },
+  )
 }
 
 // Portfolio value history (current holdings × historical NAV)
@@ -177,12 +197,15 @@ export function fetchCronStatus() {
 export function fetchTransactions(code: string, portfolioId?: number) {
   const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
   return request<{ code: string; items: Transaction[] }>(
-    `/api/funds/${code}/transactions${qs}`
+    `/api/funds/${code}/transactions${qs}`,
   )
 }
 
 export function deleteTransaction(txId: number) {
-  return request<{ ok: boolean; deleted: number }>(`/api/transactions/${txId}`, { method: 'DELETE' })
+  return request<{ ok: boolean; deleted: number }>(
+    `/api/transactions/${txId}`,
+    { method: 'DELETE' },
+  )
 }
 
 export function getOcrStatus() {
@@ -206,7 +229,11 @@ export async function streamOcrFundCode(
     `${API}/api/ocr/fund-code`,
     { method: 'POST', body: form },
     (event) => {
-      if (event.type === 'step') handlers.onStep({ step: event.step as OcrStep['step'], text: event.text! })
+      if (event.type === 'step')
+        handlers.onStep({
+          step: event.step as OcrStep['step'],
+          text: event.text!,
+        })
       if (event.type === 'result') handlers.onResult(event.data as OcrResult)
       if (event.type === 'error') handlers.onError(event.text!)
     },
@@ -230,7 +257,8 @@ export async function streamAiSelect(
     },
     (event) => {
       if (event.type === 'step') handlers.onStep(event.text!)
-      if (event.type === 'result') handlers.onResult(event.data as AiSelectResponse)
+      if (event.type === 'result')
+        handlers.onResult(event.data as AiSelectResponse)
       if (event.type === 'error') handlers.onError(event.text!)
     },
     handlers.onError,
@@ -239,6 +267,6 @@ export async function streamAiSelect(
 
 export function fetchFundsHoldingStock(stockCode: string, limit = 50) {
   return request<StockFundsResult>(
-    `/api/stocks/${encodeURIComponent(stockCode)}/funds?limit=${limit}`
+    `/api/stocks/${encodeURIComponent(stockCode)}/funds?limit=${limit}`,
   )
 }

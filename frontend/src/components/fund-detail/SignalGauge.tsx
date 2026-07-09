@@ -5,9 +5,14 @@ import { useColor } from '@/lib/color-context'
 
 // ── SVG gauge constants ───────────────────────────────────────────────────────
 
-const CX = 100, CY = 105, R = 80, SW = 14
+const CX = 100,
+  CY = 105,
+  R = 80,
+  SW = 14
 
-function toRad(deg: number) { return (deg * Math.PI) / 180 }
+function toRad(deg: number) {
+  return (deg * Math.PI) / 180
+}
 
 // Stroke-based arc on the centerline radius R.
 // sweep=1 → CW in SVG y-down = traces the UPPER semicircle.
@@ -21,8 +26,16 @@ function arcPath(a1Deg: number, a2Deg: number) {
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function ScoreBar({
-  label, hint, score, color,
-}: { label: string; hint: string; score: number; color: string }) {
+  label,
+  hint,
+  score,
+  color,
+}: {
+  label: string
+  hint: string
+  score: number
+  color: string
+}) {
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="w-14 shrink-0 text-slate-500">{label}</span>
@@ -63,15 +76,16 @@ export function SignalGauge({ history }: { history: NavPoint[] }) {
 
   const { s, v } = result
   const needleColor =
-    v.level >= 3 ? bull.stroke
-    : v.level <= 1 ? bear.stroke
-    : '#64748b'
+    v.level >= 3 ? bull.stroke : v.level <= 1 ? bear.stroke : '#64748b'
 
   // composite 0 → needle at 180° (far left = sell), 100 → 0° (far right = buy)
   const needleAngleDeg = 180 - (v.composite / 100) * 180
   const θ = toRad(needleAngleDeg)
-  const cosθ = Math.cos(θ), sinθ = Math.sin(θ)
-  const L = 66, back = 8, hw = 3.5 // needle: length, tail, half-width at hub
+  const cosθ = Math.cos(θ),
+    sinθ = Math.sin(θ)
+  const L = 66,
+    back = 8,
+    hw = 3.5 // needle: length, tail, half-width at hub
 
   // needle polygon: tip → base-right → tail → base-left
   const needlePoints = [
@@ -97,30 +111,87 @@ export function SignalGauge({ history }: { history: NavPoint[] }) {
       <div className="flex flex-col items-center gap-1">
         <svg viewBox="0 5 200 115" className="w-full max-w-[230px]">
           {/* Background track — butt ends, covered by colored segments */}
-          <path d={arcPath(180, 0)} fill="none" stroke="#e2e8f0" strokeWidth={SW} strokeLinecap="butt" />
+          <path
+            d={arcPath(180, 0)}
+            fill="none"
+            stroke="#e2e8f0"
+            strokeWidth={SW}
+            strokeLinecap="butt"
+          />
           {/* 5 colored segments — butt linecap → adjacent endpoints share exact coords → no gaps, no concave seams */}
-          <path d={arcPath(180, 144)} fill="none" stroke={bear.stroke} strokeWidth={SW} strokeLinecap="butt" />
-          <path d={arcPath(144, 108)} fill="none" stroke={bear.stroke} strokeWidth={SW} strokeLinecap="butt" strokeOpacity={0.45} />
-          <path d={arcPath(108,  72)} fill="none" stroke="#94a3b8"    strokeWidth={SW} strokeLinecap="butt" />
-          <path d={arcPath( 72,  36)} fill="none" stroke={bull.stroke} strokeWidth={SW} strokeLinecap="butt" strokeOpacity={0.45} />
-          <path d={arcPath( 36,   0)} fill="none" stroke={bull.stroke} strokeWidth={SW} strokeLinecap="butt" />
+          <path
+            d={arcPath(180, 144)}
+            fill="none"
+            stroke={bear.stroke}
+            strokeWidth={SW}
+            strokeLinecap="butt"
+          />
+          <path
+            d={arcPath(144, 108)}
+            fill="none"
+            stroke={bear.stroke}
+            strokeWidth={SW}
+            strokeLinecap="butt"
+            strokeOpacity={0.45}
+          />
+          <path
+            d={arcPath(108, 72)}
+            fill="none"
+            stroke="#94a3b8"
+            strokeWidth={SW}
+            strokeLinecap="butt"
+          />
+          <path
+            d={arcPath(72, 36)}
+            fill="none"
+            stroke={bull.stroke}
+            strokeWidth={SW}
+            strokeLinecap="butt"
+            strokeOpacity={0.45}
+          />
+          <path
+            d={arcPath(36, 0)}
+            fill="none"
+            stroke={bull.stroke}
+            strokeWidth={SW}
+            strokeLinecap="butt"
+          />
           {/* Rounded caps at the two arc endpoints */}
           <circle cx={CX - R} cy={CY} r={SW / 2} fill={bear.stroke} />
           <circle cx={CX + R} cy={CY} r={SW / 2} fill={bull.stroke} />
           {/* Needle */}
           <polygon points={needlePoints} fill={needleColor} />
           {/* Hub: white ring + colored center */}
-          <circle cx={CX} cy={CY} r={9}   fill="white" />
-          <circle cx={CX} cy={CY} r={6}   fill={needleColor} />
+          <circle cx={CX} cy={CY} r={9} fill="white" />
+          <circle cx={CX} cy={CY} r={6} fill={needleColor} />
           <circle cx={CX} cy={CY} r={2.5} fill="white" />
           {/* Endpoint labels */}
-          <text x={CX - R - 2} y={CY + 16} fontSize="9" fill={bear.stroke}
-            fontWeight="700" textAnchor="middle">卖</text>
-          <text x={CX + R + 2} y={CY + 16} fontSize="9" fill={bull.stroke}
-            fontWeight="700" textAnchor="middle">买</text>
+          <text
+            x={CX - R - 2}
+            y={CY + 16}
+            fontSize="9"
+            fill={bear.stroke}
+            fontWeight="700"
+            textAnchor="middle"
+          >
+            卖
+          </text>
+          <text
+            x={CX + R + 2}
+            y={CY + 16}
+            fontSize="9"
+            fill={bull.stroke}
+            fontWeight="700"
+            textAnchor="middle"
+          >
+            买
+          </text>
         </svg>
 
-        <p className="text-2xl font-bold leading-none" style={{ color: needleColor }}>
+        <p
+          className="text-2xl font-bold leading-none"
+          style={{ color: needleColor }}
+        >
           {v.label}
         </p>
         <p className="text-[10px] text-slate-400 mt-0.5">{v.reason}</p>
@@ -147,7 +218,9 @@ export function SignalGauge({ history }: { history: NavPoint[] }) {
         />
       </div>
 
-      <p className="text-[10px] text-slate-300 text-center pt-1">估算参考，非投资建议</p>
+      <p className="text-[10px] text-slate-300 text-center pt-1">
+        估算参考，非投资建议
+      </p>
     </div>
   )
 }

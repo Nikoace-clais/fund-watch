@@ -2,7 +2,12 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import { ArrowLeft, Plus } from 'lucide-react'
 import {
-  useAddFund, useFundDetail, useFundHoldings, useNavHistory, useQuote, useTransactions,
+  useAddFund,
+  useFundDetail,
+  useFundHoldings,
+  useNavHistory,
+  useQuote,
+  useTransactions,
 } from '@/lib/queries'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { HoldingEditModal } from '@/components/HoldingEditModal'
@@ -30,14 +35,17 @@ export function FundDetail() {
   const { data: transactions = [] } = useTransactions(code, selectedId)
   const addFund = useAddFund(selectedId)
 
-  const [addMsg, setAddMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [addMsg, setAddMsg] = useState<{ text: string; ok: boolean } | null>(
+    null,
+  )
   const [showAddTx, setShowAddTx] = useState(false)
 
   const detail = detailQ.data
   const loading = detailQ.isLoading || navLoading
   const notFound = detailQ.isError
 
-  const navValue = quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : null)
+  const navValue =
+    quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : null)
   const changeValue = quote?.gszzl ?? null
 
   function handleAddFund() {
@@ -62,7 +70,10 @@ export function FundDetail() {
         errorContent={
           <>
             <p className="text-xl text-slate-500 mb-4">未找到该基金</p>
-            <button onClick={() => navigate(-1)} className="text-blue-600 hover:underline flex items-center gap-1">
+            <button
+              onClick={() => navigate(-1)}
+              className="text-blue-600 hover:underline flex items-center gap-1"
+            >
               <ArrowLeft className="h-4 w-4" /> 返回基金列表
             </button>
           </>
@@ -78,7 +89,10 @@ export function FundDetail() {
         onClose={() => setShowAddTx(false)}
         code={code!}
         name={detail.name}
-        defaultNav={quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : undefined)}
+        defaultNav={
+          quote?.gsz ??
+          (history.length > 0 ? history[history.length - 1].nav : undefined)
+        }
         portfolioId={selectedId}
       />
 
@@ -98,7 +112,12 @@ export function FundDetail() {
             <Plus className="h-4 w-4" /> 加入自选
           </button>
           {addMsg && (
-            <span className={cn('text-sm font-medium', addMsg.ok ? 'text-green-600' : 'text-red-600')}>
+            <span
+              className={cn(
+                'text-sm font-medium',
+                addMsg.ok ? 'text-green-600' : 'text-red-600',
+              )}
+            >
               {addMsg.text}
             </span>
           )}
@@ -127,13 +146,28 @@ export function FundDetail() {
             </h1>
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-500">
               {detail.manager && (
-                <span>基金经理: <span className="text-slate-700">{detail.manager}</span></span>
+                <span>
+                  基金经理:{' '}
+                  <span className="text-slate-700">{detail.manager}</span>
+                </span>
               )}
               {detail.size != null && (
-                <span>规模: <span className="text-slate-700">{detail.size >= 1 ? `${detail.size.toFixed(2)}亿` : `${(detail.size * 10000).toFixed(0)}万`}</span></span>
+                <span>
+                  规模:{' '}
+                  <span className="text-slate-700">
+                    {detail.size >= 1
+                      ? `${detail.size.toFixed(2)}亿`
+                      : `${(detail.size * 10000).toFixed(0)}万`}
+                  </span>
+                </span>
               )}
               {detail.established_date && (
-                <span>成立日期: <span className="text-slate-700">{detail.established_date}</span></span>
+                <span>
+                  成立日期:{' '}
+                  <span className="text-slate-700">
+                    {detail.established_date}
+                  </span>
+                </span>
               )}
             </div>
           </div>
@@ -148,7 +182,12 @@ export function FundDetail() {
               {navValue != null ? navValue.toFixed(4) : '--'}
             </p>
             {changeValue != null && (
-              <p className={cn('text-lg font-semibold mt-1', colorFor(changeValue))}>
+              <p
+                className={cn(
+                  'text-lg font-semibold mt-1',
+                  colorFor(changeValue),
+                )}
+              >
                 {formatPercent(changeValue)}
               </p>
             )}
@@ -173,7 +212,10 @@ export function FundDetail() {
         </div>
       </div>
 
-      <TransactionsCard transactions={transactions} onAddTx={() => setShowAddTx(true)} />
+      <TransactionsCard
+        transactions={transactions}
+        onAddTx={() => setShowAddTx(true)}
+      />
     </div>
   )
 }

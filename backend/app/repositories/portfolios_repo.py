@@ -19,9 +19,7 @@ def list_all(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 def exists(conn: sqlite3.Connection, portfolio_id: int) -> bool:
     return (
-        conn.execute(
-            "SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)
-        ).fetchone()
+        conn.execute("SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)).fetchone()
         is not None
     )
 

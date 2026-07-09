@@ -1,7 +1,19 @@
 import { Link } from 'react-router'
 import { useState } from 'react'
-import { TrendingUp, ArrowRight, BarChart3, Briefcase, Camera, Activity, Plus } from 'lucide-react'
-import { useFundsOverview, useMarketIndices, usePortfolioSummary } from '@/lib/queries'
+import {
+  TrendingUp,
+  ArrowRight,
+  BarChart3,
+  Briefcase,
+  Camera,
+  Activity,
+  Plus,
+} from 'lucide-react'
+import {
+  useFundsOverview,
+  useMarketIndices,
+  usePortfolioSummary,
+} from '@/lib/queries'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { cn, formatCNY, formatNum2, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
@@ -17,7 +29,8 @@ export function Dashboard() {
   const { selectedId } = useSelectedPortfolio()
   const { data: overview = [], isLoading: loading } = useFundsOverview()
   const { data: portfolio } = usePortfolioSummary(selectedId)
-  const { data: allIndices = [], isLoading: indicesLoading } = useMarketIndices()
+  const { data: allIndices = [], isLoading: indicesLoading } =
+    useMarketIndices()
   const [showAddModal, setShowAddModal] = useState(false)
 
   const indices = allIndices
@@ -59,7 +72,10 @@ export function Dashboard() {
               >
                 {idx.name}
                 <span className="font-semibold">{formatNum2(idx.value)}</span>
-                <span>{up ? '+' : ''}{idx.change_percent.toFixed(2)}%</span>
+                <span>
+                  {up ? '+' : ''}
+                  {idx.change_percent.toFixed(2)}%
+                </span>
               </span>
             )
           })}
@@ -114,16 +130,24 @@ export function Dashboard() {
             <div className="flex items-baseline gap-4">
               <p className="text-2xl font-bold">
                 <span className={colorFor(1)}>{upCount}</span>
-                <span className="text-sm font-medium text-slate-400 ml-1">涨</span>
+                <span className="text-sm font-medium text-slate-400 ml-1">
+                  涨
+                </span>
               </p>
               <p className="text-2xl font-bold">
                 <span className={colorFor(-1)}>{downCount}</span>
-                <span className="text-sm font-medium text-slate-400 ml-1">跌</span>
+                <span className="text-sm font-medium text-slate-400 ml-1">
+                  跌
+                </span>
               </p>
               {changes.length - upCount - downCount > 0 && (
                 <p className="text-2xl font-bold">
-                  <span className="text-gray-500">{changes.length - upCount - downCount}</span>
-                  <span className="text-sm font-medium text-slate-400 ml-1">平</span>
+                  <span className="text-gray-500">
+                    {changes.length - upCount - downCount}
+                  </span>
+                  <span className="text-sm font-medium text-slate-400 ml-1">
+                    平
+                  </span>
                 </p>
               )}
             </div>
@@ -163,7 +187,9 @@ export function Dashboard() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5 text-slate-700" />
-            <h2 className="text-lg font-semibold text-slate-800">自选基金概览</h2>
+            <h2 className="text-lg font-semibold text-slate-800">
+              自选基金概览
+            </h2>
           </div>
           <Link
             to="/portfolio"
@@ -206,7 +232,9 @@ export function Dashboard() {
                   )}
                 >
                   {/* fund name */}
-                  <h3 className="text-base font-semibold text-slate-900 truncate">{name}</h3>
+                  <h3 className="text-base font-semibold text-slate-900 truncate">
+                    {name}
+                  </h3>
                   <p className="text-xs text-slate-400 mt-0.5">
                     {fund.code}
                     {fund.sector ? ` | ${fund.sector}` : ''}
@@ -220,7 +248,11 @@ export function Dashboard() {
                         {isEstimate && <EstimateBadge time={latest?.gztime} />}
                       </p>
                       <p className="text-lg font-bold text-slate-800">
-                        {dwjz != null ? dwjz.toFixed(4) : gsz != null ? gsz.toFixed(4) : '—'}
+                        {dwjz != null
+                          ? dwjz.toFixed(4)
+                          : gsz != null
+                            ? gsz.toFixed(4)
+                            : '—'}
                       </p>
                     </div>
                     <div className="text-right">

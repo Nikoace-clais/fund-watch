@@ -22,7 +22,9 @@ export function ColorSchemeSetting() {
       }
       renderPanel={(close) => (
         <>
-          <p className="text-xs font-medium text-slate-400 uppercase mb-2">涨跌配色</p>
+          <p className="text-xs font-medium text-slate-400 uppercase mb-2">
+            涨跌配色
+          </p>
           <div className="space-y-1">
             {options.map((opt) => (
               <button
@@ -40,14 +42,18 @@ export function ColorSchemeSetting() {
               >
                 <div className="flex items-center gap-2">
                   <span className="flex gap-0.5">
-                    <span className={cn(
-                      'inline-block w-3 h-3 rounded-full',
-                      opt.value === 'red-up' ? 'bg-red-500' : 'bg-green-500',
-                    )} />
-                    <span className={cn(
-                      'inline-block w-3 h-3 rounded-full',
-                      opt.value === 'red-up' ? 'bg-green-500' : 'bg-red-500',
-                    )} />
+                    <span
+                      className={cn(
+                        'inline-block w-3 h-3 rounded-full',
+                        opt.value === 'red-up' ? 'bg-red-500' : 'bg-green-500',
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        'inline-block w-3 h-3 rounded-full',
+                        opt.value === 'red-up' ? 'bg-green-500' : 'bg-red-500',
+                      )}
+                    />
                   </span>
                   <span>{opt.label}</span>
                 </div>

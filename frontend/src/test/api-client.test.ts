@@ -23,10 +23,17 @@ describe('streamSSE', () => {
       'data: {"type":"resu',
       'lt","data":{"ok":true}}\n\n',
     ]
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, body: bodyFromChunks(chunks) })
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, body: bodyFromChunks(chunks) })
 
     const events: unknown[] = []
-    await streamSSE('http://x/test', {}, (evt) => events.push(evt), () => {})
+    await streamSSE(
+      'http://x/test',
+      {},
+      (evt) => events.push(evt),
+      () => {},
+    )
 
     expect(events).toEqual([
       { type: 'step', step: 'ocr', text: 'a' },
@@ -48,11 +55,21 @@ describe('streamSSE', () => {
   })
 
   it('skips a malformed chunk without throwing', async () => {
-    const chunks = ['data: {not json}\n\n', 'data: {"type":"step","text":"ok"}\n\n']
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, body: bodyFromChunks(chunks) })
+    const chunks = [
+      'data: {not json}\n\n',
+      'data: {"type":"step","text":"ok"}\n\n',
+    ]
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, body: bodyFromChunks(chunks) })
 
     const events: unknown[] = []
-    await streamSSE('http://x/test', {}, (evt) => events.push(evt), () => {})
+    await streamSSE(
+      'http://x/test',
+      {},
+      (evt) => events.push(evt),
+      () => {},
+    )
 
     expect(events).toEqual([{ type: 'step', text: 'ok' }])
   })

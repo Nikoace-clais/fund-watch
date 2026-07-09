@@ -4,6 +4,7 @@ Focuses on the two behavior changes that matter: funds_overview no longer
 does one DB round-trip per fund (bulk repo queries), and portfolio_holdings
 no longer double-fetches realtime estimates via a router-to-router call.
 """
+
 import app.db as app_db
 import app.routers.funds as funds_router
 import app.services.fund_import as fund_import_svc

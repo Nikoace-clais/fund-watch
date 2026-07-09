@@ -1,23 +1,23 @@
-import React, { useState } from 'react';
-import { ImportPreview } from '../components/ImportPreview';
-import { CheckCircle2, Camera, Lightbulb } from 'lucide-react';
-import { useNavigate } from 'react-router';
-import { cn } from '@/lib/utils';
+import React, { useState } from 'react'
+import { ImportPreview } from '../components/ImportPreview'
+import { CheckCircle2, Camera, Lightbulb } from 'lucide-react'
+import { useNavigate } from 'react-router'
+import { cn } from '@/lib/utils'
 
 export const ImportPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [importSuccess, setImportSuccess] = useState(false);
-  const [importedCount, setImportedCount] = useState(0);
+  const navigate = useNavigate()
+  const [importSuccess, setImportSuccess] = useState(false)
+  const [importedCount, setImportedCount] = useState(0)
 
   const handleImport = (codes: string[]) => {
-    setImportedCount(codes.length);
-    setImportSuccess(true);
-  };
+    setImportedCount(codes.length)
+    setImportSuccess(true)
+  }
 
   const handleReset = () => {
-    setImportSuccess(false);
-    setImportedCount(0);
-  };
+    setImportSuccess(false)
+    setImportedCount(0)
+  }
 
   if (importSuccess) {
     return (
@@ -28,7 +28,9 @@ export const ImportPage: React.FC = () => {
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">导入成功！</h2>
           <p className="text-slate-600 mb-8">
-            已成功导入 <strong className="text-slate-900">{importedCount}</strong> 个基金到您的基金池
+            已成功导入{' '}
+            <strong className="text-slate-900">{importedCount}</strong>{' '}
+            个基金到您的基金池
           </p>
           <div className="flex justify-center space-x-4">
             <button
@@ -46,7 +48,7 @@ export const ImportPage: React.FC = () => {
           </div>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -70,15 +72,19 @@ export const ImportPage: React.FC = () => {
       </div>
 
       {/* Tips */}
-      <div className={cn(
-        "rounded-xl p-5",
-        "bg-gradient-to-r from-blue-50 to-indigo-50",
-        "border border-blue-100"
-      )}>
+      <div
+        className={cn(
+          'rounded-xl p-5',
+          'bg-gradient-to-r from-blue-50 to-indigo-50',
+          'border border-blue-100',
+        )}
+      >
         <div className="flex items-start gap-3">
           <Lightbulb className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
           <div>
-            <h3 className="text-sm font-semibold text-blue-900 mb-2">使用提示</h3>
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">
+              使用提示
+            </h3>
             <ul className="text-sm text-blue-800 space-y-1.5">
               <li className="flex items-center gap-2">
                 <span className="w-1 h-1 bg-blue-400 rounded-full"></span>
@@ -97,7 +103,7 @@ export const ImportPage: React.FC = () => {
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default ImportPage;
+export default ImportPage

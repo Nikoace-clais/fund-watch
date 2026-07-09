@@ -11,16 +11,16 @@ function fmtMarketCap(v: number | null) {
   if (v == null) return '—'
   // HOLD_MARKET_CAP is in yuan
   const yi = v / 1e8
-  return yi >= 1
-    ? `${yi.toFixed(2)} 亿`
-    : formatCNY(v)
+  return yi >= 1 ? `${yi.toFixed(2)} 亿` : formatCNY(v)
 }
 
 /* ── table row ──────────────────────────────────────────────────────────────── */
 function FundRow({ item, rank }: { item: FundHolderItem; rank: number }) {
   return (
     <tr className="border-t border-slate-100 hover:bg-slate-50 transition-colors">
-      <td className="px-4 py-3 text-sm text-slate-400 tabular-nums w-10">{rank}</td>
+      <td className="px-4 py-3 text-sm text-slate-400 tabular-nums w-10">
+        {rank}
+      </td>
       <td className="px-4 py-3">
         <Link
           to={`/funds/${item.code}`}
@@ -31,20 +31,26 @@ function FundRow({ item, rank }: { item: FundHolderItem; rank: number }) {
       </td>
       <td className="px-4 py-3 text-sm text-slate-800">{item.name}</td>
       <td className="px-4 py-3 text-sm text-slate-500">
-        {item.company
-          ? <span className="inline-flex items-center gap-1">
-              <Building2 className="h-3 w-3 shrink-0 text-slate-400" />
-              {item.company}
-            </span>
-          : '—'}
+        {item.company ? (
+          <span className="inline-flex items-center gap-1">
+            <Building2 className="h-3 w-3 shrink-0 text-slate-400" />
+            {item.company}
+          </span>
+        ) : (
+          '—'
+        )}
       </td>
       <td className="px-4 py-3 text-sm text-slate-800 tabular-nums text-right">
         {fmtMarketCap(item.hold_market_cap)}
       </td>
       <td className="px-4 py-3 text-sm tabular-nums text-right">
-        {item.netasset_ratio != null
-          ? <span className="text-slate-800">{item.netasset_ratio.toFixed(2)}%</span>
-          : <span className="text-slate-400">—</span>}
+        {item.netasset_ratio != null ? (
+          <span className="text-slate-800">
+            {item.netasset_ratio.toFixed(2)}%
+          </span>
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
       </td>
     </tr>
   )
@@ -62,7 +68,8 @@ export function StockFunds() {
 
   const { data, isLoading, error } = useStockFundsHolding(code)
 
-  const errMsg = error instanceof Error ? error.message : error ? '数据加载失败' : null
+  const errMsg =
+    error instanceof Error ? error.message : error ? '数据加载失败' : null
 
   return (
     <div className="space-y-6">
@@ -113,10 +120,18 @@ export function StockFunds() {
             <span className="font-medium text-slate-800 text-base">
               {data.stock_name ?? code}
             </span>
-            <span>共 <span className="font-semibold text-slate-900">{data.count.toLocaleString()}</span> 只基金持有</span>
+            <span>
+              共{' '}
+              <span className="font-semibold text-slate-900">
+                {data.count.toLocaleString()}
+              </span>{' '}
+              只基金持有
+            </span>
             {data.report_date && (
-              <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200
-                               px-2 py-0.5 rounded-full">
+              <span
+                className="text-xs bg-amber-50 text-amber-700 border border-amber-200
+                               px-2 py-0.5 rounded-full"
+              >
                 数据口径：{data.report_date} 季报
               </span>
             )}
@@ -145,7 +160,8 @@ export function StockFunds() {
               </table>
               {data.count > data.items.length && (
                 <p className="px-4 py-3 text-xs text-slate-400 border-t border-slate-100 text-center">
-                  显示前 {data.items.length} 条，共 {data.count.toLocaleString()} 条
+                  显示前 {data.items.length} 条，共{' '}
+                  {data.count.toLocaleString()} 条
                 </p>
               )}
             </div>

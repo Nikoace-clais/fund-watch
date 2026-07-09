@@ -4,9 +4,13 @@ import type { Column } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
 
 function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
-  if (sorted === 'asc') return <ChevronUp className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-  if (sorted === 'desc') return <ChevronDown className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-  return <ChevronsUpDown className="h-3.5 w-3.5 opacity-30 shrink-0 group-hover:opacity-60 transition-opacity" />
+  if (sorted === 'asc')
+    return <ChevronUp className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+  if (sorted === 'desc')
+    return <ChevronDown className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+  return (
+    <ChevronsUpDown className="h-3.5 w-3.5 opacity-30 shrink-0 group-hover:opacity-60 transition-opacity" />
+  )
 }
 
 export function SortHead({

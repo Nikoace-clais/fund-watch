@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from 'react'
 import { getStoredJSON, setStoredJSON } from './storage'
 
 export type AiProvider = 'anthropic' | 'openai'
@@ -6,9 +12,9 @@ export type AiProvider = 'anthropic' | 'openai'
 export type ProviderConfig = {
   provider: AiProvider
   api_key: string
-  base_url: string        // used only for openai-compatible
-  model: string           // orchestration model (e.g. deepseek-v4-flash)
-  analysis_model: string  // analysis model (e.g. deepseek-v4-pro); empty = same as model
+  base_url: string // used only for openai-compatible
+  model: string // orchestration model (e.g. deepseek-v4-flash)
+  analysis_model: string // analysis model (e.g. deepseek-v4-pro); empty = same as model
 }
 
 const DEFAULTS: ProviderConfig = {
@@ -53,6 +59,9 @@ export function ProviderConfigProvider({ children }: { children: ReactNode }) {
 
 export function useProviderConfig() {
   const ctx = useContext(Ctx)
-  if (!ctx) throw new Error('useProviderConfig must be used within ProviderConfigProvider')
+  if (!ctx)
+    throw new Error(
+      'useProviderConfig must be used within ProviderConfigProvider',
+    )
   return ctx
 }
