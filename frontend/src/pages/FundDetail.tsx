@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, Check, Loader2, Plus } from 'lucide-react'
 import {
   useAddFund,
   useFundDetail,
@@ -40,6 +40,13 @@ export function FundDetail() {
   )
   const [showAddTx, setShowAddTx] = useState(false)
 
+  // 切换基金时重置「加入自选」状态，避免残留上只基金的结果
+  useEffect(() => {
+    addFund.reset()
+    setAddMsg(null)
+    // 仅随 code 变化执行
+  }, [code])
+
   const detail = detailQ.data
   const loading = detailQ.isLoading || navLoading
   const notFound = detailQ.isError
@@ -51,7 +58,6 @@ export function FundDetail() {
   function handleAddFund() {
     if (!code) return
     addFund.mutate(code, {
-      onSuccess: () => setAddMsg({ text: '已加入自选', ok: true }),
       onError: () => setAddMsg({ text: '加入失败', ok: false }),
       onSettled: () => setTimeout(() => setAddMsg(null), 3000),
     })
@@ -107,9 +113,26 @@ export function FundDetail() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleAddFund}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            disabled={addFund.isPending || addFund.isSuccess}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors',
+              addFund.isSuccess
+                ? 'bg-green-50 text-green-700 border border-green-200 cursor-default'
+                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60',
+            )}
           >
-            <Plus className="h-4 w-4" /> 加入自选
+            {addFund.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : addFund.isSuccess ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            {addFund.isPending
+              ? '加入中…'
+              : addFund.isSuccess
+                ? '已加入自选'
+                : '加入自选'}
           </button>
           {addMsg && (
             <span
@@ -141,7 +164,7 @@ export function FundDetail() {
                 {detail.code}
               </span>
             </div>
-            <h1 className="text-3xl font-bold text-slate-900 mb-3">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">
               {detail.name || detail.code}
             </h1>
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-500">

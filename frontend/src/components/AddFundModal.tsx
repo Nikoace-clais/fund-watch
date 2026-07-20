@@ -55,7 +55,7 @@ export function AddFundModal({
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={cn(
-              'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+              'flex flex-1 sm:flex-none items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap',
               activeTab === tab.key
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100',

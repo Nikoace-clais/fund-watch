@@ -31,12 +31,17 @@ export function CodeTab({ portfolioId }: { portfolioId?: number }) {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-600 mb-1.5">
+        <label
+          htmlFor="fund-code"
+          className="block text-sm font-medium text-slate-600 mb-1.5"
+        >
           基金代码
         </label>
         <div className="flex gap-2">
           <input
+            id="fund-code"
             type="text"
+            inputMode="numeric"
             value={code}
             onChange={(e) => {
               setCode(e.target.value.replace(/\D/g, '').slice(0, 6))

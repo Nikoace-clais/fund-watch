@@ -58,15 +58,15 @@ export function Dashboard() {
           <p className="text-sm text-slate-500 mt-1">实时估值与自选基金快报</p>
         </div>
 
-        {/* market indices */}
-        <div className="flex gap-3 flex-wrap">
+        {/* market indices:窄屏单行横向滚动,避免每个徽章独占一行 */}
+        <div className="flex gap-2 sm:gap-3 flex-nowrap sm:flex-wrap overflow-x-auto -mx-1 px-1 py-1">
           {indices.map((idx) => {
             const up = idx.change_percent > 0
             return (
               <span
                 key={idx.code}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border',
+                  'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border whitespace-nowrap',
                   badgeClassFor(idx.change_percent),
                 )}
               >

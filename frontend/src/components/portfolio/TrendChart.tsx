@@ -31,7 +31,7 @@ export function TrendChart({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-5 w-5 text-slate-700" />
           <h2 className="text-lg font-semibold text-slate-800">组合资产走势</h2>
@@ -42,7 +42,7 @@ export function TrendChart({
               key={r}
               onClick={() => setRange(r)}
               className={cn(
-                'px-3 py-1 rounded-md text-xs font-medium transition-colors',
+                'px-2 sm:px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors',
                 range === r
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100',
@@ -91,7 +91,7 @@ export function TrendChart({
               tick={{ fontSize: 11, fill: '#94a3b8' }}
               tickLine={false}
               axisLine={false}
-              width={72}
+              width={56}
               tickFormatter={(v: number) => `¥${(v / 10000).toFixed(1)}万`}
               domain={['auto', 'auto']}
             />

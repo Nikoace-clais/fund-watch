@@ -134,19 +134,19 @@ export function Portfolio() {
   return (
     <div className="space-y-8">
       {/* ---- Header ---- */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-slate-900">自选基金与持仓</h1>
           <p className="text-sm text-slate-500 mt-1">
             管理你的基金组合与持仓情况
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <PortfolioSwitcher />
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm"
+            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-sm whitespace-nowrap"
           >
             <Plus className="h-4 w-4" />
             添加基金

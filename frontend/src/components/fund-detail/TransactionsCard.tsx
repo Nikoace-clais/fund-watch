@@ -36,7 +36,7 @@ export function TransactionsCard({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-xs text-slate-400 border-b border-slate-100">
                 <th className="text-left pb-2 font-medium">日期</th>
@@ -81,7 +81,7 @@ export function TransactionsCard({
                       ? formatCNY(parseFloat(tx.fee))
                       : '—'}
                   </td>
-                  <td className="py-2.5 pl-4 text-slate-400">
+                  <td className="py-2.5 pl-4 text-slate-400 max-w-[120px] truncate">
                     {tx.note || '—'}
                   </td>
                   <td className="py-2.5 text-center">

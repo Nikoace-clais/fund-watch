@@ -51,7 +51,7 @@ export function TransactionModal({
         </div>
       </div>
 
-      <div className="overflow-y-auto flex-1 px-6 py-4">
+      <div className="overflow-y-auto overflow-x-auto flex-1 px-6 py-4">
         {loading ? (
           <p className="text-center text-slate-400 py-8 text-sm">加载中...</p>
         ) : items.length === 0 ? (
@@ -59,7 +59,7 @@ export function TransactionModal({
             暂无交易记录
           </p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="text-xs text-slate-400 border-b border-slate-100">
                 <th className="text-left pb-2 font-medium">日期</th>
@@ -73,7 +73,9 @@ export function TransactionModal({
             <tbody className="divide-y divide-slate-50">
               {items.map((tx) => (
                 <tr key={tx.id} className="hover:bg-slate-50">
-                  <td className="py-2.5 text-slate-600">{tx.trade_date}</td>
+                  <td className="py-2.5 text-slate-600 whitespace-nowrap">
+                    {tx.trade_date}
+                  </td>
                   <td className="py-2.5 text-center">
                     <span
                       className={cn(
@@ -86,13 +88,13 @@ export function TransactionModal({
                       {tx.direction === 'buy' ? '买入' : '卖出'}
                     </span>
                   </td>
-                  <td className="py-2.5 text-right text-slate-700">
+                  <td className="py-2.5 text-right text-slate-700 whitespace-nowrap">
                     {parseFloat(tx.nav).toFixed(4)}
                   </td>
-                  <td className="py-2.5 text-right text-slate-700">
+                  <td className="py-2.5 text-right text-slate-700 whitespace-nowrap">
                     {parseFloat(tx.shares).toFixed(2)}
                   </td>
-                  <td className="py-2.5 text-right text-slate-700">
+                  <td className="py-2.5 text-right text-slate-700 whitespace-nowrap">
                     {formatCNY(parseFloat(tx.amount))}
                   </td>
                   <td className="py-2.5 text-center">

@@ -3,33 +3,34 @@ import { computeRiskMetrics } from '@/lib/fund-metrics'
 
 // ── Emoji grading ─────────────────────────────────────────────────────────────
 
+// 每档返回 emoji + 文字档级，触屏上看不到 title 提示也能读懂评级
 function returnGrade(v: number) {
-  if (v >= 20) return '🚀'
-  if (v >= 5) return '📈'
-  if (v >= 0) return '😐'
-  return '📉'
+  if (v >= 20) return { icon: '🚀', label: '优秀' }
+  if (v >= 5) return { icon: '📈', label: '良好' }
+  if (v >= 0) return { icon: '😐', label: '一般' }
+  return { icon: '📉', label: '较差' }
 }
 
 function volGrade(v: number) {
-  if (v < 10) return '🧊'
-  if (v < 20) return '💧'
-  if (v < 30) return '🌊'
-  return '🌪️'
+  if (v < 10) return { icon: '🧊', label: '低' }
+  if (v < 20) return { icon: '💧', label: '较低' }
+  if (v < 30) return { icon: '🌊', label: '较高' }
+  return { icon: '🌪️', label: '高' }
 }
 
 function ddGrade(v: number) {
-  if (v < 10) return '🛡️'
-  if (v < 20) return '💚'
-  if (v < 30) return '🟡'
-  return '🔴'
+  if (v < 10) return { icon: '🛡️', label: '优秀' }
+  if (v < 20) return { icon: '💚', label: '良好' }
+  if (v < 30) return { icon: '🟡', label: '一般' }
+  return { icon: '🔴', label: '较差' }
 }
 
 function sharpeGrade(v: number) {
-  if (v >= 1.5) return '🏆'
-  if (v >= 1.0) return '⭐'
-  if (v >= 0.5) return '👍'
-  if (v >= 0) return '😐'
-  return '⚠️'
+  if (v >= 1.5) return { icon: '🏆', label: '优秀' }
+  if (v >= 1.0) return { icon: '⭐', label: '良好' }
+  if (v >= 0.5) return { icon: '👍', label: '一般' }
+  if (v >= 0) return { icon: '😐', label: '较弱' }
+  return { icon: '⚠️', label: '较差' }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -47,14 +48,19 @@ function MetricCard({
 }: {
   label: string
   value: string
-  grade: string
+  grade: { icon: string; label: string }
   hint?: string
 }) {
   return (
     <div className="text-center p-3 bg-slate-50 rounded-lg" title={hint}>
       <p className="text-xs text-slate-400 mb-1">{label}</p>
       <p className="text-base font-bold text-slate-800">{value}</p>
-      <p className="text-lg mt-0.5">{grade}</p>
+      <p className="text-lg mt-0.5">
+        {grade.icon}
+        {grade.label && (
+          <span className="ml-1 text-xs text-slate-500">{grade.label}</span>
+        )}
+      </p>
     </div>
   )
 }
@@ -106,7 +112,7 @@ export function RiskMetrics({ history, detail }: Props) {
             grade={
               metrics.annualReturn != null
                 ? returnGrade(metrics.annualReturn)
-                : '–'
+                : { icon: '–', label: '' }
             }
             hint="≥20%🚀 ≥5%📈 ≥0%😐 <0%📉"
           />
@@ -125,7 +131,11 @@ export function RiskMetrics({ history, detail }: Props) {
           <MetricCard
             label="夏普比率"
             value={fmtSharpe(metrics.sharpe)}
-            grade={metrics.sharpe != null ? sharpeGrade(metrics.sharpe) : '–'}
+            grade={
+              metrics.sharpe != null
+                ? sharpeGrade(metrics.sharpe)
+                : { icon: '–', label: '' }
+            }
             hint="≥1.5🏆 ≥1.0⭐ ≥0.5👍 ≥0😐 <0⚠️"
           />
         </div>

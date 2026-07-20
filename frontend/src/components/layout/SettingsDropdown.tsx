@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { useClickOutside } from '@/lib/hooks'
 
@@ -16,10 +16,20 @@ export function SettingsDropdown({
   const ref = useRef<HTMLDivElement>(null)
   useClickOutside(ref, open, () => setOpen(false))
 
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [open])
+
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
         className={cn(
           'flex items-center w-full px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
           'text-slate-600 hover:bg-slate-100 hover:text-slate-900',

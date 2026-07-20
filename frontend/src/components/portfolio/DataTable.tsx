@@ -23,9 +23,19 @@ export function DataTable<T>({
       columnId === 'actions' && 'text-center',
     )
 
+  // 非 name 列均设了固定像素宽(见 colgroup);给 table 一个 min-width,
+  // 窄屏时 name 列保有最低宽度、整体横向滚动,而不是把名称压成逐字竖排。
+  const NAME_COL_MIN = 180
+  const fixedColsWidth = table
+    .getVisibleLeafColumns()
+    .reduce((sum, col) => sum + (col.id === 'name' ? 0 : col.getSize()), 0)
+
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table
+        className="w-full text-sm"
+        style={{ minWidth: fixedColsWidth + NAME_COL_MIN }}
+      >
         <colgroup>
           {table.getVisibleLeafColumns().map((col) => (
             <col

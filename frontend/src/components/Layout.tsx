@@ -103,47 +103,54 @@ export function Layout() {
         </header>
 
         {isMobileMenuOpen && (
-          <div className="absolute top-16 left-0 right-0 z-50 bg-white border-b border-slate-200 shadow-lg md:hidden">
-            <nav className="px-4 py-2 space-y-1">
-              {navigation.map((item) => {
-                const isActive = location.pathname === item.href
-                return (
-                  <Link
-                    key={item.name}
-                    to={item.href}
-                    onClick={() => setIsMobileMenuOpen(false)}
-                    className={cn(
-                      'flex items-center px-3 py-3 rounded-md text-base font-medium',
-                      isActive
-                        ? 'bg-blue-50 text-blue-700'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
-                    )}
-                  >
-                    <item.icon
+          <>
+            {/* 透明遮罩：点击菜单外区域关闭菜单 */}
+            <div
+              className="fixed inset-0 z-40 md:hidden"
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+            <div className="absolute top-16 left-0 right-0 z-50 bg-white border-b border-slate-200 shadow-lg md:hidden">
+              <nav className="px-4 py-2 space-y-1">
+                {navigation.map((item) => {
+                  const isActive = location.pathname === item.href
+                  return (
+                    <Link
+                      key={item.name}
+                      to={item.href}
+                      onClick={() => setIsMobileMenuOpen(false)}
                       className={cn(
-                        'mr-4 h-5 w-5 flex-shrink-0',
-                        isActive ? 'text-blue-600' : 'text-slate-400',
+                        'flex items-center px-3 py-3 rounded-md text-base font-medium',
+                        isActive
+                          ? 'bg-blue-50 text-blue-700'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
                       )}
-                    />
-                    {item.name}
-                  </Link>
-                )
-              })}
-            </nav>
-            {/* Mobile settings */}
-            <div className="px-4 pb-3 border-t border-slate-100 pt-2">
-              {cronFailed && (
-                <p
-                  className="px-3 py-1.5 text-xs text-red-500 truncate"
-                  title={cronStatus?.last_error ?? undefined}
-                >
-                  ⚠ 快照拉取失败
-                </p>
-              )}
-              <AiConfigSetting />
-              <ColorSchemeSetting />
+                    >
+                      <item.icon
+                        className={cn(
+                          'mr-4 h-5 w-5 flex-shrink-0',
+                          isActive ? 'text-blue-600' : 'text-slate-400',
+                        )}
+                      />
+                      {item.name}
+                    </Link>
+                  )
+                })}
+              </nav>
+              {/* Mobile settings */}
+              <div className="px-4 pb-3 border-t border-slate-100 pt-2">
+                {cronFailed && (
+                  <p
+                    className="px-3 py-1.5 text-xs text-red-500 truncate"
+                    title={cronStatus?.last_error ?? undefined}
+                  >
+                    ⚠ 快照拉取失败
+                  </p>
+                )}
+                <AiConfigSetting />
+                <ColorSchemeSetting />
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         <main className="flex-1 overflow-y-auto bg-slate-50/50 p-4 md:p-8 w-full relative">

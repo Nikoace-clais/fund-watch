@@ -67,12 +67,19 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
 
   const [showPrompt, setShowPrompt] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
 
   const handleCopyPrompt = () => {
-    navigator.clipboard.writeText(AI_PROMPT).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    navigator.clipboard
+      .writeText(AI_PROMPT)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => {
+        setCopyFailed(true)
+        setTimeout(() => setCopyFailed(false), 2000)
+      })
   }
 
   return (
@@ -103,25 +110,37 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
                 copied
                   ? 'bg-green-100 text-green-700'
-                  : 'bg-white border border-blue-200 text-blue-600 hover:bg-blue-50',
+                  : copyFailed
+                    ? 'bg-red-50 text-red-600'
+                    : 'bg-white border border-blue-200 text-blue-600 hover:bg-blue-50',
               )}
             >
               {copied ? (
                 <Check className="w-3.5 h-3.5" />
+              ) : copyFailed ? (
+                <AlertCircle className="w-3.5 h-3.5" />
               ) : (
                 <Copy className="w-3.5 h-3.5" />
               )}
-              {copied ? '已复制' : '复制提示词'}
+              {copied
+                ? '已复制'
+                : copyFailed
+                  ? '复制失败，请手动选择复制'
+                  : '复制提示词'}
             </button>
           </div>
         )}
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-slate-600 mb-1.5">
+        <label
+          htmlFor="batch-input"
+          className="block text-sm font-medium text-slate-600 mb-1.5"
+        >
           粘贴基金数据
         </label>
         <textarea
+          id="batch-input"
           value={text}
           onChange={(e) => {
             setText(e.target.value)

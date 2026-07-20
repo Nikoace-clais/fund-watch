@@ -42,9 +42,9 @@ function SectorBar({
     <div className="mt-3">
       <div className="flex h-3 rounded overflow-hidden gap-px">
         {display.map((s, i) => (
-          <div
+          <button
             key={s.name}
-            role="button"
+            type="button"
             onClick={() => onSelect(selected === s.name ? null : s.name)}
             style={{
               width: `${(s.weight_pct / total) * 100}%`,

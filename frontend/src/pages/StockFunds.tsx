@@ -88,6 +88,7 @@ export function StockFunds() {
       <div className="flex gap-2 max-w-sm">
         <input
           type="text"
+          inputMode="numeric"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -141,7 +142,7 @@ export function StockFunds() {
             <PageState empty emptyContent="暂无持仓数据" />
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-              <table className="w-full text-left">
+              <table className="w-full min-w-[600px] text-left">
                 <thead>
                   <tr className="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
                     <th className="px-4 py-3 w-10">#</th>

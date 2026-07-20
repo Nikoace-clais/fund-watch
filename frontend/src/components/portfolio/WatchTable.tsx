@@ -123,7 +123,7 @@ export function WatchTable({
       initialSorting={[{ id: 'gszzl', desc: true }]}
       batchDeleting={batchDeleting}
       onBatchDelete={onBatchDelete}
-      cellPadding="px-6"
+      cellPadding="px-3 md:px-6"
     />
   )
 }

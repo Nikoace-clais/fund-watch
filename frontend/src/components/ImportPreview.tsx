@@ -193,7 +193,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         {error && <ErrorBanner>{error}</ErrorBanner>}
 
         {/* Header Stats */}
-        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-slate-50 rounded-lg">
           <div className="flex items-center space-x-4">
             <span className="text-sm text-slate-600">
               识别到 <strong className="text-slate-900">{totalCount}</strong>{' '}
@@ -232,8 +232,8 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         )}
 
         {/* Results Table */}
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full">
+        <div className="border rounded-lg overflow-x-auto">
+          <table className="w-full min-w-[720px]">
             <thead className="bg-slate-50">
               <tr>
                 <th className="px-4 py-3 text-left">

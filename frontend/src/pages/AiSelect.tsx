@@ -58,12 +58,18 @@ function RecCard({
   const { colorFor } = useColor()
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
+  const [addError, setAddError] = useState(false)
 
   async function handleAdd() {
     setAdding(true)
+    setAddError(false) // 重试时先清除上次的错误提示
     try {
       await onAdd(rec.code)
       setAdded(true)
+    } catch {
+      // 失败提示 3 秒后自动消失
+      setAddError(true)
+      setTimeout(() => setAddError(false), 3000)
     } finally {
       setAdding(false)
     }
@@ -87,30 +93,33 @@ function RecCard({
             <p className="text-xs text-slate-400 font-mono">{rec.code}</p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Link
-            to={`/funds/${rec.code}`}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors"
-          >
-            详情 <ExternalLink className="h-3 w-3" />
-          </Link>
-          <button
-            onClick={handleAdd}
-            disabled={adding || added}
-            className={cn(
-              'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg transition-colors',
-              added
-                ? 'bg-green-50 text-green-700 border border-green-200 cursor-default'
-                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60',
-            )}
-          >
-            {adding ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Plus className="h-3 w-3" />
-            )}
-            {added ? '已加入' : '加入自选'}
-          </button>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <div className="flex items-center gap-1.5">
+            <Link
+              to={`/funds/${rec.code}`}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors"
+            >
+              详情 <ExternalLink className="h-3 w-3" />
+            </Link>
+            <button
+              onClick={handleAdd}
+              disabled={adding || added}
+              className={cn(
+                'inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg transition-colors',
+                added
+                  ? 'bg-green-50 text-green-700 border border-green-200 cursor-default'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60',
+              )}
+            >
+              {adding ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="h-3 w-3" />
+              )}
+              {added ? '已加入' : '加入自选'}
+            </button>
+          </div>
+          {addError && <p className="text-xs text-red-600">添加失败，请重试</p>}
         </div>
       </div>
 
@@ -265,7 +274,9 @@ export function AiSelect() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-3 flex items-center justify-between gap-4">
           <div className="text-sm text-slate-600 min-w-0">
             <span className="text-slate-400">板块：</span>
-            <span className="font-medium text-slate-800">{theme}</span>
+            <span className="font-medium text-slate-800 inline-block max-w-full truncate align-bottom">
+              {theme}
+            </span>
             <span className="mx-2 text-slate-300">·</span>
             <span className="text-slate-400">着重点：</span>
             <span className="font-medium text-slate-800">{emphasis}</span>
@@ -288,7 +299,10 @@ export function AiSelect() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
           {/* Theme selector */}
           <div className="space-y-3">
-            <label className="block text-sm font-medium text-slate-700">
+            <label
+              htmlFor="custom-theme"
+              className="block text-sm font-medium text-slate-700"
+            >
               板块 / 主题
             </label>
             {SECTOR_GROUPS.map(({ group, items }) => (
@@ -316,6 +330,7 @@ export function AiSelect() {
               </div>
             ))}
             <input
+              id="custom-theme"
               value={theme}
               onChange={(e) => setTheme(e.target.value)}
               placeholder="或输入自定义主题，如：人工智能、黄金、医疗…"

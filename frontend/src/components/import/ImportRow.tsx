@@ -27,7 +27,12 @@ export const ImportRow: FC<ImportRowProps> = ({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center">
-          <span className="font-medium text-slate-900">{fund.name}</span>
+          <span
+            className="font-medium text-slate-900 max-w-[180px] truncate"
+            title={fund.name}
+          >
+            {fund.name}
+          </span>
           {fund.needs_review && (
             <AlertCircle className="w-4 h-4 text-yellow-500 ml-2" />
           )}

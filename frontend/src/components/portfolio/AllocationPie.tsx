@@ -46,7 +46,7 @@ export function AllocationPie({
           <p className="text-2xl font-bold text-slate-900">{fundCount}</p>
         </div>
       </div>
-      <div className="mt-4 space-y-2">
+      <div className="mt-4 space-y-2 max-h-48 overflow-y-auto">
         {items.map((it, idx) => {
           const cv = parseFloat(it.current_value)
           const pct = totalCurrent > 0 ? (cv / totalCurrent) * 100 : 0

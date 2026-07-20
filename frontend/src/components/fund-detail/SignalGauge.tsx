@@ -218,7 +218,7 @@ export function SignalGauge({ history }: { history: NavPoint[] }) {
         />
       </div>
 
-      <p className="text-[10px] text-slate-300 text-center pt-1">
+      <p className="text-[10px] text-slate-400 text-center pt-1">
         估算参考，非投资建议
       </p>
     </div>

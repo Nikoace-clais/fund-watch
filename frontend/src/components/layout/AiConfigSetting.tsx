@@ -75,8 +75,14 @@ function AiConfigPanel({
 
       {/* API Key */}
       <div>
-        <label className="block text-xs text-slate-500 mb-1">API Key</label>
+        <label
+          htmlFor="ai-api-key"
+          className="block text-xs text-slate-500 mb-1"
+        >
+          API Key
+        </label>
         <input
+          id="ai-api-key"
           type="password"
           value={draft.api_key}
           onChange={(e) => setDraft((d) => ({ ...d, api_key: e.target.value }))}
@@ -89,10 +95,14 @@ function AiConfigPanel({
       {draft.provider === 'openai' && (
         <>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">
+            <label
+              htmlFor="ai-base-url"
+              className="block text-xs text-slate-500 mb-1"
+            >
               Base URL
             </label>
             <input
+              id="ai-base-url"
               type="text"
               value={draft.base_url}
               onChange={(e) =>
@@ -103,10 +113,14 @@ function AiConfigPanel({
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">
+            <label
+              htmlFor="ai-model"
+              className="block text-xs text-slate-500 mb-1"
+            >
               编排模型
             </label>
             <input
+              id="ai-model"
               type="text"
               value={draft.model}
               onChange={(e) =>
@@ -117,10 +131,14 @@ function AiConfigPanel({
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">
+            <label
+              htmlFor="ai-analysis-model"
+              className="block text-xs text-slate-500 mb-1"
+            >
               分析模型（留空=同上）
             </label>
             <input
+              id="ai-analysis-model"
               type="text"
               value={draft.analysis_model}
               onChange={(e) =>

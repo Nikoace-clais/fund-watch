@@ -29,9 +29,14 @@ export function SortHead({
     <div className={cn('relative inline-flex', right && 'w-full justify-end')}>
       <button
         className="group flex items-center gap-1 font-medium transition-colors hover:text-slate-700 leading-tight"
-        onClick={column.getToggleSortingHandler()}
+        onClick={(e) => {
+          column.getToggleSortingHandler()?.(e)
+          if (tooltip) setShow((v) => !v)
+        }}
         onMouseEnter={() => tooltip && setShow(true)}
         onMouseLeave={() => setShow(false)}
+        onBlur={() => setShow(false)}
+        aria-label={tooltip}
       >
         {children}
         <SortIcon sorted={column.getIsSorted()} />

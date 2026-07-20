@@ -213,10 +213,14 @@ export function HoldingEditModal({
         {/* date + nav */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-slate-500 mb-1">
+            <label
+              htmlFor="holding-trade-date"
+              className="block text-xs text-slate-500 mb-1"
+            >
               交易日期
             </label>
             <input
+              id="holding-trade-date"
               type="date"
               value={tradeDate}
               onChange={(e) => setTradeDate(e.target.value)}
@@ -224,13 +228,17 @@ export function HoldingEditModal({
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">
+            <label
+              htmlFor="holding-nav"
+              className="block text-xs text-slate-500 mb-1"
+            >
               成交净值
               {navLoading && (
                 <span className="ml-1 text-blue-400">获取中…</span>
               )}
             </label>
             <input
+              id="holding-nav"
               type="number"
               step="0.0001"
               min="0"
@@ -245,7 +253,10 @@ export function HoldingEditModal({
         {/* shares + amount */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-slate-500 mb-1">
+            <label
+              htmlFor="holding-shares"
+              className="block text-xs text-slate-500 mb-1"
+            >
               份额
               {direction === 'sell' &&
                 !isNaN(holdingSharesNum) &&
@@ -256,6 +267,7 @@ export function HoldingEditModal({
                 )}
             </label>
             <input
+              id="holding-shares"
               type="number"
               step="0.01"
               min="0"
@@ -289,10 +301,14 @@ export function HoldingEditModal({
               )}
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">
+            <label
+              htmlFor="holding-amount"
+              className="block text-xs text-slate-500 mb-1"
+            >
               交易金额（元）
             </label>
             <input
+              id="holding-amount"
               type="number"
               step="0.01"
               min="0"
@@ -306,7 +322,10 @@ export function HoldingEditModal({
 
         {/* fee */}
         <div>
-          <label className="block text-xs text-slate-500 mb-1">
+          <label
+            htmlFor="holding-fee"
+            className="block text-xs text-slate-500 mb-1"
+          >
             手续费（元）
             {feeRate !== null && direction === 'buy' && (
               <span className="ml-1 text-blue-400">
@@ -315,6 +334,7 @@ export function HoldingEditModal({
             )}
           </label>
           <input
+            id="holding-fee"
             type="number"
             step="0.01"
             min="0"

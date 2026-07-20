@@ -31,9 +31,9 @@ export function CronStatusBadge() {
           </span>
         )}
       </div>
-      {lastTime && <p className="pl-3 text-slate-300">最近 {lastTime}</p>}
+      {lastTime && <p className="pl-3 text-slate-400">最近 {lastTime}</p>}
       {status.last_error && (
-        <p className="pl-3 text-red-300 truncate" title={status.last_error}>
+        <p className="pl-3 text-red-500 truncate" title={status.last_error}>
           ⚠ 上次失败
         </p>
       )}
