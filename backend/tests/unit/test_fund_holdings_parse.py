@@ -1,4 +1,5 @@
 """Tests for _HOLDING_ROW_RE parsing A-share and QDII (US/HK) holding rows."""
+
 from __future__ import annotations
 
 from app import fund_source

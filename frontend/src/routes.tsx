@@ -26,31 +26,45 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        lazy: async () => ({ Component: (await import('./pages/Dashboard')).Dashboard }),
+        lazy: async () => ({
+          Component: (await import('./pages/Dashboard')).Dashboard,
+        }),
       },
       {
         path: 'funds/:code',
-        lazy: async () => ({ Component: (await import('./pages/FundDetail')).FundDetail }),
+        lazy: async () => ({
+          Component: (await import('./pages/FundDetail')).FundDetail,
+        }),
       },
       {
         path: 'portfolio',
-        lazy: async () => ({ Component: (await import('./pages/Portfolio')).Portfolio }),
+        lazy: async () => ({
+          Component: (await import('./pages/Portfolio')).Portfolio,
+        }),
       },
       {
         path: 'market',
-        lazy: async () => ({ Component: (await import('./pages/Market')).Market }),
+        lazy: async () => ({
+          Component: (await import('./pages/Market')).Market,
+        }),
       },
       {
         path: 'ai-select',
-        lazy: async () => ({ Component: (await import('./pages/AiSelect')).AiSelect }),
+        lazy: async () => ({
+          Component: (await import('./pages/AiSelect')).AiSelect,
+        }),
       },
       {
         path: 'import',
-        lazy: async () => ({ Component: (await import('./pages/ImportPage')).ImportPage }),
+        lazy: async () => ({
+          Component: (await import('./pages/ImportPage')).ImportPage,
+        }),
       },
       {
         path: 'stock-funds',
-        lazy: async () => ({ Component: (await import('./pages/StockFunds')).StockFunds }),
+        lazy: async () => ({
+          Component: (await import('./pages/StockFunds')).StockFunds,
+        }),
       },
     ],
   },

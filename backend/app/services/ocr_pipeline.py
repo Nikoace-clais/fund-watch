@@ -10,15 +10,17 @@ import json
 import logging
 import os
 import re as _re
+import time
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import uuid4
 
+from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from ..core import UPLOAD_DIR, sse
+from ..core import UPLOAD_DIR, sse, utc_now_iso
 from ..db import get_conn
 from ..fund_source import search_fund_by_name
 from ..ocr_service import (
@@ -35,9 +37,23 @@ _VERIFY_LIMIT = 40  # raised from 15 — search is now reliable enough
 
 # Structural keywords that mark the end of the brand+theme prefix
 _STRUCT_KWS = [
-    "ETF发起式联接", "ETF联接", "指数增强", "灵活配置",
-    "联接", "ETF", "指数", "股票", "混合", "债券",
-    "发起式", "发起", "QDII-FOF-LOF", "QDII-LOF", "QDII", "FOF", "LOF",
+    "ETF发起式联接",
+    "ETF联接",
+    "指数增强",
+    "灵活配置",
+    "联接",
+    "ETF",
+    "指数",
+    "股票",
+    "混合",
+    "债券",
+    "发起式",
+    "发起",
+    "QDII-FOF-LOF",
+    "QDII-LOF",
+    "QDII",
+    "FOF",
+    "LOF",
 ]
 
 
@@ -110,10 +126,70 @@ async def _resolve_fund_by_name(ocr_name: str) -> dict[str, Any] | None:
     }
 
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 单张图片上传上限 10MB
+ALLOWED_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp"})
+
+
+def validate_upload(filename: str | None, size: int) -> None:
+    """上传校验：扩展名白名单 + 大小上限，不通过抛 400。"""
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail="不支持的文件类型，仅支持 JPG/PNG/WEBP/BMP 图片",
+        )
+    if size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="图片过大，单张上限 10MB")
+
+
 def unique_upload_path(filename: str | None, prefix: str) -> Path:
     suffix = Path(filename or "upload.png").suffix or ".png"
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
     return UPLOAD_DIR / f"{prefix}_{ts}_{uuid4().hex[:8]}{suffix}"
+
+
+class OcrFailedError(Exception):
+    """OCR 引擎识别失败（非图片内容/损坏文件）的领域异常。"""
+
+
+async def ocr_bytes_to_text(
+    filename: str | None, data: bytes, *, prefix: str = "ocr"
+) -> tuple[str, str]:
+    """上传字节 → 唯一临时文件 → OCR 文本，返回 (文本, 临时文件名)。
+
+    识别失败抛 OcrFailedError，由调用方翻译为自己的错误通道
+    （400 / SSE error 事件）；无论成败临时文件必删。
+    """
+    path = unique_upload_path(filename, prefix)
+    path.write_bytes(data)
+    log.info("OCR处理: %s", filename)
+    try:
+        text: str = await run_in_threadpool(ocr_text, path)
+    except Exception as e:
+        log.warning("OCR识别失败(%s): %s", filename, e)
+        raise OcrFailedError(str(e)) from e
+    finally:
+        path.unlink(missing_ok=True)  # 无论成败，处理完即删临时文件
+    return text, path.name
+
+
+def cleanup_stale_uploads(max_age_hours: int = 24) -> int:
+    """删除 uploads 目录里 mtime 超过 max_age_hours 的残留文件，返回删除数。
+
+    服务启动时调用，清理上次进程异常退出留下的上传临时文件。
+    """
+    if not UPLOAD_DIR.is_dir():
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    for p in UPLOAD_DIR.iterdir():
+        try:
+            if p.is_file() and p.stat().st_mtime < cutoff:
+                p.unlink()
+                removed += 1
+        except OSError as exc:
+            log.warning("清理残留上传文件失败 %s: %s", p, exc)
+    return removed
 
 
 def build_cfg(
@@ -123,9 +199,11 @@ def build_cfg(
     model: str | None,
     review_model: str | None = None,
 ) -> dict[str, Any]:
-    resolved = api_key or (
-        os.environ.get("ANTHROPIC_API_KEY") if provider == "anthropic" else None
-    ) or ""
+    resolved = (
+        api_key
+        or (os.environ.get("ANTHROPIC_API_KEY") if provider == "anthropic" else None)
+        or ""
+    )
     return {
         "provider": provider,
         "api_key": resolved,
@@ -175,10 +253,12 @@ async def ocr_fund_generator(
     n = len(files_data)
     yield _sse("step", step="ocr", text=f"正在识别图片文字（共 {n} 张）...")
     for filename, data in files_data:
-        path = unique_upload_path(filename, "ocr")
-        path.write_bytes(data)
-        log.info("OCR处理: %s", filename)
-        raw_text: str = await run_in_threadpool(ocr_text, path)
+        try:
+            raw_text, _ = await ocr_bytes_to_text(filename, data)
+        except OcrFailedError:
+            # 非图片内容/损坏文件会让 PaddleOCR 抛异常 → SSE error 事件而非裸 500
+            yield _sse("error", text="图片文字识别失败，请上传清晰的截图")
+            return
         all_raw_texts.append(raw_text)
 
         # ── AI extract ───────────────────────────────────────────────────
@@ -229,11 +309,13 @@ async def ocr_fund_generator(
                 continue
             log.info("代码验证通过: %s %s", info["code"], info.get("name", ""))
             codes.append(info["code"])
-            matched_funds.append({
-                "code": info["code"],
-                "name": info["name"] or item["name"],
-                "amount": item.get("amount"),
-            })
+            matched_funds.append(
+                {
+                    "code": info["code"],
+                    "name": info["name"] or item["name"],
+                    "amount": item.get("amount"),
+                }
+            )
 
     # ── Resolve name-only funds via search ───────────────────────────────
     name_matches: list[dict[str, Any]] = []
@@ -253,23 +335,39 @@ async def ocr_fund_generator(
                 log.info("名称未命中(待Pro识别): '%s'", fund["name"])
                 no_hit.append(fund)
                 continue
-            log.info("名称匹配: OCR='%s' → 搜索='%s'(%s) 相似度=%.2f",
-                     fund["name"], hit["name"], hit["code"], hit["similarity"])
+            log.info(
+                "名称匹配: OCR='%s' → 搜索='%s'(%s) 相似度=%.2f",
+                fund["name"],
+                hit["name"],
+                hit["code"],
+                hit["similarity"],
+            )
             entry = {
-                "code": hit["code"], "name": hit["name"], "type": hit.get("type"),
-                "ocr_name": fund["name"], "similarity": hit["similarity"],
+                "code": hit["code"],
+                "name": hit["name"],
+                "type": hit.get("type"),
+                "ocr_name": fund["name"],
+                "similarity": hit["similarity"],
                 "amount": fund.get("amount"),
             }
             name_matches.append(entry)
             if hit["code"] not in codes:
                 codes.append(hit["code"])
-                matched_funds.append({"code": hit["code"], "name": hit["name"],
-                                      "amount": fund.get("amount")})
+                matched_funds.append(
+                    {
+                        "code": hit["code"],
+                        "name": hit["name"],
+                        "amount": fund.get("amount"),
+                    }
+                )
 
     # ── Stage 1.5: Pro identifies unmatched names ────────────────────────
     if no_hit:
-        yield _sse("step", step="pro_identify",
-                   text=f"Pro 模型识别未命中基金（{len(no_hit)} 个）...")
+        yield _sse(
+            "step",
+            step="pro_identify",
+            text=f"Pro 模型识别未命中基金（{len(no_hit)} 个）...",
+        )
         unknown_input = [{"index": i, "name": f["name"]} for i, f in enumerate(no_hit)]
         identified = await resolve_unknown_fund_names(combined_raw, unknown_input, cfg)
         for i, fund in enumerate(no_hit):
@@ -284,8 +382,12 @@ async def ocr_fund_generator(
             if pro_code:
                 verified = await _resolve_code(pro_code)
                 if verified:
-                    log.info("Pro代码核验通过: OCR='%s' → %s '%s'",
-                             fund["name"], pro_code, verified["name"])
+                    log.info(
+                        "Pro代码核验通过: OCR='%s' → %s '%s'",
+                        fund["name"],
+                        pro_code,
+                        verified["name"],
+                    )
                 else:
                     log.info("Pro代码核验失败(幻觉?): %s，回退名称搜索", pro_code)
 
@@ -295,37 +397,60 @@ async def ocr_fund_generator(
                     log.info("Pro识别后仍未命中: '%s'", full_name)
                     continue
                 verified = {
-                    "code": vh["code"], "name": vh["name"], "type": vh.get("type"),
+                    "code": vh["code"],
+                    "name": vh["name"],
+                    "type": vh.get("type"),
                 }
-                log.info("Pro名称搜索命中: OCR='%s' → Pro='%s' → '%s'(%s)",
-                         fund["name"], full_name, verified["name"], verified["code"])
+                log.info(
+                    "Pro名称搜索命中: OCR='%s' → Pro='%s' → '%s'(%s)",
+                    fund["name"],
+                    full_name,
+                    verified["name"],
+                    verified["code"],
+                )
 
             similarity = SequenceMatcher(None, fund["name"], verified["name"]).ratio()
             entry = {
-                "code": verified["code"], "name": verified["name"],
+                "code": verified["code"],
+                "name": verified["name"],
                 "type": verified.get("type"),
-                "ocr_name": fund["name"], "similarity": round(similarity, 2),
-                "amount": fund.get("amount"), "review": "corrected",
+                "ocr_name": fund["name"],
+                "similarity": round(similarity, 2),
+                "amount": fund.get("amount"),
+                "review": "corrected",
                 "corrected_name": full_name,
             }
             name_matches.append(entry)
             if verified["code"] not in codes:
                 codes.append(verified["code"])
-                matched_funds.append({"code": verified["code"],
-                                      "name": verified["name"],
-                                      "amount": fund.get("amount")})
+                matched_funds.append(
+                    {
+                        "code": verified["code"],
+                        "name": verified["name"],
+                        "amount": fund.get("amount"),
+                    }
+                )
 
     # ── Stage 2: Pro review & correction ────────────────────────────────
     preliminary = [
-        {"index": i, "ocr_name": m["ocr_name"], "code": m["code"], "name": m["name"],
-         "similarity": m.get("similarity", 0.0), "amount": m.get("amount")}
+        {
+            "index": i,
+            "ocr_name": m["ocr_name"],
+            "code": m["code"],
+            "name": m["name"],
+            "similarity": m.get("similarity", 0.0),
+            "amount": m.get("amount"),
+        }
         for i, m in enumerate(name_matches)
         if "review" not in m  # skip already-reviewed items from Stage 1.5
     ]
 
     if preliminary:
-        yield _sse("step", step="pro_review",
-                   text=f"Pro 模型核查匹配结果（{len(preliminary)} 个）...")
+        yield _sse(
+            "step",
+            step="pro_review",
+            text=f"Pro 模型核查匹配结果（{len(preliminary)} 个）...",
+        )
         preliminary = await review_fund_matches(combined_raw, preliminary, cfg)
         for item in preliminary:
             if item.get("review") != "corrected":
@@ -344,8 +469,13 @@ async def ocr_fund_generator(
             item["similarity"] = SequenceMatcher(
                 None, item["ocr_name"], best["name"]
             ).ratio()
-            log.info("Pro纠正生效: '%s'(%s) → '%s'(%s)", old_name, old_code,
-                     best["name"], best["code"])
+            log.info(
+                "Pro纠正生效: '%s'(%s) → '%s'(%s)",
+                old_name,
+                old_code,
+                best["name"],
+                best["code"],
+            )
             if old_code in codes:
                 codes[codes.index(old_code)] = best["code"]
             else:
@@ -358,7 +488,9 @@ async def ocr_fund_generator(
         reviewed = {p["index"]: p for p in preliminary}
         name_matches = [
             {
-                "code": p["code"], "name": p["name"], "type": p.get("type"),
+                "code": p["code"],
+                "name": p["name"],
+                "type": p.get("type"),
                 "ocr_name": p["ocr_name"],
                 "similarity": round(p.get("similarity", 0.0), 2),
                 "review": p.get("review", "unreviewed"),
@@ -370,7 +502,7 @@ async def ocr_fund_generator(
 
     # ── Persist & return ─────────────────────────────────────────────────
     image_names = ",".join(fn for fn, _ in files_data)
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now_iso()
     log.info("最终结果: matched_codes=%s name_matches=%d", codes, len(name_matches))
     with get_conn() as conn:
         ocr_repo.insert(

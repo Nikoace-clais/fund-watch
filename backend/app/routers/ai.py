@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
+from ..core import sse_response
 from ..schemas import AiSelectPayload
 from ..services.ai_agent import agent_loop
 
@@ -20,7 +21,7 @@ async def ai_select_stream(payload: AiSelectPayload) -> StreamingResponse:
       {"type":"result", "data":{...}}      — final recommendations
       {"type":"error",  "text":"..."}      — fatal error
     """
-    return StreamingResponse(
+    return sse_response(
         agent_loop(
             payload.theme,
             payload.emphasis,
@@ -29,7 +30,5 @@ async def ai_select_stream(payload: AiSelectPayload) -> StreamingResponse:
             base_url=payload.base_url,
             model=payload.model,
             analysis_model=payload.analysis_model,
-        ),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     )

@@ -21,10 +21,10 @@ fund-watch/
 │   │   ├── schemas.py           # Pydantic 请求模型
 │   │   ├── db.py                # SQLite 初始化/连接（FUND_WATCH_DB 可覆盖）
 │   │   ├── fund_source.py       # 估值/详情/搜索数据源适配
-│   │   ├── ocr_service.py       # 截图 OCR（rapidocr）
-│   │   ├── routers/             # API 路由（health/funds/quotes/portfolio/
-│   │   │                        #   transactions/dca/ocr/market）
-│   │   └── services/            # 业务逻辑（holdings/snapshots/dca）
+│   │   ├── ocr_service.py       # 截图 OCR（PaddleOCR）
+│   │   ├── routers/             # API 路由（health/funds/quotes/portfolio/portfolios/
+│   │   │                        #   transactions/market/stocks/ocr/ai）
+│   │   └── services/            # 业务逻辑（holdings/snapshots/portfolio_service/ai_agent 等）
 │   └── tests/                   # pytest（unit / integration，含 app 集成测试）
 │
 └── frontend/                     # React/Vite 前端
@@ -52,7 +52,7 @@ fund-watch/
 │  services/     # 业务逻辑            │
 │  - holdings: 份额重算 + P&L          │
 │  - snapshots: 快照拉取 + 调度器       │
-│  - dca: 定投绩效统计                  │
+│  - portfolio_service: 组合汇总/历史   │
 └────────────┬────────────────────────┘
              │
 ┌────────────▼────────────────────────┐
@@ -121,7 +121,7 @@ bun run test:e2e
 - **集成测试**: 测试 API 端点
 - **E2E 测试**: 测试完整用户流程
 
-当前状态: **后端 22 个测试通过（含 19 个 app 集成测试）**
+当前状态: 以后端 `uv run pytest` 与 CI 结果为准（数量随迭代变化,不在此维护快照）
 
 ## 截图导入功能
 
@@ -168,11 +168,7 @@ bun run test:e2e
 
 ### 测试状态
 
-| 类型 | 数量 | 状态 |
-|------|------|------|
-| 后端测试（含 app 集成测试） | 22 | ✅ 通过 |
-| 前端单元测试 | 10 | ✅ 通过 |
-| **总计** | **32** | **✅ 全部通过** |
+具体数量随迭代变化,不在此维护快照——以 CI（backend `uv run pytest` / frontend `bun run test:run`）为准。
 
 ### 开发服务器
 

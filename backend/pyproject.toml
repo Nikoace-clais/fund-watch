@@ -26,7 +26,8 @@ dev = [
     "pytest-cov>=4.0",
     "pytest-httpx>=0.30",
     "ruff>=0.6",
-    "mypy>=1.0",
+    # ty 处于 0.0.x,版本间可能有破坏性变更,钉死;升级时人工过一遍新诊断
+    "ty==0.0.57",
 ]
 
 [build-system]
@@ -73,22 +74,21 @@ select = [
     "N",   # pep8-naming
     "W",   # pycodestyle warnings
     "B",   # flake8-bugbear
+    "ANN", # flake8-annotations — 承接原 mypy strict 的强制标注约束(仅 app/)
 ]
+ignore = [
+    "ANN401",  # 显式 Any 是允许的(extract_json 等 JSON 边界场景)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 强制标注只约束 app/;测试与脚本由 ty 渐进式检查覆盖即可
+"tests/**" = ["ANN"]
+"run.py" = ["ANN"]
+"pull_quotes.py" = ["ANN"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI's Depends()/File() default-arg pattern is idiomatic, not a mutable-default bug.
 extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-warn_return_any = true
-warn_unused_configs = true
-
-[[tool.mypy.overrides]]
-# No type stubs published for paddleocr (types-paddleocr doesn't exist on PyPI).
-module = "paddleocr"
-ignore_missing_imports = true
 
 [dependency-groups]
 dev = [

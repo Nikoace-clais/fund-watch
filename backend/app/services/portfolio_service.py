@@ -11,7 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from ..core import CST
+from ..core import CST, q2, safe_await
 from ..fund_source import (
     fetch_fund_holdings,
     fetch_nav_history,
@@ -30,42 +30,72 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any
 
     t0 = time.perf_counter()
 
-    codes = [
-        f["code"]
-        for f in funds
-        if f.get("holding_shares") and Decimal(f["holding_shares"]) > 0
-    ]
+    # Include fully-sold (closed) positions so their realized P&L stays visible.
+    codes = [f["code"] for f in funds]
     tx_rows_by_code = tx_repo.list_for_pnl_bulk(conn, pf_id, codes)
     pnl_map: dict[str, dict[str, Any]] = {
         code: compute_pnl(conn, pf_id, code, rows=tx_rows_by_code.get(code, []))
         for code in codes
     }
 
-    async def _fetch_fund_item(f: dict[str, Any]) -> dict[str, Any] | None:
+    async def _fetch_fund_item(f: dict[str, Any]) -> dict[str, Any]:
         code = f["code"]
         shares = Decimal(f["holding_shares"]) if f["holding_shares"] else Decimal("0")
+        pnl = pnl_map.get(code, {})
+        realized = Decimal(pnl.get("realized_pnl", "0"))
+        # Cost basis of remaining shares only; sold shares' cost is realized.
+        cost = Decimal(pnl.get("remaining_cost", "0"))
         if shares <= 0:
-            return None
+            # Fully sold: no market value, but realized P&L must not vanish.
+            return {
+                "code": code,
+                "name": f["name"],
+                "shares": "0",
+                "nav": None,
+                "daily_change": 0.0,
+                "current_value": "0.00",
+                "daily_return": "0.00",
+                "total_cost": "0.00",
+                "total_return": str(q2(realized)),
+                "return_rate": None,
+                "realized_pnl": str(q2(realized)),
+                "is_closed": True,
+                "_current_value_d": Decimal("0"),
+                "_cost_d": Decimal("0"),
+                "_daily_return_d": Decimal("0"),
+            }
+        q: dict[str, Any] | None
         try:
             q = await fetch_realtime_estimate(code)
         except Exception:
-            return None
-        nav = Decimal(str(q.get("gsz", 0))) if q.get("gsz") else None
-        if nav is None:
-            return None
+            q = None
+        gsz = q.get("gsz") if q else None
+        if q is None or gsz is None:
+            # 行情源失败时降级:条目保留、估值相关字段置 None、estimate_error 标记,
+            # 不再让整只基金从汇总里静默消失;汇总统计对 None 值跳过
+            return {
+                "code": code,
+                "name": f["name"] or (q.get("name") if q else None),
+                "shares": str(shares),
+                "nav": None,
+                "daily_change": None,
+                "current_value": None,
+                "daily_return": None,
+                "total_cost": str(cost),
+                "total_return": None,
+                "return_rate": None,
+                "realized_pnl": str(q2(realized)),
+                "estimate_error": True,
+                "_current_value_d": Decimal("0"),
+                "_cost_d": Decimal("0"),
+                "_daily_return_d": Decimal("0"),
+            }
+        nav = Decimal(str(gsz))
         daily_change = Decimal(str(q.get("gszzl"))) if q.get("gszzl") else Decimal("0")
-        current_value = (shares * nav).quantize(Decimal("0.01"))
-        daily_return_val = (current_value * daily_change / 100).quantize(
-            Decimal("0.01")
-        )
-        pnl = pnl_map.get(code, {})
-        cost = Decimal(pnl.get("total_cost", "0"))
-        total_return = current_value - cost
-        return_rate = (
-            (total_return / cost * 100).quantize(Decimal("0.01"))
-            if cost > 0
-            else Decimal("0")
-        )
+        current_value = q2(shares * nav)
+        daily_return_val = q2(current_value * daily_change / 100)
+        total_return = realized + (current_value - cost)
+        return_rate = q2(total_return / cost * 100) if cost > 0 else Decimal("0")
         return {
             "code": code,
             "name": f["name"] or q.get("name"),
@@ -75,8 +105,9 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any
             "current_value": str(current_value),
             "daily_return": str(daily_return_val),
             "total_cost": str(cost),
-            "total_return": str(total_return.quantize(Decimal("0.01"))),
+            "total_return": str(q2(total_return)),
             "return_rate": str(return_rate),
+            "realized_pnl": str(q2(realized)),
             "_current_value_d": current_value,
             "_cost_d": cost,
             "_daily_return_d": daily_return_val,
@@ -93,17 +124,16 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any
     items: list[dict[str, Any]] = []
     total_current = Decimal("0")
     total_cost = Decimal("0")
-    total_current_with_cost = Decimal("0")
     total_daily_return = Decimal("0")
+    total_tx_return = Decimal("0")
 
     for r in results:
-        if r is None:
-            continue
         cv = r.pop("_current_value_d")
         cost = r.pop("_cost_d")
         total_current += cv
         total_cost += cost
-        total_current_with_cost += cv
+        if r["total_return"] is not None:  # estimate_error 降级条目的收益跳过
+            total_tx_return += Decimal(r["total_return"])
         total_daily_return += r.pop("_daily_return_d")
         items.append(r)
 
@@ -114,16 +144,11 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any
         amount = Decimal(str(f["holding_amount"]))
         daily_change = Decimal("0")
         daily_return_val = Decimal("0")
-        try:
-            q = await fetch_realtime_estimate(code)
-            gszzl = q.get("gszzl")
-            if gszzl is not None:
-                daily_change = Decimal(str(gszzl))
-                daily_return_val = (amount * daily_change / 100).quantize(
-                    Decimal("0.01")
-                )
-        except Exception:
-            pass
+        q = await safe_await(fetch_realtime_estimate(code))
+        gszzl = q.get("gszzl") if q else None
+        if gszzl is not None:
+            daily_change = Decimal(str(gszzl))
+            daily_return_val = q2(amount * daily_change / 100)
         cum_ret = f.get("imported_cumulative_return")
         hold_ret = f.get("imported_holding_return")
         return {
@@ -135,11 +160,9 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any
             "current_value": str(amount),
             "daily_return": str(daily_return_val),
             "total_cost": None,
-            "total_return": str(Decimal(str(hold_ret or 0)).quantize(Decimal("0.01"))),
+            "total_return": str(q2(Decimal(str(hold_ret or 0)))),
             "return_rate": None,
-            "imported_cumulative_return": str(
-                Decimal(str(cum_ret or 0)).quantize(Decimal("0.01"))
-            ),
+            "imported_cumulative_return": str(q2(Decimal(str(cum_ret or 0)))),
             "is_imported": True,
             "_amount_d": amount,
             "_daily_return_d": daily_return_val,
@@ -151,12 +174,10 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any
         total_daily_return += r.pop("_daily_return_d")
         items.append(r)
 
+    # Rate is relative to the remaining cost basis of tx-based holdings;
+    # total_tx_return includes both realized and unrealized P&L for them.
     total_return_rate = (
-        ((total_current_with_cost - total_cost) / total_cost * 100).quantize(
-            Decimal("0.01")
-        )
-        if total_cost > 0
-        else Decimal("0")
+        q2(total_tx_return / total_cost * 100) if total_cost > 0 else Decimal("0")
     )
 
     watch_codes = positions_repo.list_watch_only_codes(conn, pf_id)
@@ -164,16 +185,19 @@ async def compute_summary(conn: sqlite3.Connection, pf_id: int) -> dict[str, Any
     # total_current includes imported (no-cost-basis) holdings' market value,
     # so total_current - total_cost would count that value as pure profit.
     # Sum each item's own displayed total_return instead — for tx-based
-    # holdings that's current_value - cost; for imported ones it's the
-    # user-supplied imported_holding_return.
-    total_return_sum = sum((Decimal(it["total_return"]) for it in items), Decimal("0"))
+    # holdings that's realized + (current_value - remaining_cost); for
+    # imported ones it's the user-supplied imported_holding_return.
+    total_return_sum = sum(
+        (Decimal(it["total_return"]) for it in items if it["total_return"] is not None),
+        Decimal("0"),
+    )
 
     return {
         "portfolio_id": pf_id,
         "total_current": str(total_current),
         "total_cost": str(total_cost),
         "total_daily_return": str(total_daily_return),
-        "total_return": str(total_return_sum.quantize(Decimal("0.01"))),
+        "total_return": str(q2(total_return_sum)),
         "total_return_rate": str(total_return_rate),
         "fund_count": len(items),
         "items": items,
@@ -186,15 +210,16 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict[st
     summary = await compute_summary(conn, pf_id)
     items: list[dict[str, Any]] = summary.get("items", [])
 
-    active = [it for it in items if it.get("current_value")]
+    active = [
+        it
+        for it in items
+        if it.get("current_value") and Decimal(it["current_value"]) > 0
+    ]
 
     async def _fetch(
         fund: dict[str, Any],
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        try:
-            h = await fetch_fund_holdings(fund["code"])
-        except Exception:
-            h = []
+        h = await safe_await(fetch_fund_holdings(fund["code"]), default=[])
         return fund, h
 
     pairs = await asyncio.gather(*[_fetch(f) for f in active])
@@ -211,7 +236,7 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict[st
             pct = h.get("percentage")
             if pct is None:
                 continue
-            contribution = (cv * Decimal(str(pct)) / 100).quantize(Decimal("0.01"))
+            contribution = q2(cv * Decimal(str(pct)) / 100)
             sc = h["stock_code"]
             if sc not in agg:
                 agg[sc] = {
@@ -247,7 +272,7 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict[st
                 "stock_code": v["stock_code"],
                 "stock_name": v["stock_name"],
                 "industry": ind_map.get(v["stock_code"]),
-                "exposure": str(v["exposure"].quantize(Decimal("0.01"))),
+                "exposure": str(q2(v["exposure"])),
                 "weight_pct": (
                     round(float(v["exposure"] / total_value * 100), 2)
                     if total_value > 0
@@ -269,7 +294,7 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict[st
         [
             {
                 "name": name,
-                "exposure": str(exp.quantize(Decimal("0.01"))),
+                "exposure": str(q2(exp)),
                 "weight_pct": (
                     round(float(exp / total_value * 100), 2) if total_value > 0 else 0.0
                 ),
@@ -282,8 +307,8 @@ async def compute_holdings_xray(conn: sqlite3.Connection, pf_id: int) -> dict[st
 
     return {
         "portfolio_id": pf_id,
-        "total_value": str(total_value.quantize(Decimal("0.01"))),
-        "covered_value": str(covered_value.quantize(Decimal("0.01"))),
+        "total_value": str(q2(total_value)),
+        "covered_value": str(q2(covered_value)),
         "stocks": stocks,
         "sectors": sectors,
         "coverage": coverage,
@@ -312,24 +337,17 @@ async def compute_history(
         return {"portfolio_id": pf_id, "count": 0, "history": []}
 
     async def _fetch_code(code: str) -> tuple[str, dict[str, Decimal], Decimal | None]:
-        nav_dict: dict[str, Decimal] = {}
+        hist = await safe_await(fetch_nav_history(code, limit=limit + 30), default=[])
+        nav_dict: dict[str, Decimal] = {
+            h["date"]: Decimal(str(h["nav"]))
+            for h in hist
+            if h.get("date") and h.get("nav") is not None
+        }
         gsz: Decimal | None = None
-        try:
-            hist = await fetch_nav_history(code, limit=limit + 30)
-            nav_dict = {
-                h["date"]: Decimal(str(h["nav"]))
-                for h in hist
-                if h.get("date") and h.get("nav") is not None
-            }
-        except Exception:
-            pass
-        try:
-            q = await fetch_realtime_estimate(code)
-            raw = q.get("gsz")
-            if raw:
-                gsz = Decimal(str(raw))
-        except Exception:
-            pass
+        q = await safe_await(fetch_realtime_estimate(code))
+        raw = q.get("gsz") if q else None
+        if raw:
+            gsz = Decimal(str(raw))
         return code, nav_dict, gsz
 
     fetch_results = await asyncio.gather(*[_fetch_code(c) for c in all_codes])
@@ -411,11 +429,9 @@ async def compute_history(
         "history": [
             {
                 "date": date,
-                "total_value": float(value.quantize(Decimal("0.01"))),
+                "total_value": float(q2(value)),
                 **(
-                    {"is_estimate": True}
-                    if date == today and today_is_estimate
-                    else {}
+                    {"is_estimate": True} if date == today and today_is_estimate else {}
                 ),
             }
             for date, value in sorted_items

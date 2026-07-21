@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Generator
 
+from .core import utc_now_iso
+
 # FUND_WATCH_DB overrides the default path (used by tests for isolation)
 DB_PATH = Path(
     os.environ.get("FUND_WATCH_DB")
@@ -280,7 +282,7 @@ def _migrate_single_pool_to_default_portfolio(conn: sqlite3.Connection) -> None:
     if not legacy_funds and not has_tx:
         return  # fresh install: let the import flow create the first portfolio
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    now = utc_now_iso()
     cur = conn.execute(
         "INSERT INTO portfolios(name, created_at) VALUES(?, ?)", ("默认组合", now)
     )

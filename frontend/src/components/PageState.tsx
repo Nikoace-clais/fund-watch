@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /** 统一的行内错误/警告横幅（图标 + 浅色底 + 圆角边框）。 */
@@ -62,21 +62,38 @@ export function PageState({
 }) {
   if (error) {
     return (
-      <div className={cn('flex items-center justify-center py-32 text-red-400', className)}>
+      <div
+        className={cn(
+          'flex items-center justify-center py-32 text-red-400',
+          className,
+        )}
+      >
         {errorContent}
       </div>
     )
   }
   if (loading) {
     return (
-      <div className={cn('flex items-center justify-center py-32 text-slate-400', className)}>
+      <div
+        role="status"
+        className={cn(
+          'flex items-center justify-center gap-2 py-32 text-slate-400',
+          className,
+        )}
+      >
+        <Loader2 className="h-5 w-5 animate-spin" />
         加载中...
       </div>
     )
   }
   if (empty) {
     return (
-      <div className={cn('flex items-center justify-center py-32 text-slate-400', className)}>
+      <div
+        className={cn(
+          'flex items-center justify-center py-32 text-slate-400',
+          className,
+        )}
+      >
         {emptyContent}
       </div>
     )

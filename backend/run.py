@@ -1,4 +1,5 @@
 """Development server entry point."""
+
 import logging
 
 import uvicorn
@@ -6,8 +7,8 @@ import uvicorn
 # Configure logging before uvicorn starts
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s | %(levelname)-8s | %(message)s',
-    datefmt='%H:%M:%S'
+    format="%(asctime)s | %(levelname)-8s | %(message)s",
+    datefmt="%H:%M:%S",
 )
 
 if __name__ == "__main__":

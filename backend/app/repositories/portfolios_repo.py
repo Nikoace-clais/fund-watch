@@ -19,9 +19,7 @@ def list_all(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 def exists(conn: sqlite3.Connection, portfolio_id: int) -> bool:
     return (
-        conn.execute(
-            "SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)
-        ).fetchone()
+        conn.execute("SELECT 1 FROM portfolios WHERE id=?", (portfolio_id,)).fetchone()
         is not None
     )
 
@@ -37,7 +35,9 @@ def create(conn: sqlite3.Connection, name: str, created_at: str) -> int:
     cur = conn.execute(
         "INSERT INTO portfolios(name, created_at) VALUES(?, ?)", (name, created_at)
     )
-    return cur.lastrowid  # type: ignore[return-value]
+    row_id = cur.lastrowid
+    assert row_id is not None  # INSERT 后恒非 None,存根类型是 int | None
+    return row_id
 
 
 def rename(conn: sqlite3.Connection, portfolio_id: int, name: str) -> None:

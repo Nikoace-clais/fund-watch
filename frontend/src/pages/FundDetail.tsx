@@ -1,8 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, Check, Loader2, Plus } from 'lucide-react'
 import {
-  useAddFund, useFundDetail, useFundHoldings, useNavHistory, useQuote, useTransactions,
+  useAddFund,
+  useFundDetail,
+  useFundHoldings,
+  useNavHistory,
+  useQuote,
+  useTransactions,
 } from '@/lib/queries'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { HoldingEditModal } from '@/components/HoldingEditModal'
@@ -15,6 +20,7 @@ import { TransactionsCard } from '@/components/fund-detail/TransactionsCard'
 import { SignalGauge } from '@/components/fund-detail/SignalGauge'
 import { RiskMetrics } from '@/components/fund-detail/RiskMetrics'
 import { cn, formatPercent } from '@/lib/utils'
+import { useFlash } from '@/lib/hooks'
 import { useColor } from '@/lib/color-context'
 
 export function FundDetail() {
@@ -30,22 +36,31 @@ export function FundDetail() {
   const { data: transactions = [] } = useTransactions(code, selectedId)
   const addFund = useAddFund(selectedId)
 
-  const [addMsg, setAddMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [addMsg, flashAddMsg, clearAddMsg] = useFlash<{
+    text: string
+    ok: boolean
+  }>(3000)
   const [showAddTx, setShowAddTx] = useState(false)
+
+  // 切换基金时重置「加入自选」状态，避免残留上只基金的结果
+  useEffect(() => {
+    addFund.reset()
+    clearAddMsg()
+    // 仅随 code 变化执行
+  }, [code])
 
   const detail = detailQ.data
   const loading = detailQ.isLoading || navLoading
   const notFound = detailQ.isError
 
-  const navValue = quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : null)
+  const navValue =
+    quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : null)
   const changeValue = quote?.gszzl ?? null
 
   function handleAddFund() {
     if (!code) return
     addFund.mutate(code, {
-      onSuccess: () => setAddMsg({ text: '已加入自选', ok: true }),
-      onError: () => setAddMsg({ text: '加入失败', ok: false }),
-      onSettled: () => setTimeout(() => setAddMsg(null), 3000),
+      onError: () => flashAddMsg({ text: '加入失败', ok: false }),
     })
   }
 
@@ -62,7 +77,10 @@ export function FundDetail() {
         errorContent={
           <>
             <p className="text-xl text-slate-500 mb-4">未找到该基金</p>
-            <button onClick={() => navigate(-1)} className="text-blue-600 hover:underline flex items-center gap-1">
+            <button
+              onClick={() => navigate(-1)}
+              className="text-blue-600 hover:underline flex items-center gap-1"
+            >
               <ArrowLeft className="h-4 w-4" /> 返回基金列表
             </button>
           </>
@@ -78,7 +96,10 @@ export function FundDetail() {
         onClose={() => setShowAddTx(false)}
         code={code!}
         name={detail.name}
-        defaultNav={quote?.gsz ?? (history.length > 0 ? history[history.length - 1].nav : undefined)}
+        defaultNav={
+          quote?.gsz ??
+          (history.length > 0 ? history[history.length - 1].nav : undefined)
+        }
         portfolioId={selectedId}
       />
 
@@ -93,12 +114,34 @@ export function FundDetail() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleAddFund}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            disabled={addFund.isPending || addFund.isSuccess}
+            className={cn(
+              'inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors',
+              addFund.isSuccess
+                ? 'bg-green-50 text-green-700 border border-green-200 cursor-default'
+                : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60',
+            )}
           >
-            <Plus className="h-4 w-4" /> 加入自选
+            {addFund.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : addFund.isSuccess ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            {addFund.isPending
+              ? '加入中…'
+              : addFund.isSuccess
+                ? '已加入自选'
+                : '加入自选'}
           </button>
           {addMsg && (
-            <span className={cn('text-sm font-medium', addMsg.ok ? 'text-green-600' : 'text-red-600')}>
+            <span
+              className={cn(
+                'text-sm font-medium',
+                addMsg.ok ? 'text-green-600' : 'text-red-600',
+              )}
+            >
               {addMsg.text}
             </span>
           )}
@@ -122,18 +165,33 @@ export function FundDetail() {
                 {detail.code}
               </span>
             </div>
-            <h1 className="text-3xl font-bold text-slate-900 mb-3">
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-3">
               {detail.name || detail.code}
             </h1>
             <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-500">
               {detail.manager && (
-                <span>基金经理: <span className="text-slate-700">{detail.manager}</span></span>
+                <span>
+                  基金经理:{' '}
+                  <span className="text-slate-700">{detail.manager}</span>
+                </span>
               )}
               {detail.size != null && (
-                <span>规模: <span className="text-slate-700">{detail.size >= 1 ? `${detail.size.toFixed(2)}亿` : `${(detail.size * 10000).toFixed(0)}万`}</span></span>
+                <span>
+                  规模:{' '}
+                  <span className="text-slate-700">
+                    {detail.size >= 1
+                      ? `${detail.size.toFixed(2)}亿`
+                      : `${(detail.size * 10000).toFixed(0)}万`}
+                  </span>
+                </span>
               )}
               {detail.established_date && (
-                <span>成立日期: <span className="text-slate-700">{detail.established_date}</span></span>
+                <span>
+                  成立日期:{' '}
+                  <span className="text-slate-700">
+                    {detail.established_date}
+                  </span>
+                </span>
               )}
             </div>
           </div>
@@ -141,14 +199,20 @@ export function FundDetail() {
           {/* right: NAV display */}
           <div className="text-right md:min-w-[180px]">
             <p className="text-xs text-slate-400 mb-1 flex items-center justify-end gap-1">
-              单位净值(估)
+              {/* falls back to the latest historical NAV when no live estimate */}
+              {quote?.gsz != null ? '单位净值(估)' : '单位净值'}
               {quote?.gztime && <EstimateBadge time={quote.gztime} />}
             </p>
             <p className="text-4xl font-bold text-slate-900">
               {navValue != null ? navValue.toFixed(4) : '--'}
             </p>
             {changeValue != null && (
-              <p className={cn('text-lg font-semibold mt-1', colorFor(changeValue))}>
+              <p
+                className={cn(
+                  'text-lg font-semibold mt-1',
+                  colorFor(changeValue),
+                )}
+              >
                 {formatPercent(changeValue)}
               </p>
             )}
@@ -173,7 +237,10 @@ export function FundDetail() {
         </div>
       </div>
 
-      <TransactionsCard transactions={transactions} onAddTx={() => setShowAddTx(true)} />
+      <TransactionsCard
+        transactions={transactions}
+        onAddTx={() => setShowAddTx(true)}
+      />
     </div>
   )
 }

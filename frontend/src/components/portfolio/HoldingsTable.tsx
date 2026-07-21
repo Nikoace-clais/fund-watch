@@ -32,8 +32,18 @@ export function HoldingsTable({
     () => [
       selectColumn(),
       nameColumn((it) =>
-        it.is_imported ? (
-          <span className="text-xs px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0">导入</span>
+        it.estimate_error ? (
+          <span className="text-xs px-1 py-0.5 rounded bg-red-50 text-red-500 border border-red-200 shrink-0">
+            估值缺失
+          </span>
+        ) : it.is_imported ? (
+          <span className="text-xs px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0">
+            导入
+          </span>
+        ) : it.is_closed ? (
+          <span className="text-xs px-1 py-0.5 rounded bg-slate-50 text-slate-500 border border-slate-200 shrink-0">
+            已清仓
+          </span>
         ) : null,
       ),
       {
@@ -43,7 +53,9 @@ export function HoldingsTable({
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按当前估算净值从高到低排序">
             <span className="text-right leading-tight">
-              估算净值<br />份额
+              估算净值
+              <br />
+              份额
             </span>
           </SortHead>
         ),
@@ -51,34 +63,57 @@ export function HoldingsTable({
           const it = row.original
           return (
             <div className="text-right">
-              {it.nav != null
-                ? <p className="text-slate-800">{parseFloat(it.nav).toFixed(4)}</p>
-                : <p className="text-slate-300">—</p>}
-              {it.shares != null
-                ? <p className="text-xs text-slate-400 mt-0.5">{parseFloat(it.shares).toFixed(2)} 份</p>
-                : <p className="text-xs text-slate-300 mt-0.5">—</p>}
+              {it.nav != null ? (
+                <p className="text-slate-800">
+                  {parseFloat(it.nav).toFixed(4)}
+                </p>
+              ) : (
+                <p className="text-slate-300">—</p>
+              )}
+              {it.shares != null ? (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {parseFloat(it.shares).toFixed(2)} 份
+                </p>
+              ) : (
+                <p className="text-xs text-slate-300 mt-0.5">—</p>
+              )}
             </div>
           )
         },
       },
       {
         id: 'current_value',
-        accessorFn: (row) => parseFloat(row.current_value),
+        accessorFn: (row) =>
+          row.current_value != null ? parseFloat(row.current_value) : null,
         size: 120,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按持仓市值从高到低排序">
             <span className="text-right leading-tight">
-              持仓金额<br />占比
+              持仓金额
+              <br />
+              占比
             </span>
           </SortHead>
         ),
         cell: ({ row }) => {
-          const cv = parseFloat(row.original.current_value)
-          const pct = totalCurrent > 0 ? (cv / totalCurrent) * 100 : 0
+          const cv =
+            row.original.current_value != null
+              ? parseFloat(row.original.current_value)
+              : null
+          const pct =
+            cv != null && totalCurrent > 0 ? (cv / totalCurrent) * 100 : null
           return (
             <div className="text-right">
-              <p className="text-slate-800">{formatCNY(cv)}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{pct.toFixed(1)}%</p>
+              {cv != null && pct != null ? (
+                <>
+                  <p className="text-slate-800">{formatCNY(cv)}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {pct.toFixed(1)}%
+                  </p>
+                </>
+              ) : (
+                <p className="text-slate-300">—</p>
+              )}
             </div>
           )
         },
@@ -88,49 +123,81 @@ export function HoldingsTable({
         accessorKey: 'daily_change',
         size: 120,
         header: ({ column }) => (
-          <SortHead column={column} right tooltip="按今日估算涨跌幅从高到低排序">
+          <SortHead
+            column={column}
+            right
+            tooltip="按今日估算涨跌幅从高到低排序"
+          >
             <span className="text-right leading-tight">
-              今日收益<br />涨跌幅
+              今日收益
+              <br />
+              涨跌幅
             </span>
           </SortHead>
         ),
         cell: ({ row }) => {
           const it = row.original
-          const dr = parseFloat(it.daily_return)
-          return it.is_imported ? (
+          const dr =
+            it.daily_return != null ? parseFloat(it.daily_return) : null
+          return it.is_imported || it.is_closed || dr == null ? (
             <p className="text-right text-slate-300">—</p>
           ) : (
             <div className="text-right">
-              <p className={cn('font-medium', colorFor(dr))}>{formatCNYSigned(dr)}</p>
-              <p className={cn('text-xs mt-0.5', colorFor(it.daily_change))}>{formatPercent(it.daily_change)}</p>
+              <p className={cn('font-medium', colorFor(dr))}>
+                {formatCNYSigned(dr)}
+              </p>
+              <p
+                className={cn('text-xs mt-0.5', colorFor(it.daily_change ?? 0))}
+              >
+                {it.daily_change != null ? formatPercent(it.daily_change) : '—'}
+              </p>
             </div>
           )
         },
       },
       {
         id: 'return_rate',
-        accessorFn: (row) => (row.return_rate != null ? parseFloat(row.return_rate) : null),
+        accessorFn: (row) =>
+          row.return_rate != null ? parseFloat(row.return_rate) : null,
         size: 110,
         header: ({ column }) => (
           <SortHead column={column} right tooltip="按累计收益率从高到低排序">
             <span className="text-right leading-tight">
-              累计收益<br />收益率
+              累计收益
+              <br />
+              收益率
             </span>
           </SortHead>
         ),
         cell: ({ row }) => {
           const it = row.original
-          const tr = parseFloat(it.total_return)
+          const tr =
+            it.total_return != null ? parseFloat(it.total_return) : null
           const rr = it.return_rate != null ? parseFloat(it.return_rate) : null
-          const cumRet = it.imported_cumulative_return != null ? parseFloat(it.imported_cumulative_return) : null
+          const cumRet =
+            it.imported_cumulative_return != null
+              ? parseFloat(it.imported_cumulative_return)
+              : null
           return (
             <div className="text-right">
-              <p className={cn('font-medium', colorFor(tr))}>{formatCNYSigned(tr)}</p>
-              {it.is_imported && cumRet != null
-                ? <p className="text-xs text-slate-400 mt-0.5">累计 {formatCNYSigned(cumRet)}</p>
-                : rr != null
-                  ? <p className={cn('text-xs mt-0.5', colorFor(rr))}>{formatPercent(rr)}</p>
-                  : null}
+              {tr != null ? (
+                <p className={cn('font-medium', colorFor(tr))}>
+                  {formatCNYSigned(tr)}
+                </p>
+              ) : (
+                <p className="text-slate-300">—</p>
+              )}
+              {it.is_imported && cumRet != null ? (
+                <p className="text-xs text-slate-400 mt-0.5">
+                  累计 {formatCNYSigned(cumRet)}
+                </p>
+              ) : it.is_closed ? (
+                <p className="text-xs text-slate-400 mt-0.5">已实现盈亏</p>
+              ) : rr != null ? (
+                <p className={cn('text-xs mt-0.5', colorFor(rr))}>
+                  {formatPercent(rr)}
+                </p>
+              ) : null}
             </div>
           )
         },
@@ -151,7 +218,13 @@ export function HoldingsTable({
                 <History className="h-4 w-4" />
               </button>
               <button
-                onClick={() => onEditHolding({ code: it.code, name: it.name, nav: it.nav != null ? parseFloat(it.nav) : undefined })}
+                onClick={() =>
+                  onEditHolding({
+                    code: it.code,
+                    name: it.name,
+                    nav: it.nav != null ? parseFloat(it.nav) : undefined,
+                  })
+                }
                 className="p-1.5 rounded-md text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
                 title="记录交易"
               >

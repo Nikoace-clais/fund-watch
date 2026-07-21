@@ -29,25 +29,35 @@ export function selectColumn<T extends FundRow>(): ColumnDef<T> {
       />
     ),
     cell: ({ row }) => (
-      <Checkbox checked={row.getIsSelected()} onChange={row.getToggleSelectedHandler()} />
+      <Checkbox
+        checked={row.getIsSelected()}
+        onChange={row.getToggleSelectedHandler()}
+      />
     ),
   }
 }
 
 /** 基金名称列：详情链接 + 代码副标题，zh-CN 排序；extra 渲染名称旁的徽标。 */
-export function nameColumn<T extends FundRow>(extra?: (row: T) => ReactNode): ColumnDef<T> {
+export function nameColumn<T extends FundRow>(
+  extra?: (row: T) => ReactNode,
+): ColumnDef<T> {
   return {
     id: 'name',
     accessorFn: (row) => row.name || row.code,
     header: ({ column }) => (
-      <SortHead column={column} tooltip="按基金名称首字母排序">基金名称</SortHead>
+      <SortHead column={column} tooltip="按基金名称首字母排序">
+        基金名称
+      </SortHead>
     ),
     cell: ({ row }) => {
       const it = row.original
       return (
         <div>
           <div className="flex items-center gap-1.5">
-            <Link to={`/funds/${it.code}`} className="text-sm font-medium text-slate-900 hover:text-blue-600 leading-snug">
+            <Link
+              to={`/funds/${it.code}`}
+              className="text-sm font-medium text-slate-900 hover:text-blue-600 leading-snug"
+            >
               {it.name || it.code}
             </Link>
             {extra?.(it)}
@@ -57,7 +67,10 @@ export function nameColumn<T extends FundRow>(extra?: (row: T) => ReactNode): Co
       )
     },
     sortingFn: (a, b) =>
-      (a.original.name || a.original.code).localeCompare(b.original.name || b.original.code, 'zh-CN'),
+      (a.original.name || a.original.code).localeCompare(
+        b.original.name || b.original.code,
+        'zh-CN',
+      ),
   }
 }
 
@@ -95,13 +108,19 @@ export function FundTableCard<T extends FundRow>({
     enableRowSelection: true,
     getRowId: (row) => row.code,
     sortDescFirst: true,
-    ...({ sortUndefined: 'last' } as object),
   })
 
-  const selectedCodes = table.getSelectedRowModel().rows.map((r) => r.original.code)
+  const selectedCodes = table
+    .getSelectedRowModel()
+    .rows.map((r) => r.original.code)
 
   return (
-    <div className={cn('bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden', className)}>
+    <div
+      className={cn(
+        'bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden',
+        className,
+      )}
+    >
       <div className="px-6 py-4 border-b border-slate-100">
         <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
       </div>

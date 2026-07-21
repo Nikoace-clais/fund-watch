@@ -1,0 +1,24 @@
+services:
+  fund-watch:
+    build: .
+    image: ghcr.io/nikoace-clais/fund-watch:latest
+    ports:
+      - "8010:8010"
+    volumes:
+      # SQLite 数据库 + 截图上传都在 backend/data 下,挂一个卷即全部持久化
+      # 注意:容器以非 root(uid 1000)运行,host 目录需对该 uid 可写,首次部署执行:
+      #   mkdir -p data && chown 1000:1000 data
+      - ./data:/app/backend/data
+    restart: unless-stopped
+    # 与 Dockerfile HEALTHCHECK 一致(镜像内无 curl,用 python 探测)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8010/api/health',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    # AI 选基/OCR 文本抽取需要 ANTHROPIC_API_KEY 时,
+    # 在同目录放 .env 并解开下一行:
+    # env_file: .env
+    # 可选访问令牌:在 .env 里设置 FUND_WATCH_TOKEN 后,除 /api/health 外的
+    # /api/* 请求需带请求头 X-Fund-Token;绑定到局域网/公网时务必设置。

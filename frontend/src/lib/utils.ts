@@ -6,7 +6,16 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /** Shared categorical palette for pie/bar charts (cycled via idx % length). */
-export const CHART_COLORS = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
+export const CHART_COLORS = [
+  '#3b82f6',
+  '#ef4444',
+  '#10b981',
+  '#f59e0b',
+  '#8b5cf6',
+  '#ec4899',
+  '#06b6d4',
+  '#84cc16',
+]
 
 export function formatCNY(value: number) {
   return new Intl.NumberFormat('zh-CN', {
@@ -20,13 +29,18 @@ export function formatCNYSigned(value: number) {
   return `${value > 0 ? '+' : ''}${formatCNY(value)}`
 }
 
-export function formatPercent(value: number) {
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+/** 2-decimal percent; signed (default) adds '+' for positive values, 0 stays unsigned. */
+export function formatPercent(value: number, opts?: { signed?: boolean }) {
+  const signed = opts?.signed ?? true
+  return `${signed && value > 0 ? '+' : ''}${value.toFixed(2)}%`
 }
 
 /** Fixed 2-decimal grouped number (zh-CN locale), no currency symbol. */
 export function formatNum2(value: number) {
-  return value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return value.toLocaleString('zh-CN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
 }
 
 /** Today as YYYY-MM-DD in the browser's local timezone.
@@ -44,10 +58,18 @@ export function todayLocal(): string {
 export function isTradingHours(): boolean {
   const now = new Date()
   const cstOffset = 8 * 60
-  const cst = new Date(now.getTime() + (cstOffset - now.getTimezoneOffset()) * 60_000)
+  const cst = new Date(
+    now.getTime() + (cstOffset - now.getTimezoneOffset()) * 60_000,
+  )
   const day = cst.getDay() // 0=Sun, 6=Sat
   if (day === 0 || day === 6) return false
-  const h = cst.getHours(), m = cst.getMinutes()
+  const h = cst.getHours(),
+    m = cst.getMinutes()
   const t = h * 60 + m
   return (t >= 9 * 60 + 30 && t < 11 * 60 + 30) || (t >= 13 * 60 && t < 15 * 60)
+}
+
+/** True when `s` is exactly a 6-digit fund code. */
+export function isFundCode(s: string): boolean {
+  return /^\d{6}$/.test(s)
 }

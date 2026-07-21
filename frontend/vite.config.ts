@@ -52,7 +52,8 @@ export default defineConfig({
           if (!name) return undefined
           if (REACT_PACKAGES.has(name)) return 'vendor-react'
           if (name.startsWith('@tanstack/')) return 'vendor-tanstack'
-          if (CHART_PACKAGES.has(name) || name.startsWith('d3-')) return 'vendor-charts'
+          if (CHART_PACKAGES.has(name) || name.startsWith('d3-'))
+            return 'vendor-charts'
           return undefined
         },
       },

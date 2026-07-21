@@ -7,34 +7,46 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .core import extract_json as _parse_json
-from .core import is_valid_code
+from .core import (
+    DEFAULT_ANTHROPIC_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    is_valid_code,
+    make_llm_client,
+)
+from .core import (
+    extract_json as _parse_json,
+)
 
 # ponytail: disable oneDNN — causes RuntimeError: std::exception on WSL2 / some CPUs
-#os.environ.setdefault("FLAGS_use_mkldnn", "0")
+# os.environ.setdefault("FLAGS_use_mkldnn", "0")
 
 log = logging.getLogger(__name__)
 
 # ── PaddleOCR engine singleton (non-thread-safe; guard with lock) ─────────────
 
 _ocr_engine: Any = None
-_ocr_lock = threading.Lock()
+_ocr_lock = threading.Lock()  # predict 非线程安全，串行化识别调用
+_ocr_init_lock = threading.Lock()  # 初始化单飞：warm_up 线程与首个请求共用
 
 
 def _get_ocr() -> Any:
     global _ocr_engine
     if _ocr_engine is None:
-        from paddleocr import PaddleOCR  # lazy import — heavy startup
+        # 双检锁：warm_up 守护线程与首个 ocr_text 请求可能同时到达，
+        # 保证只构造一个 PaddleOCR 实例
+        with _ocr_init_lock:
+            if _ocr_engine is None:
+                from paddleocr import PaddleOCR  # lazy import — heavy startup
 
-        # ponytail: minimal config; limit_side_len default 960 may blur long
-        # screenshots → upgrade path is to slice by height (see git history for
-        # the old rapidocr _SLICE_* approach) if small text gets missed.
-        _ocr_engine = PaddleOCR(
-            lang="ch",
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=False,
-        )
+                # ponytail: minimal config; limit_side_len default 960 may blur long
+                # screenshots → upgrade path is to slice by height (see git history for
+                # the old rapidocr _SLICE_* approach) if small text gets missed.
+                _ocr_engine = PaddleOCR(
+                    lang="ch",
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
+                )
     return _ocr_engine
 
 
@@ -82,25 +94,23 @@ async def _text_json(
     """
     user_msg = f"{prompt}\n\n---\n{text}"
 
-    client: Any
+    client = make_llm_client(provider, api_key, base_url)
     if provider == "anthropic":
-        import anthropic
-
-        client = anthropic.AsyncAnthropic(api_key=api_key)
         resp = await client.messages.create(
-            model=model or "claude-opus-4-8",
+            model=model or DEFAULT_ANTHROPIC_MODEL,
             max_tokens=8192,
             messages=[{"role": "user", "content": user_msg}],
         )
+        from anthropic.types import TextBlock
+
         # content[0] isn't always a text block (e.g. thinking blocks) and can
         # be empty; scan for the first text block instead of indexing blindly.
-        raw = next((block.text for block in resp.content if hasattr(block, "text")), "")
+        raw = next(
+            (block.text for block in resp.content if isinstance(block, TextBlock)), ""
+        )
     else:
-        import openai
-
-        client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         req: dict[str, Any] = {
-            "model": model or "gpt-4o",
+            "model": model or DEFAULT_OPENAI_MODEL,
             "max_tokens": 8192,
             "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": user_msg}],
@@ -120,7 +130,9 @@ async def _text_json(
             # silently return empty content when json_object isn't supported
             log.warning(
                 "AI空响应(provider=%s model=%s finish_reason=%s)，去掉json_object重试",
-                provider, model, choice.finish_reason,
+                provider,
+                model,
+                choice.finish_reason,
             )
             req.pop("response_format")
             resp2 = await client.chat.completions.create(**req)
@@ -304,7 +316,7 @@ async def resolve_unknown_fund_names(
         return {}
 
     out: dict[int, dict[str, Any]] = {}
-    for item in (result.get("items") or [] if isinstance(result, dict) else []):
+    for item in result.get("items") or [] if isinstance(result, dict) else []:
         idx = item.get("index")
         name = (item.get("full_name") or "").strip()
         raw_code = str(item.get("code") or "").strip()
@@ -410,7 +422,10 @@ async def review_fund_matches(
                 entry["corrected_name"] = corrected
                 log.info(
                     "Pro核对 #%d: ✗ 「%s」(%s) → 纠正为「%s」(待搜索)",
-                    idx, entry["name"], entry["code"], corrected,
+                    idx,
+                    entry["name"],
+                    entry["code"],
+                    corrected,
                 )
             else:
                 entry["review"] = "confirmed"  # no correction offered → keep
@@ -433,6 +448,6 @@ if __name__ == "__main__":
 
     assert _parse_json('{"a":1}') == {"a": 1}
     assert _parse_json("```json\n[1,2]\n```") == [1, 2]
-    assert _parse_json("prefix {\"x\": 2} suffix") == {"x": 2}
+    assert _parse_json('prefix {"x": 2} suffix') == {"x": 2}
     print("_parse_json 自检通过")
     sys.exit(0)

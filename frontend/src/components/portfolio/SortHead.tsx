@@ -4,18 +4,22 @@ import type { Column } from '@tanstack/react-table'
 import { cn } from '@/lib/utils'
 
 function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
-  if (sorted === 'asc') return <ChevronUp className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-  if (sorted === 'desc') return <ChevronDown className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-  return <ChevronsUpDown className="h-3.5 w-3.5 opacity-30 shrink-0 group-hover:opacity-60 transition-opacity" />
+  if (sorted === 'asc')
+    return <ChevronUp className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+  if (sorted === 'desc')
+    return <ChevronDown className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+  return (
+    <ChevronsUpDown className="h-3.5 w-3.5 opacity-30 shrink-0 group-hover:opacity-60 transition-opacity" />
+  )
 }
 
-export function SortHead({
+export function SortHead<TData, TValue>({
   column,
   children,
   right = false,
   tooltip,
 }: {
-  column: Column<any, any>
+  column: Column<TData, TValue>
   children: React.ReactNode
   right?: boolean
   tooltip?: string
@@ -25,9 +29,14 @@ export function SortHead({
     <div className={cn('relative inline-flex', right && 'w-full justify-end')}>
       <button
         className="group flex items-center gap-1 font-medium transition-colors hover:text-slate-700 leading-tight"
-        onClick={column.getToggleSortingHandler()}
+        onClick={(e) => {
+          column.getToggleSortingHandler()?.(e)
+          if (tooltip) setShow((v) => !v)
+        }}
         onMouseEnter={() => tooltip && setShow(true)}
         onMouseLeave={() => setShow(false)}
+        onBlur={() => setShow(false)}
+        aria-label={tooltip}
       >
         {children}
         <SortIcon sorted={column.getIsSorted()} />

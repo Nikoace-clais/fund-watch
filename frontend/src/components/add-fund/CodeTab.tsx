@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { Check, AlertCircle } from 'lucide-react'
 import { useAddFund } from '@/lib/queries'
-import { cn } from '@/lib/utils'
+import { cn, isFundCode } from '@/lib/utils'
 
 export function CodeTab({ portfolioId }: { portfolioId?: number }) {
   const [code, setCode] = useState('')
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<{
+    type: 'success' | 'error'
+    text: string
+  } | null>(null)
   const addFund = useAddFund(portfolioId)
 
-  const isValid = /^\d{6}$/.test(code)
+  const isValid = isFundCode(code)
   const loading = addFund.isPending
 
   const handleSubmit = () => {
@@ -20,17 +23,25 @@ export function CodeTab({ portfolioId }: { portfolioId?: number }) {
         setMessage({ type: 'success', text: `基金 ${submittedCode} 添加成功` })
         setCode('')
       },
-      onError: (err: Error) => setMessage({ type: 'error', text: err.message || '添加失败' }),
+      onError: (err: Error) =>
+        setMessage({ type: 'error', text: err.message || '添加失败' }),
     })
   }
 
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-slate-600 mb-1.5">基金代码</label>
+        <label
+          htmlFor="fund-code"
+          className="block text-sm font-medium text-slate-600 mb-1.5"
+        >
+          基金代码
+        </label>
         <div className="flex gap-2">
           <input
+            id="fund-code"
             type="text"
+            inputMode="numeric"
             value={code}
             onChange={(e) => {
               setCode(e.target.value.replace(/\D/g, '').slice(0, 6))
@@ -50,7 +61,7 @@ export function CodeTab({ portfolioId }: { portfolioId?: number }) {
               'px-5 py-2.5 rounded-lg text-sm font-medium transition-colors',
               isValid && !loading
                 ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed',
             )}
           >
             {loading ? '添加中...' : '添加'}
@@ -67,7 +78,7 @@ export function CodeTab({ portfolioId }: { portfolioId?: number }) {
             'flex items-center gap-2 text-sm px-3 py-2.5 rounded-lg',
             message.type === 'success'
               ? 'bg-green-50 text-green-700'
-              : 'bg-red-50 text-red-600'
+              : 'bg-red-50 text-red-600',
           )}
         >
           {message.type === 'success' ? (

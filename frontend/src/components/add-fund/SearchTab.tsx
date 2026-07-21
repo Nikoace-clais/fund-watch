@@ -3,16 +3,29 @@ import { Search, Plus, Check } from 'lucide-react'
 import { ErrorBanner } from '@/components/PageState'
 import { searchFunds } from '@/lib/api'
 import { useAddFund } from '@/lib/queries'
+import { useRequestSeq } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-export function SearchTab({ portfolioId, existingCodes }: { portfolioId?: number; existingCodes: string[] }) {
+export function SearchTab({
+  portfolioId,
+  existingCodes,
+}: {
+  portfolioId?: number
+  existingCodes: string[]
+}) {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<Array<{ code: string; name: string; type?: string }>>([])
+  const [results, setResults] = useState<
+    Array<{ code: string; name: string; type?: string }>
+  >([])
   const [loading, setLoading] = useState(false)
-  const [addedCodes, setAddedCodes] = useState<Set<string>>(() => new Set(existingCodes))
+  const [addedCodes, setAddedCodes] = useState<Set<string>>(
+    () => new Set(existingCodes),
+  )
   const [error, setError] = useState('')
   const addFund = useAddFund(portfolioId)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  )
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
@@ -21,23 +34,32 @@ export function SearchTab({ portfolioId, existingCodes }: { portfolioId?: number
     }
   }, [])
 
-  const doSearch = useCallback(async (q: string) => {
-    if (q.trim().length < 1) {
-      setResults([])
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      const data = await searchFunds(q.trim())
-      setResults(data.results)
-    } catch (err: any) {
-      setError(err.message || '搜索失败')
-      setResults([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // guards against an older in-flight response overwriting newer results
+  const searchSeq = useRequestSeq()
+
+  const doSearch = useCallback(
+    async (q: string) => {
+      if (q.trim().length < 1) {
+        setResults([])
+        return
+      }
+      const seq = searchSeq.next()
+      setLoading(true)
+      setError('')
+      try {
+        const data = await searchFunds(q.trim())
+        if (!searchSeq.isCurrent(seq)) return
+        setResults(data.results)
+      } catch (err: unknown) {
+        if (!searchSeq.isCurrent(seq)) return
+        setError(err instanceof Error ? err.message : '搜索失败')
+        setResults([])
+      } finally {
+        if (searchSeq.isCurrent(seq)) setLoading(false)
+      }
+    },
+    [searchSeq],
+  )
 
   const handleInput = (value: string) => {
     setQuery(value)
@@ -90,12 +112,16 @@ export function SearchTab({ portfolioId, existingCodes }: { portfolioId?: number
                 'w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors',
                 isAdded
                   ? 'bg-green-50 cursor-default'
-                  : 'hover:bg-slate-50 cursor-pointer'
+                  : 'hover:bg-slate-50 cursor-pointer',
               )}
             >
               <div className="flex items-center gap-3 min-w-0">
-                <span className="text-sm font-mono text-slate-500">{item.code}</span>
-                <span className="text-sm text-slate-800 truncate">{item.name}</span>
+                <span className="text-sm font-mono text-slate-500">
+                  {item.code}
+                </span>
+                <span className="text-sm text-slate-800 truncate">
+                  {item.name}
+                </span>
                 {item.type && (
                   <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
                     {item.type}

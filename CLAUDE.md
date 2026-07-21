@@ -41,7 +41,7 @@ core.py          共享常量与校验（CST、UPLOAD_DIR、validate_code）
 schemas.py       Pydantic 请求模型
 db.py            SQLite 初始化/连接
 fund_source.py   外部数据源适配（估值/详情/搜索/指数）
-ocr_service.py   截图 OCR（rapidocr）
+ocr_service.py   截图 OCR（PaddleOCR）
 routers/         API 路由，按域拆分
 services/        业务逻辑
 repositories/    SQL 访问层
@@ -101,10 +101,12 @@ Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: 
 # 后端（backend/ 目录下）
 uv run pytest                 # 全量；tests/unit/ 与 tests/integration/ 可分开跑
 uv run ruff check .
-uv run mypy .
+uv run ruff format .          # 格式化(CI 用 --check 门禁)
+uv run ty check               # 类型检查(Astral ty,覆盖 app/ 与 tests/)
 
 # 前端（frontend/ 目录下）
 bun run lint                  # tsc --noEmit
+bun run format                # prettier(CI 用 format:check 门禁)
 ```
 
 ---
@@ -148,6 +150,7 @@ bun run lint                  # tsc --noEmit
 2. **任务拆解** — 从 `docs/plans/templates/tasks-template.md` 复制为 `docs/plans/YYYY-MM-DD-<slug>.md`，按 Task 拆分，每个 Task 标注涉及文件与验证方式。
 3. **执行状态跟踪** — 每个 Task 标题带复选框（`- [ ]` / `- [x]`），实施中实时勾选；作业结束填写文档末尾「## 执行情况」小节：完成 / 跳过（及原因）/ 遗留问题 / 测试结果。
 4. **执行模型** — 设计与审查由主会话模型负责；逐 Task 编码实施使用最新 Sonnet（派发 `Agent(model: "sonnet")` subagent 执行，或主会话 `/model sonnet` 后执行）。
+5. **Subagent 类型选择** — 派发 subagent 时按任务性质选最合适的 agent 类型（如探索/搜索用 Explore、方案规划用 Plan、代码评审用 code-reviewer），而不是一律用 general-purpose。
 
 ---
 
@@ -187,7 +190,7 @@ A change is considered good when:
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **fund-watch** (819 symbols, 2104 relationships, 60 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **fund-watch** (858 symbols, 2199 relationships, 63 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 

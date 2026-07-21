@@ -10,7 +10,13 @@ export type FundSnapshot = {
 }
 
 export type FundOverviewItem = {
-  fund: { code: string; name?: string; sector?: string; holding_shares?: string; created_at: string }
+  fund: {
+    code: string
+    name?: string
+    sector?: string
+    holding_shares?: string
+    created_at: string
+  }
   latest?: FundSnapshot | null
   has_transactions: boolean
 }
@@ -34,21 +40,35 @@ export type FundDetailData = {
   manager_power_categories?: string[] | null
 }
 
-export type NavPoint = { date: string; nav: number; accNav?: number; dailyReturn?: number }
+export type NavPoint = {
+  date: string
+  nav: number
+  accNav?: number
+  dailyReturn?: number
+}
 
-export type StockHolding = { stock_code: string; stock_name: string; percentage: number | null }
+export type StockHolding = {
+  stock_code: string
+  stock_name: string
+  percentage: number | null
+}
 
 export type PortfolioItem = {
   code: string
   name?: string
   shares: string | null
   nav: string | null
-  daily_change: number
-  current_value: string
-  daily_return: string
+  // estimate fields come back null (with estimate_error: true) when the quote
+  // source fails — the row is kept, only its valuation is unavailable
+  daily_change: number | null
+  current_value: string | null
+  daily_return: string | null
   total_cost: string | null
-  total_return: string
+  total_return: string | null
   return_rate: string | null
+  estimate_error?: boolean
+  realized_pnl?: string
+  is_closed?: boolean
   is_imported?: boolean
   imported_cumulative_return?: string
 }
@@ -121,17 +141,33 @@ export type BatchFundItem = {
   holding_return?: number
 }
 
-export type HoldingXrayFund = { code: string; name: string; percentage: number | null; contribution: string }
+export type HoldingXrayFund = {
+  code: string
+  name: string
+  percentage: number | null
+  contribution: string
+}
 export type HoldingXrayStock = {
-  stock_code: string; stock_name: string; industry: string | null
-  exposure: string; weight_pct: number; fund_count: number
+  stock_code: string
+  stock_name: string
+  industry: string | null
+  exposure: string
+  weight_pct: number
+  fund_count: number
   funds: HoldingXrayFund[]
 }
-export type HoldingXraySector = { name: string; exposure: string; weight_pct: number }
+export type HoldingXraySector = {
+  name: string
+  exposure: string
+  weight_pct: number
+}
 export type PortfolioHoldings = {
   portfolio_id: number
-  total_value: string; covered_value: string
-  stocks: HoldingXrayStock[]; sectors: HoldingXraySector[]; coverage: Record<string, number>
+  total_value: string
+  covered_value: string
+  stocks: HoldingXrayStock[]
+  sectors: HoldingXraySector[]
+  coverage: Record<string, number>
 }
 
 export type FundPnl = {
@@ -141,7 +177,13 @@ export type FundPnl = {
   holding_shares?: string
 }
 
-export type OcrCfg = { provider?: string; api_key?: string; base_url?: string; model?: string; analysis_model?: string }
+export type OcrCfg = {
+  provider?: string
+  api_key?: string
+  base_url?: string
+  model?: string
+  analysis_model?: string
+}
 
 export type OcrNameMatch = {
   code: string

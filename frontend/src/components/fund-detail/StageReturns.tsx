@@ -18,9 +18,12 @@ export function StageReturns({ detail }: { detail: FundDetailData }) {
         <Activity className="h-5 w-5 text-slate-600" />
         <h2 className="text-lg font-semibold text-slate-800">阶段涨幅</h2>
       </div>
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {stageReturns.map((item) => (
-          <div key={item.label} className="text-center p-3 bg-slate-50 rounded-lg">
+          <div
+            key={item.label}
+            className="text-center p-3 bg-slate-50 rounded-lg"
+          >
             <p className="text-xs text-slate-400 mb-1">{item.label}</p>
             {item.value != null ? (
               <p className={cn('text-lg font-bold', colorFor(item.value))}>

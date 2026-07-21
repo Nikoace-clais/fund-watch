@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # 后端 Python(uv 管理,dependabot 走 pip ecosystem,直接更新 pyproject.toml/uv.lock)
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+  # 前端 bun 项目:dependabot 用 npm ecosystem 处理 package.json/bun.lock
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+  # GitHub Actions(SHA 钉版的 action 也由它跟进升级)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

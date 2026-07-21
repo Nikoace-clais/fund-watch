@@ -1,11 +1,11 @@
 import type { NavPoint } from '@/lib/api'
 
 // ponytail: all thresholds heuristic; tune from observed fund behavior
-const QUALITY_FLOOR = 25   // sharpeScore < 25 fails gate (≈ sharpe 0.5)
-const CHEAP        = 65    // valuation ≥ 65 → below ~35th pct = cheap
-const EXPENSIVE    = 35    // valuation ≤ 35 → above ~65th pct = expensive
-const TREND_EPS    = 0.005 // ±0.5% MA20/MA60 gap = neutral zone
-const TREND_K      = 1000  // trendRatio × K → score offset from 50
+const QUALITY_FLOOR = 25 // sharpeScore < 25 fails gate (≈ sharpe 0.5)
+const CHEAP = 65 // valuation ≥ 65 → below ~35th pct = cheap
+const EXPENSIVE = 35 // valuation ≤ 35 → above ~65th pct = expensive
+const TREND_EPS = 0.005 // ±0.5% MA20/MA60 gap = neutral zone
+const TREND_K = 1000 // trendRatio × K → score offset from 50
 
 /**
  * 风险指标计算（近 252 交易日）：年化收益、波动率、最大回撤、夏普比率。
@@ -14,17 +14,16 @@ const TREND_K      = 1000  // trendRatio × K → score offset from 50
 export function computeRiskMetrics(history: NavPoint[]) {
   const slice = history.slice(-252)
   const returns = slice
-    .filter(p => p.dailyReturn != null)
-    .map(p => p.dailyReturn! / 100)
+    .filter((p) => p.dailyReturn != null)
+    .map((p) => p.dailyReturn! / 100)
 
   if (returns.length < 30) return null
 
-  const navSlice = slice.filter(p => p.nav != null)
-  const startNav = navSlice[0]?.nav
-  const endNav = navSlice[navSlice.length - 1]?.nav
+  const startNav = slice[0]?.nav
+  const endNav = slice[slice.length - 1]?.nav
   const n = returns.length
   const annualReturn =
-    startNav && endNav
+    startNav != null && endNav != null
       ? (Math.pow(endNav / startNav, 252 / n) - 1) * 100
       : null
 
@@ -34,9 +33,9 @@ export function computeRiskMetrics(history: NavPoint[]) {
 
   let peak = -Infinity
   let maxDD = 0
-  for (const p of navSlice) {
-    if (p.nav! > peak) peak = p.nav!
-    const dd = (peak - p.nav!) / peak
+  for (const p of slice) {
+    if (p.nav > peak) peak = p.nav
+    const dd = (peak - p.nav) / peak
     if (dd > maxDD) maxDD = dd
   }
   const maxDrawdown = maxDD * 100
@@ -64,16 +63,17 @@ const ma = (seq: number[], n: number) => {
 export function computeSignals(history: NavPoint[]) {
   if (history.length < 30) return null
 
-  const seq = history.map(p => p.accNav ?? p.nav)
+  const seq = history.map((p) => p.accNav ?? p.nav)
   const current = seq[seq.length - 1]
 
   // Quality: reuse computeRiskMetrics for sharpe
   const risk = computeRiskMetrics(history)
   const sharpe = risk?.sharpe ?? null
-  const quality = sharpe !== null ? Math.max(0, Math.min((sharpe / 2) * 100, 100)) : null
+  const quality =
+    sharpe !== null ? Math.max(0, Math.min((sharpe / 2) * 100, 100)) : null
 
   // Valuation: historical percentile (low percentile = cheap = high score)
-  const below = seq.filter(v => v <= current).length
+  const below = seq.filter((v) => v <= current).length
   const percentile = (below / seq.length) * 100
   const valuation = 100 - percentile
 
@@ -91,7 +91,10 @@ export type Signals = NonNullable<ReturnType<typeof computeSignals>>
  * composite 是指针位置分（0–100），label/level 决定颜色和文字。
  */
 export function signalVerdict(s: Signals): {
-  label: string; level: number; composite: number; reason: string
+  label: string
+  level: number
+  composite: number
+  reason: string
 } {
   const { quality, valuation, trendRatio } = s
 
@@ -99,18 +102,43 @@ export function signalVerdict(s: Signals): {
     return { label: '观望', level: 2, composite: 50, reason: '质量不达标' }
 
   if (trendRatio < -TREND_EPS)
-    return { label: '卖出', level: 1, composite: 25, reason: '质量达标·趋势向下' }
+    return {
+      label: '卖出',
+      level: 1,
+      composite: 25,
+      reason: '质量达标·趋势向下',
+    }
 
   if (trendRatio > TREND_EPS) {
     if (valuation >= CHEAP)
-      return { label: '强烈买入', level: 4, composite: 90, reason: '质量达标·趋势向上·估值便宜' }
+      return {
+        label: '强烈买入',
+        level: 4,
+        composite: 90,
+        reason: '质量达标·趋势向上·估值便宜',
+      }
     if (valuation <= EXPENSIVE)
-      return { label: '持有', level: 2, composite: 58, reason: '质量达标·趋势向上·估值偏贵' }
-    return { label: '买入', level: 3, composite: 72, reason: '质量达标·趋势向上' }
+      return {
+        label: '持有',
+        level: 2,
+        composite: 58,
+        reason: '质量达标·趋势向上·估值偏贵',
+      }
+    return {
+      label: '买入',
+      level: 3,
+      composite: 72,
+      reason: '质量达标·趋势向上',
+    }
   }
 
   // neutral trend
   if (valuation >= CHEAP)
-    return { label: '买入(左侧)', level: 3, composite: 65, reason: '质量达标·趋势中性·估值便宜' }
+    return {
+      label: '买入(左侧)',
+      level: 3,
+      composite: 65,
+      reason: '质量达标·趋势中性·估值便宜',
+    }
   return { label: '持有', level: 2, composite: 52, reason: '质量达标·趋势中性' }
 }

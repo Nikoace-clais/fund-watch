@@ -135,13 +135,13 @@ class TestFundsHoldingStock:
         assert body["items"] == []
 
     def test_network_error_returns_502(self, stock_client, httpx_mock, no_retry_sleep):
-        """Network failure → 502 with detail message."""
+        """Network failure → 502 通用文案（内部异常细节只记服务端日志）。"""
         for _ in range(3):  # cover retries
             httpx_mock.add_exception(httpx.ConnectError("refused"))
 
         resp = stock_client.get("/api/stocks/600519/funds")
         assert resp.status_code == 502
-        assert "不可用" in resp.json()["detail"]
+        assert resp.json()["detail"] == "上游数据源请求失败，请稍后重试"
 
     def test_invalid_code_returns_400(self, stock_client):
         """Non-6-digit code → 400."""
@@ -153,3 +153,12 @@ class TestFundsHoldingStock:
         httpx_mock.add_response(content=_DATA_RESULT)
         resp = stock_client.get("/api/stocks/600519/funds?limit=9999")
         assert resp.status_code == 200
+
+    def test_limit_zero_returns_422(self, stock_client):
+        """limit 下界校验:0 不再原样传给上游。"""
+        resp = stock_client.get("/api/stocks/600519/funds?limit=0")
+        assert resp.status_code == 422
+
+    def test_negative_limit_returns_422(self, stock_client):
+        resp = stock_client.get("/api/stocks/600519/funds?limit=-5")
+        assert resp.status_code == 422

@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useProviderConfig, type ProviderConfig, type AiProvider } from '@/lib/provider-config'
+import {
+  useProviderConfig,
+  type ProviderConfig,
+  type AiProvider,
+} from '@/lib/provider-config'
 import { SettingsDropdown } from './SettingsDropdown'
 
 export function AiConfigSetting() {
@@ -47,7 +51,9 @@ function AiConfigPanel({
 
   return (
     <>
-      <p className="text-xs font-medium text-slate-400 uppercase">AI Provider 配置</p>
+      <p className="text-xs font-medium text-slate-400 uppercase">
+        AI Provider 配置
+      </p>
 
       {/* Provider */}
       <div className="grid grid-cols-2 gap-1.5">
@@ -69,8 +75,14 @@ function AiConfigPanel({
 
       {/* API Key */}
       <div>
-        <label className="block text-xs text-slate-500 mb-1">API Key</label>
+        <label
+          htmlFor="ai-api-key"
+          className="block text-xs text-slate-500 mb-1"
+        >
+          API Key
+        </label>
         <input
+          id="ai-api-key"
           type="password"
           value={draft.api_key}
           onChange={(e) => setDraft((d) => ({ ...d, api_key: e.target.value }))}
@@ -83,31 +95,55 @@ function AiConfigPanel({
       {draft.provider === 'openai' && (
         <>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">Base URL</label>
+            <label
+              htmlFor="ai-base-url"
+              className="block text-xs text-slate-500 mb-1"
+            >
+              Base URL
+            </label>
             <input
+              id="ai-base-url"
               type="text"
               value={draft.base_url}
-              onChange={(e) => setDraft((d) => ({ ...d, base_url: e.target.value }))}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, base_url: e.target.value }))
+              }
               placeholder="https://api.openai.com/v1"
               className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">编排模型</label>
+            <label
+              htmlFor="ai-model"
+              className="block text-xs text-slate-500 mb-1"
+            >
+              编排模型
+            </label>
             <input
+              id="ai-model"
               type="text"
               value={draft.model}
-              onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, model: e.target.value }))
+              }
               placeholder="deepseek-v4-flash"
               className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1">分析模型（留空=同上）</label>
+            <label
+              htmlFor="ai-analysis-model"
+              className="block text-xs text-slate-500 mb-1"
+            >
+              分析模型（留空=同上）
+            </label>
             <input
+              id="ai-analysis-model"
               type="text"
               value={draft.analysis_model}
-              onChange={(e) => setDraft((d) => ({ ...d, analysis_model: e.target.value }))}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, analysis_model: e.target.value }))
+              }
               placeholder="deepseek-v4-pro"
               className="w-full px-2.5 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -121,6 +157,11 @@ function AiConfigPanel({
       >
         保存
       </button>
+
+      <p className="text-[11px] leading-relaxed text-amber-600">
+        注意：API Key 以明文保存在浏览器
+        localStorage，并随请求发送至后端，请勿在共用设备上保存。
+      </p>
     </>
   )
 }

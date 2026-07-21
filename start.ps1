@@ -22,8 +22,7 @@ Set-Location "$ROOT\backend"
 
 if (-not (Test-Path ".venv")) {
     Write-Host "[Info] 正在创建虚拟环境并安装依赖..." -ForegroundColor Cyan
-    uv venv
-    uv pip install -r requirements.txt
+    uv sync
 }
 
 Write-Host "[Info] 启动后端服务 (http://127.0.0.1:8010)..." -ForegroundColor Cyan

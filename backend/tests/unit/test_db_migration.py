@@ -4,6 +4,7 @@ The migration must copy any legacy single-pool holding data into
 positions *before* dropping the now-unused funds columns — reordering
 these two steps would silently discard un-migrated holdings.
 """
+
 from __future__ import annotations
 
 import sqlite3

@@ -27,7 +27,9 @@ export function Modal({
     if (!open) return
     const original = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = original }
+    return () => {
+      document.body.style.overflow = original
+    }
   }, [open])
 
   if (!open) return null
@@ -39,7 +41,11 @@ export function Modal({
         if (e.target === e.currentTarget) onClose()
       }}
     >
-      <div role="dialog" aria-modal="true" className={cn('bg-white shadow-2xl w-full mx-4', className)}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={cn('bg-white shadow-2xl w-full mx-4', className)}
+      >
         {children}
       </div>
     </div>

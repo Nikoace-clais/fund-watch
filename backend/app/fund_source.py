@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import time
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -12,7 +13,7 @@ from typing import Any
 import httpx
 from cachetools import TTLCache
 
-from .core import is_valid_code
+from .core import CST, is_valid_code
 
 _NAV_CACHE_TTL = 600  # 10 minutes
 # In-process TTL cache for NAV history (avoids re-fetching on range changes);
@@ -58,7 +59,7 @@ async def _get_with_retry(
     max_retries: int = 3,
     **kw: Any,
 ) -> httpx.Response:
-    """GET with exponential backoff on transient network errors."""
+    """GET with exponential backoff on transient network errors and 5xx responses."""
     last_error: Exception | None = None
     for attempt in range(max_retries):
         try:
@@ -67,8 +68,12 @@ async def _get_with_retry(
             return resp
         except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as e:
             last_error = e
-            if attempt < max_retries - 1:
-                await asyncio.sleep(0.5 * (attempt + 1))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code < 500:
+                raise  # 4xx 是请求方问题,重试无意义
+            last_error = e
+        if attempt < max_retries - 1:
+            await asyncio.sleep(0.5 * (attempt + 1))
     raise last_error or Exception(f"Failed GET {url}")
 
 
@@ -113,8 +118,22 @@ PINGZHONG_URL = "https://fund.eastmoney.com/pingzhongdata/{code}.js"
 # Raw pingzhongdata text is shared by fetch_fund_info/fetch_fund_detail/
 # fetch_nav_history — a short TTL coalesces the near-simultaneous calls a
 # fund-detail page load triggers into a single download.
-_pingzhong_cache: TTLCache[str, str] = TTLCache(maxsize=200, ttl=60)
-_pingzhong_locks: dict[str, asyncio.Lock] = {}
+# ty: cachetools 存根的 __init__ 重载让 ty 0.0.57 推断出错误的泛型参数,误报
+_pingzhong_cache: TTLCache[str, str] = TTLCache(maxsize=200, ttl=60)  # ty: ignore[invalid-assignment]
+# per-code 单飞锁改用有界 TTLCache(原来用普通 dict 只增不减);
+# TTLCache 本身非线程安全,访问时统一加 threading.Lock 守护
+_pingzhong_locks: TTLCache[str, asyncio.Lock] = TTLCache(maxsize=256, ttl=86400)
+_pingzhong_locks_mu = threading.Lock()
+
+
+def _get_pingzhong_lock(code: str) -> asyncio.Lock:
+    """取(或建)某个基金代码的单飞锁。"""
+    with _pingzhong_locks_mu:
+        lock = _pingzhong_locks.get(code)
+        if lock is None:
+            lock = asyncio.Lock()
+            _pingzhong_locks[code] = lock
+        return lock
 
 
 async def _fetch_pingzhongdata_text(code: str) -> str:
@@ -124,7 +143,7 @@ async def _fetch_pingzhongdata_text(code: str) -> str:
     # Single-flight per code: without this lock, concurrent callers (a
     # fund-detail page firing info/detail/nav-history at once) would all
     # cache-miss and each download, defeating the point of this cache.
-    lock = _pingzhong_locks.setdefault(code, asyncio.Lock())
+    lock = _get_pingzhong_lock(code)
     async with lock:
         cached = _pingzhong_cache.get(code)
         if cached is not None:
@@ -137,6 +156,7 @@ async def _fetch_pingzhongdata_text(code: str) -> str:
         )
         _pingzhong_cache[code] = text
         return text
+
 
 # Common fund sector keywords to extract from fund name
 _SECTOR_KEYWORDS = [
@@ -206,6 +226,8 @@ async def fetch_fund_info(code: str) -> dict[str, Any]:
 
 
 HOLDINGS_URL = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10"
+# fundf10 接口无 Referer 直接返回 404
+_F10_HEADERS = {"Referer": "https://fundf10.eastmoney.com/"}
 
 # Parse: 序号 / 股票代码 / 股票名称 / 占净值比例 / 持股数 / 持仓市值
 # A股行用 tol/tor class，QDII 行全部是 toc class，故 class 无关匹配；
@@ -225,7 +247,7 @@ _HOLDING_ROW_RE = re.compile(
 async def fetch_fund_holdings(code: str) -> list[dict[str, Any]]:
     """Fetch top-10 stock holdings for a fund from eastmoney."""
     t0 = time.perf_counter()
-    resp = await _fetch(HOLDINGS_URL.format(code=code))
+    resp = await _fetch(HOLDINGS_URL.format(code=code), headers=_F10_HEADERS)
     text = resp.text
     elapsed = time.perf_counter() - t0
     logger.debug("fetch_fund_holdings [%s] %.3fs", code, elapsed)
@@ -412,11 +434,15 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
 
     history: list[dict[str, Any]] = []
 
+    # eastmoney 的时间戳是北京时间零点,必须带时区解析;
+    # naive fromtimestamp 在 UTC 部署环境下会把日期解析偏早一天
     raw = _extract_js_array(text, "Data_netWorthTrend")
     if raw:
         for item in raw:
             ts = item.get("x", 0)
-            date_str = dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
+            date_str = (
+                dt.fromtimestamp(ts / 1000, tz=CST).strftime("%Y-%m-%d") if ts else None
+            )
             history.append(
                 {
                     "date": date_str,
@@ -433,7 +459,9 @@ async def fetch_nav_history(code: str, limit: int = 365) -> list[dict[str, Any]]
             try:
                 ts, acc = item[0], item[1]
                 date_str = (
-                    dt.fromtimestamp(ts / 1000).strftime("%Y-%m-%d") if ts else None
+                    dt.fromtimestamp(ts / 1000, tz=CST).strftime("%Y-%m-%d")
+                    if ts
+                    else None
                 )
                 if date_str:
                     acc_map[date_str] = acc
@@ -808,9 +836,7 @@ def _recent_quarter_ends(n: int = 4) -> list[str]:
     return ends
 
 
-async def fetch_funds_holding_stock(
-    stock_code: str, limit: int = 50
-) -> dict[str, Any]:
+async def fetch_funds_holding_stock(stock_code: str, limit: int = 50) -> dict[str, Any]:
     """Return public funds holding *stock_code*, sorted by position value desc.
 
     Queries eastmoney datacenter (RPT_MAINDATA_MAIN_POSITIONDETAILS) with
@@ -838,7 +864,7 @@ async def fetch_funds_holding_stock(
             "filter": (
                 f'(SECURITY_CODE="{stock_code}")'
                 f"(REPORT_DATE='{qdate}')"
-                "(ORG_TYPE_CODE=\"1\")"
+                '(ORG_TYPE_CODE="1")'
             ),
             "source": "WEB",
             "client": "WEB",
@@ -906,7 +932,7 @@ async def search_fund_by_name(keyword: str, limit: int = 5) -> list[dict[str, An
     data = json.loads(text)
 
     results: list[dict[str, Any]] = []
-    for item in (data.get("Datas") or []):
+    for item in data.get("Datas") or []:
         if len(results) >= limit:
             break
         code = item.get("CODE", "")

@@ -1,4 +1,10 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from 'react'
 import { getStoredString, setStoredString } from './storage'
 
 export type ColorScheme = 'red-up' | 'green-up'
@@ -67,7 +73,9 @@ export function ColorProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <ColorContext.Provider value={{ scheme, setScheme, colorFor, badgeClassFor, hexFor }}>
+    <ColorContext.Provider
+      value={{ scheme, setScheme, colorFor, badgeClassFor, hexFor }}
+    >
       {children}
     </ColorContext.Provider>
   )
