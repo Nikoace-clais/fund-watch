@@ -7,6 +7,7 @@ calls so tests run fully offline.
 import app.db as app_db
 import app.routers.funds as funds_router
 import app.services.fund_import as fund_import_svc
+import app.services.nav_history as nav_history_svc
 import pytest
 from app.main import app as fastapi_app
 from fastapi.testclient import TestClient
@@ -428,3 +429,47 @@ class TestPortfolioSummary:
         # 1500 proceeds - 1000 cost = 500 realized.
         assert item["total_return"] == "500.00"
         assert summary["total_return"] == "500.00"
+
+
+class TestNavHistoryEndpoint:
+    """nav-history 端点：改走 service（DB 优先）后响应形状保持不变。"""
+
+    def test_response_shape_unchanged(self, app_client, monkeypatch):
+        async def fake_history(code: str, limit: int = 365) -> list:
+            return [
+                {"date": "2026-07-20", "nav": 1.4, "accNav": 1.5, "dailyReturn": 0.1},
+                {"date": "2026-07-21", "nav": 1.5, "accNav": 1.6, "dailyReturn": 0.2},
+            ]
+
+        monkeypatch.setattr(nav_history_svc, "fetch_nav_history", fake_history)
+
+        resp = app_client.get("/api/funds/110011/nav-history?limit=10")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "110011"
+        assert body["count"] == 2
+        assert body["history"] == [
+            {"date": "2026-07-20", "nav": 1.4, "accNav": 1.5, "dailyReturn": 0.1},
+            {"date": "2026-07-21", "nav": 1.5, "accNav": 1.6, "dailyReturn": 0.2},
+        ]
+
+        # 第二次请求 DB 已有数据，响应形状一致
+        resp2 = app_client.get("/api/funds/110011/nav-history?limit=10")
+        assert resp2.status_code == 200
+        assert resp2.json()["count"] == 2
+
+    def test_upstream_failure_returns_generic_502(self, app_client, monkeypatch):
+        """DB 为空且上游失败 → 502 通用文案（与现状 fetch_502 模式一致）。"""
+
+        async def broken(code: str, limit: int = 365) -> list:
+            raise RuntimeError("connect http://internal-host:8080 refused")
+
+        monkeypatch.setattr(nav_history_svc, "fetch_nav_history", broken)
+
+        resp = app_client.get("/api/funds/110011/nav-history")
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "上游数据源请求失败，请稍后重试"
+
+    def test_invalid_code_rejected(self, app_client):
+        resp = app_client.get("/api/funds/abc/nav-history")
+        assert resp.status_code == 400
