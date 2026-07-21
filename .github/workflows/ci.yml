@@ -39,8 +39,10 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      # pnpm 版本由 package.json 的 packageManager 字段决定(action 自动读取)
+      # pnpm 版本由 frontend/package.json 的 packageManager 字段决定(action 默认只读根目录 package.json,需显式指定)
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: frontend/package.json
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
@@ -72,6 +74,8 @@ jobs:
           uv export --locked --no-hashes --format requirements-txt -o /tmp/fund-watch-req.txt
           uvx pip-audit -r /tmp/fund-watch-req.txt
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: frontend/package.json
       # pnpm audit 只读 package.json/pnpm-lock.yaml,无需先 install(runner 自带 node;失败由 continue-on-error 兜住)
       - name: pnpm audit (frontend)
         working-directory: frontend
