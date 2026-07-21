@@ -285,9 +285,7 @@ class TestOcrFailureHandling:
             for line in resp.text.splitlines()
             if line.startswith("data: ")
         ]
-        assert any(
-            e["type"] == "error" and "识别失败" in e["text"] for e in events
-        )
+        assert any(e["type"] == "error" and "识别失败" in e["text"] for e in events)
         assert list(tmp_path.glob("ocr_*.png")) == []
 
 

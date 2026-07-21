@@ -55,8 +55,7 @@ class TestCsvEncoding:
         _add_fund(app_client)
         app_client.post("/api/portfolios", json={"name": "组合A"})
         csv_text = (
-            "code,direction,trade_date,nav,shares\n"
-            "110011,buy,2026-06-01,1.5,100\n"
+            "code,direction,trade_date,nav,shares\n110011,buy,2026-06-01,1.5,100\n"
         )
         resp = _post_csv(app_client, csv_text.encode("utf-8-sig"))
         assert resp.status_code == 200
@@ -83,8 +82,7 @@ class TestCsvEncoding:
         _add_fund(app_client)
         app_client.post("/api/portfolios", json={"name": "组合A"})
         csv_text = (
-            "code,direction,trade_date,nav,shares\n"
-            "110011,buy,2026-02-30,1.5,100\n"
+            "code,direction,trade_date,nav,shares\n110011,buy,2026-02-30,1.5,100\n"
         )
         resp = _post_csv(app_client, csv_text.encode())
         assert resp.status_code == 200

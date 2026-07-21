@@ -71,9 +71,7 @@ class TestFunds:
         resp = app_client.delete("/api/funds/999999")
         assert resp.status_code == 404
 
-    def test_search_upstream_failure_returns_generic_502(
-        self, app_client, monkeypatch
-    ):
+    def test_search_upstream_failure_returns_generic_502(self, app_client, monkeypatch):
         """搜索上游失败 → 502 通用文案，内部异常细节不回传前端。"""
 
         async def broken_search(q: str, limit: int = 20) -> list:
@@ -361,9 +359,7 @@ class TestPortfolioSummary:
         import app.services.portfolio_service as ps
 
         _add_fund(app_client)
-        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()[
-            "id"
-        ]
+        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()["id"]
         for direction, date, nav, shares in [
             ("buy", "2026-06-01", "1.0000", "1000"),
             ("sell", "2026-06-10", "1.5000", "400"),
@@ -402,9 +398,7 @@ class TestPortfolioSummary:
         import app.services.portfolio_service as ps
 
         _add_fund(app_client)
-        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()[
-            "id"
-        ]
+        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()["id"]
         for direction, date, nav, shares in [
             ("buy", "2026-06-01", "1.0000", "1000"),
             ("sell", "2026-06-10", "1.5000", "400"),

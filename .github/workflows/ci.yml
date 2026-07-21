@@ -63,9 +63,14 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
+      # 审计锁定依赖本身(uv export),而不是 uv run --with pip-audit 的混合环境(会把审计器自身依赖算进来)
+      # 步骤级 continue-on-error:job 已是观察模式,此处保证 pip-audit 有发现时 bun audit 仍会执行
       - name: pip-audit (backend)
         working-directory: backend
-        run: uv run --with pip-audit pip-audit
+        continue-on-error: true
+        run: |
+          uv export --locked --no-hashes --format requirements-txt -o /tmp/fund-watch-req.txt
+          uvx pip-audit -r /tmp/fund-watch-req.txt
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       # bun audit 只读 bun.lock,无需先 install(若 bun 版本行为变化导致失败,由 continue-on-error 兜住)
       - name: bun audit (frontend)

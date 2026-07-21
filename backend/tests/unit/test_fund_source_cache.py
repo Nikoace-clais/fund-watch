@@ -59,11 +59,9 @@ def test_pingzhong_locks_are_bounded() -> None:
 
 def test_get_pingzhong_lock_reuses_lock_per_code() -> None:
     """同一代码复用同一把锁,不同代码各自独立。"""
-    assert (
-        fund_source._get_pingzhong_lock("110011")
-        is fund_source._get_pingzhong_lock("110011")
+    assert fund_source._get_pingzhong_lock("110011") is fund_source._get_pingzhong_lock(
+        "110011"
     )
-    assert (
-        fund_source._get_pingzhong_lock("110011")
-        is not fund_source._get_pingzhong_lock("220022")
-    )
+    assert fund_source._get_pingzhong_lock(
+        "110011"
+    ) is not fund_source._get_pingzhong_lock("220022")
