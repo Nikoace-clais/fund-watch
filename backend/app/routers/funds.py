@@ -16,7 +16,6 @@ from ..fund_source import (
     fetch_fund_detail,
     fetch_fund_holdings,
     fetch_fund_info,
-    fetch_nav_history,
     fetch_nav_on_date,
     fetch_realtime_estimate,
     search_fund_by_name,
@@ -29,6 +28,7 @@ from ..repositories import (
     tx_repo,
 )
 from ..schemas import BatchFundsPayload
+from ..services import nav_history as nav_history_svc
 from ..services.fund_import import import_funds_batch
 
 logger = logging.getLogger(__name__)
@@ -178,11 +178,13 @@ async def get_fund_detail(code: str) -> dict[str, Any]:
 
 
 @router.get("/api/funds/{code}/nav-history")
-async def get_nav_history(code: str, limit: int = 365) -> dict[str, Any]:
-    """Historical NAV data for charting."""
+async def get_nav_history(
+    code: str, limit: int = 365, conn: sqlite3.Connection = Depends(get_request_conn)
+) -> dict[str, Any]:
+    """Historical NAV data for charting (DB 优先，由 service 负责增量落库)。"""
     code = validate_code(code)
     limit = max(1, min(limit, 1000))
-    history = await fetch_502(fetch_nav_history(code, limit=limit))
+    history = await nav_history_svc.get_nav_history(conn, code, limit)
     return {"code": code, "count": len(history), "history": history}
 
 

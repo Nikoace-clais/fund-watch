@@ -65,7 +65,9 @@ def get_request_conn() -> Generator[sqlite3.Connection, None, None]:
 
 
 def prune_old_snapshots(keep_days: int = 30) -> int:
-    """Delete fund_snapshots older than keep_days. Returns number of rows deleted."""
+    """分层清理：每日 id 最大一条永久保留，其余盘中快照超过 keep_days 删除。
+
+    Returns number of rows deleted."""
     from .repositories import snapshot_repo
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
@@ -251,6 +253,24 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL
             )
             """
+        )
+
+        # 净值历史底座：每日收盘净值落库，供图表/指标计算 DB 优先读取
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS fund_nav_history (
+                code        TEXT NOT NULL,
+                date        TEXT NOT NULL,          -- YYYY-MM-DD（CST 交易日）
+                nav         REAL NOT NULL,
+                acc_nav     REAL,                   -- 累计净值（源有则存）
+                daily_return REAL,                  -- 日涨幅%（源 equityReturn）
+                captured_at TEXT NOT NULL,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_nav_history_date ON fund_nav_history(date)"
         )
 
         _migrate_single_pool_to_default_portfolio(conn)
