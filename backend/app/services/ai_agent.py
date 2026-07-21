@@ -23,10 +23,13 @@ import os
 from dataclasses import dataclass
 from typing import Any, AsyncGenerator
 
-import anthropic
-import openai
-
-from ..core import extract_json, sse
+from ..core import (
+    DEFAULT_ANTHROPIC_MODEL,
+    DEFAULT_OPENAI_MODEL,
+    extract_json,
+    make_llm_client,
+    sse,
+)
 from ..fund_source import fetch_fund_detail, fetch_fund_ranking, fetch_nav_history
 
 logger = logging.getLogger(__name__)
@@ -299,12 +302,9 @@ async def _call_oai(
     base_url: str | None,
     model: str | None,
 ) -> tuple[dict[str, Any], list[_TC]]:
-    kw: dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        kw["base_url"] = base_url
-    client = openai.AsyncOpenAI(**kw)
+    client = make_llm_client("openai", api_key, base_url)
     resp = await client.chat.completions.create(
-        model=model or "gpt-4o",
+        model=model or DEFAULT_OPENAI_MODEL,
         max_tokens=8192,
         tools=tools,
         messages=messages,
@@ -349,9 +349,9 @@ async def _call_ant(
     model: str | None,
     system: str | None = None,
 ) -> tuple[Any, list[_TC]]:
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = make_llm_client("anthropic", api_key)
     kw: dict[str, Any] = {
-        "model": model or "claude-opus-4-8",
+        "model": model or DEFAULT_ANTHROPIC_MODEL,
         "max_tokens": 8192,
         "tools": tools,
         "messages": messages,
@@ -504,9 +504,10 @@ async def agent_loop(
             theme, emphasis, provider, api_key, base_url, model, analysis_model
         ):
             yield event
-    except Exception as exc:
+    except Exception:
         logger.exception("agent_loop unhandled error")
-        yield _err(f"AI 分析出错：{exc}")
+        # 异常细节可能含密钥/内部地址，只回通用文案，细节留在服务端日志
+        yield _err("AI 分析出错，请稍后重试")
 
 
 async def _agent_loop_inner(

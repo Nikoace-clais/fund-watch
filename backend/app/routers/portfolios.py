@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ..core import utc_now_iso
 from ..db import get_request_conn
 from ..repositories import portfolios_repo, positions_repo, tx_repo
 
@@ -33,7 +33,7 @@ def create_portfolio(
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="组合名称不能为空")
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    now = utc_now_iso()
     new_id = portfolios_repo.create(conn, name, now)
     return {"ok": True, "id": new_id, "name": name}
 

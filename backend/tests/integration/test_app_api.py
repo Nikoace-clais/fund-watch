@@ -71,6 +71,20 @@ class TestFunds:
         resp = app_client.delete("/api/funds/999999")
         assert resp.status_code == 404
 
+    def test_search_upstream_failure_returns_generic_502(
+        self, app_client, monkeypatch
+    ):
+        """搜索上游失败 → 502 通用文案，内部异常细节不回传前端。"""
+
+        async def broken_search(q: str, limit: int = 20) -> list:
+            raise RuntimeError("connect http://internal-host:8080 refused")
+
+        monkeypatch.setattr(funds_router, "search_fund_by_name", broken_search)
+
+        resp = app_client.get("/api/funds/search?q=测试")
+        assert resp.status_code == 502
+        assert resp.json()["detail"] == "上游数据源请求失败，请稍后重试"
+
     def test_delete_fund_from_portfolio_keeps_global_fund_and_other_positions(
         self, app_client
     ):
@@ -159,6 +173,22 @@ class TestTransactions:
             },
         )
         assert resp.status_code == 400
+
+    def test_invalid_calendar_date_rejected(self, app_client):
+        """非法日历日期（如 02-30）→ 400，文案与 CSV 路径统一。"""
+        _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
+        resp = app_client.post(
+            "/api/funds/110011/transactions",
+            json={
+                "direction": "buy",
+                "trade_date": "2026-02-30",
+                "nav": "1.5",
+                "shares": "100",
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "trade_date 必须是有效的 YYYY-MM-DD 日期"
 
     def test_transaction_for_missing_fund_404(self, app_client):
         resp = app_client.post(
@@ -252,3 +282,155 @@ class TestSnapshots:
         assert body["interval_minutes"] == 5
         assert "pull_count" in body
         assert "is_active" in body
+
+
+class TestTransactionChronology:
+    def test_sell_dated_before_buy_rejected(self, app_client):
+        _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
+        app_client.post(
+            "/api/funds/110011/transactions",
+            json={
+                "direction": "buy",
+                "trade_date": "2026-06-10",
+                "nav": "1.5",
+                "shares": "100",
+            },
+        )
+        resp = app_client.post(
+            "/api/funds/110011/transactions",
+            json={
+                "direction": "sell",
+                "trade_date": "2026-06-01",
+                "nav": "1.6",
+                "shares": "50",
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_delete_buy_that_breaks_chronology_rejected(self, app_client):
+        _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
+        for direction, date, shares in [
+            ("buy", "2026-06-01", "100"),
+            ("sell", "2026-06-05", "80"),
+        ]:
+            resp = app_client.post(
+                "/api/funds/110011/transactions",
+                json={
+                    "direction": direction,
+                    "trade_date": date,
+                    "nav": "1.5",
+                    "shares": shares,
+                },
+            )
+            assert resp.status_code == 200
+
+        txs = app_client.get("/api/funds/110011/transactions").json()["items"]
+        buy_id = next(t["id"] for t in txs if t["direction"] == "buy")
+        sell_id = next(t["id"] for t in txs if t["direction"] == "sell")
+
+        # Deleting the buy would make the 06-05 sell dip below zero.
+        assert app_client.delete(f"/api/transactions/{buy_id}").status_code == 400
+        # Deleting the sell is always safe.
+        assert app_client.delete(f"/api/transactions/{sell_id}").status_code == 200
+
+    def test_csv_sell_dated_before_buy_rejected(self, app_client):
+        _add_fund(app_client)
+        app_client.post("/api/portfolios", json={"name": "组合A"})
+        csv_content = (
+            "code,direction,trade_date,nav,shares,fee,note\n"
+            "110011,buy,2026-06-10,1.5,100,0,\n"
+            "110011,sell,2026-06-01,1.6,50,0,\n"
+        )
+        resp = app_client.post(
+            "/api/transactions/csv",
+            files={"file": ("tx.csv", csv_content, "text/csv")},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["imported"] == 1
+        assert len(body["errors"]) == 1
+        assert "份额不足" in body["errors"][0]
+
+
+class TestPortfolioSummary:
+    def test_partial_sell_does_not_show_as_loss(self, app_client, monkeypatch):
+        import asyncio
+
+        import app.services.portfolio_service as ps
+
+        _add_fund(app_client)
+        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()[
+            "id"
+        ]
+        for direction, date, nav, shares in [
+            ("buy", "2026-06-01", "1.0000", "1000"),
+            ("sell", "2026-06-10", "1.5000", "400"),
+        ]:
+            resp = app_client.post(
+                "/api/funds/110011/transactions",
+                json={
+                    "direction": direction,
+                    "trade_date": date,
+                    "nav": nav,
+                    "shares": shares,
+                },
+            )
+            assert resp.status_code == 200
+
+        async def fake_quote(code: str) -> dict:
+            return {"gsz": "1.5000", "gszzl": "0", "name": "测试基金110011"}
+
+        monkeypatch.setattr(ps, "fetch_realtime_estimate", fake_quote)
+        with app_db.get_conn() as conn:
+            summary = asyncio.run(ps.compute_summary(conn, pf_id))
+
+        item = next(i for i in summary["items"] if i["code"] == "110011")
+        # Cost basis of the remaining 600 shares only (avg cost 1.0000).
+        assert item["total_cost"] == "600.00"
+        # realized 200 (400 sold at 1.5 over cost 1.0) + unrealized 300.
+        assert item["realized_pnl"] == "200.00"
+        assert item["total_return"] == "500.00"
+        assert item["return_rate"] == "83.33"
+
+    def test_fully_sold_position_stays_visible_with_realized_pnl(
+        self, app_client, monkeypatch
+    ):
+        import asyncio
+
+        import app.services.portfolio_service as ps
+
+        _add_fund(app_client)
+        pf_id = app_client.post("/api/portfolios", json={"name": "组合A"}).json()[
+            "id"
+        ]
+        for direction, date, nav, shares in [
+            ("buy", "2026-06-01", "1.0000", "1000"),
+            ("sell", "2026-06-10", "1.5000", "400"),
+            ("sell", "2026-06-20", "1.5000", "600"),
+        ]:
+            resp = app_client.post(
+                "/api/funds/110011/transactions",
+                json={
+                    "direction": direction,
+                    "trade_date": date,
+                    "nav": nav,
+                    "shares": shares,
+                },
+            )
+            assert resp.status_code == 200
+
+        async def fake_quote(code: str) -> dict:
+            return {"gsz": "1.5000", "gszzl": "0", "name": "测试基金110011"}
+
+        monkeypatch.setattr(ps, "fetch_realtime_estimate", fake_quote)
+        with app_db.get_conn() as conn:
+            summary = asyncio.run(ps.compute_summary(conn, pf_id))
+
+        item = next(i for i in summary["items"] if i["code"] == "110011")
+        assert item["is_closed"] is True
+        assert item["current_value"] == "0.00"
+        # 1500 proceeds - 1000 cost = 500 realized.
+        assert item["total_return"] == "500.00"
+        assert summary["total_return"] == "500.00"

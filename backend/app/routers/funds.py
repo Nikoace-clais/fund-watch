@@ -6,12 +6,11 @@ import asyncio
 import logging
 import sqlite3
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..core import fetch_502, validate_code
+from ..core import fetch_502, safe_await, utc_now_iso, validate_code, validate_date
 from ..db import get_request_conn
 from ..fund_source import (
     fetch_fund_detail,
@@ -59,8 +58,8 @@ async def funds_overview(
         latest_snapshot = snapshot_map.get(code)
 
         if latest_snapshot is None:
-            try:
-                q = await fetch_realtime_estimate(code)
+            q = await safe_await(fetch_realtime_estimate(code))
+            if q is not None:
                 latest_snapshot = {
                     "code": code,
                     "name": q.get("name"),
@@ -69,8 +68,6 @@ async def funds_overview(
                     "gztime": q.get("gztime"),
                     "captured_at": None,
                 }
-            except Exception:
-                latest_snapshot = None
 
         return {
             "fund": f,
@@ -95,12 +92,7 @@ async def search_funds(q: str = "") -> dict[str, Any]:
         return {"results": []}
     if len(q) > 50:
         raise HTTPException(status_code=400, detail="搜索词过长（最多 50 个字符）")
-    try:
-        results = await search_fund_by_name(q, limit=20)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=502, detail=f"基金搜索源（eastmoney）请求失败: {exc}"
-        ) from exc
+    results = await fetch_502(search_fund_by_name(q, limit=20))
     return {"results": results}
 
 
@@ -120,17 +112,15 @@ async def add_fund(
     Position data lives in /api/funds/batch.
     """
     code = validate_code(code)
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now_iso()
 
     # Fetch fund info (name + sector) from data source
     name = None
     sector = None
-    try:
-        info = await fetch_fund_info(code)
+    info = await safe_await(fetch_fund_info(code))
+    if info:
         name = info.get("name")
         sector = info.get("sector")
-    except Exception:
-        pass
 
     existing = funds_repo.get_fund(conn, code)
     if existing:
@@ -200,11 +190,6 @@ async def get_nav_history(code: str, limit: int = 365) -> dict[str, Any]:
 async def get_nav_on_date(code: str, date: str) -> dict[str, Any]:
     """Return the NAV for a specific date (YYYY-MM-DD)."""
     code = validate_code(code)
-    try:
-        datetime.strptime(date, "%Y-%m-%d")
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail="date 必须是有效的 YYYY-MM-DD 日期"
-        ) from exc
+    date = validate_date(date)
     nav = await fetch_502(fetch_nav_on_date(code, date))
     return {"code": code, "date": date, "nav": nav}

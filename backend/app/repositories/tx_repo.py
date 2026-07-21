@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
 from typing import Any
+
+from ..core import is_valid_date
 
 
 def insert(
@@ -25,10 +26,8 @@ def insert(
     """The one INSERT shared by manual entry, CSV import, and synthetic buys."""
     if not (code.isdigit() and len(code) == 6):
         raise ValueError(f"invalid fund code: {code}")
-    try:
-        datetime.strptime(trade_date, "%Y-%m-%d")
-    except ValueError as exc:
-        raise ValueError(f"invalid trade_date: {trade_date}") from exc
+    if not is_valid_date(trade_date):
+        raise ValueError(f"invalid trade_date: {trade_date}")
     conn.execute(
         "INSERT INTO transactions"
         "(code,portfolio_id,direction,trade_date,nav,shares,amount,fee,note,source,created_at)"
@@ -66,6 +65,18 @@ def list_shares_by_direction(
     """direction+shares rows for a (portfolio, code), used to net the holding."""
     rows = conn.execute(
         "SELECT direction, shares FROM transactions WHERE portfolio_id=? AND code=?",
+        (portfolio_id, code),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_chronological(
+    conn: sqlite3.Connection, portfolio_id: int, code: str
+) -> list[dict[str, Any]]:
+    """id/direction/trade_date/shares ordered by trade_date, id ASC — for replay."""
+    rows = conn.execute(
+        "SELECT id, direction, trade_date, shares FROM transactions"
+        " WHERE portfolio_id=? AND code=? ORDER BY trade_date ASC, id ASC",
         (portfolio_id, code),
     ).fetchall()
     return [dict(r) for r in rows]

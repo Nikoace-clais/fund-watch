@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .auth import token_auth_middleware
 from .core import UPLOAD_DIR
 from .db import init_db
 from .fund_source import close_shared_client
@@ -34,6 +35,7 @@ from .routers import (
     stocks,
     transactions,
 )
+from .services.ocr_pipeline import cleanup_stale_uploads
 from .services.snapshots import snapshot_scheduler
 
 # ── Logging setup ────────────────────────────────────────────────────────────
@@ -52,6 +54,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db()
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    removed = cleanup_stale_uploads()  # 清理上次进程异常退出留下的上传临时文件
+    if removed:
+        logger.info("启动清理：删除 %d 个残留上传文件", removed)
     warm_up_ocr()  # start PaddleOCR model download in background thread
     task = asyncio.create_task(snapshot_scheduler())
     logger.info("Fund Watch API started")
@@ -80,8 +85,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_DEV_CORS_ORIGINS,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Fund-Token"],
 )
+
+# 可选令牌鉴权（FUND_WATCH_TOKEN）：注册在日志中间件之前 → 执行时 401
+# 也会被 log_requests 记录；未设置 token 时内部直接放行，零行为差异。
+app.middleware("http")(token_auth_middleware)
 
 
 @app.middleware("http")

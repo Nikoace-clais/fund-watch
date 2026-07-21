@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
+from ..core import utc_now_iso
 from ..db import get_conn
 from ..fund_source import fetch_stock_industries_from_source
 from ..repositories import stock_industry_repo
@@ -29,7 +29,7 @@ async def get_stock_industries(codes: list[str]) -> dict[str, str]:
 
     fetched = await fetch_stock_industries_from_source(missing)
 
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = utc_now_iso()
     rows_to_write = [
         (code, name, industry, now)
         for code, (name, industry) in fetched.items()

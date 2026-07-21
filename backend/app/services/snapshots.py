@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from ..core import CST
+from ..core import CST, safe_await, utc_now_iso
 from ..db import get_conn, prune_old_snapshots
 from ..fund_source import fetch_realtime_estimate
+from ..holidays import is_trading_day
 from ..repositories import funds_repo, snapshot_repo
 
 logger = logging.getLogger(__name__)
@@ -22,15 +23,15 @@ cron_state: dict[str, Any] = {
 }
 
 PULL_INTERVAL_MINUTES = 5
-TRADING_HOURS_LABEL = "09:25-11:35, 12:55-15:05 CST (周一至周五)"
+TRADING_HOURS_LABEL = "09:25-11:35, 12:55-15:05 CST (交易日)"
 _MORNING_START, _MORNING_END = 9 * 60 + 25, 11 * 60 + 35
 _AFTERNOON_START, _AFTERNOON_END = 12 * 60 + 55, 15 * 60 + 5
 
 
 def in_trading_hours() -> bool:
-    """True when current CST time is within A-share trading windows (weekdays)."""
+    """True when current CST time is within A-share trading windows (trading days)."""
     now = datetime.now(CST)
-    if now.weekday() >= 5:  # Saturday / Sunday
+    if not is_trading_day(now.date()):  # 周末或法定节假日,不空拉
         return False
     t = now.hour * 60 + now.minute
     morning = _MORNING_START <= t <= _MORNING_END
@@ -43,13 +44,10 @@ async def pull_all_snapshots() -> dict[str, Any]:
     with get_conn() as conn:
         codes = funds_repo.list_codes(conn)
 
-    captured_at = datetime.now(timezone.utc).isoformat()
+    captured_at = utc_now_iso()
 
     async def _safe_fetch(code: str) -> tuple[str, dict[str, Any] | None]:
-        try:
-            return code, await fetch_realtime_estimate(code)
-        except Exception:
-            return code, None
+        return code, await safe_await(fetch_realtime_estimate(code))
 
     results = await asyncio.gather(*[_safe_fetch(c) for c in codes])
 
@@ -102,7 +100,7 @@ async def snapshot_scheduler() -> None:
         if in_hours:
             try:
                 result = await pull_all_snapshots()
-                cron_state["last_pull_at"] = datetime.now(timezone.utc).isoformat()
+                cron_state["last_pull_at"] = utc_now_iso()
                 cron_state["pull_count"] += 1
                 cron_state["last_error"] = None
                 logger.info(

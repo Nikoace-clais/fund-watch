@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -13,7 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ..core import is_valid_code
+from ..core import is_valid_code, is_valid_date, q2, safe_await, utc_now_iso
 from ..fund_source import (
     fetch_fund_info,
     fetch_latest_nav,
@@ -34,18 +33,15 @@ async def import_funds_batch(
     # so the request-scoped connection's write transaction stays open longer
     # than ideal. Single-user SQLite today has no concurrent writer to block;
     # split network resolution from the write phase if multi-user lands.
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now_iso()
 
-    # ── Resolve or create the target portfolio ────────────────────────────────
+    # ── Validate target portfolio if given ────────────────────────────────────
+    # 组合创建推迟到确认有可导入基金之后：全部失败时不留空组合
+    pf_id: int | None = None
     if payload.portfolio_id is not None:
         if not portfolios_repo.exists(conn, payload.portfolio_id):
             raise HTTPException(status_code=404, detail="组合不存在")
-        pf_id: int = payload.portfolio_id
-    else:
-        # Derive name: explicit > auto-date
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        pf_name = (payload.portfolio_name or "").strip() or f"导入 {today}"
-        pf_id = portfolios_repo.create(conn, pf_name, now)
+        pf_id = payload.portfolio_id
 
     # ── Resolve items: cross-check code and name when both are provided ───────
     resolved_items: list[BatchFundItem] = []
@@ -116,31 +112,48 @@ async def import_funds_batch(
     t_batch = time.perf_counter()
 
     async def _safe_fetch_info(code: str) -> tuple[str, str | None, str | None]:
-        try:
-            info = await fetch_fund_info(code)
-            return code, info.get("name"), info.get("sector")
-        except Exception:
-            return code, None, None
+        info = await safe_await(fetch_fund_info(code), default={})
+        return code, info.get("name"), info.get("sector")
 
     info_results = await asyncio.gather(*[_safe_fetch_info(c) for c in valid])
     fund_info_map: dict[str, tuple[str | None, str | None]] = {
         r[0]: (r[1], r[2]) for r in info_results
     }
     logger.info(
-        "add_funds_batch(pf=%d): fetched info for %d codes in %.3fs",
-        pf_id,
+        "add_funds_batch: fetched info for %d codes in %.3fs",
         len(valid),
         time.perf_counter() - t_batch,
     )
 
-    actually_added: list[str] = []
+    # ── 先筛出可导入的基金：全部失败时不创建组合，避免留下空组合 ──────────────
+    addable: list[str] = []
     for code in valid:
-        name, sector = fund_info_map.get(code, (None, None))
-        entry = extra.get(code)
-
+        name = fund_info_map.get(code, (None, None))[0]
         if not funds_repo.get_fund(conn, code) and not name:
             invalid.append(code)
             continue
+        addable.append(code)
+
+    if not addable:
+        return {
+            "ok": True,
+            "portfolio_id": pf_id,
+            "added": [],
+            "invalid": invalid,
+            "warnings": warnings,
+        }
+
+    if pf_id is None:
+        # Derive name: explicit > auto-date
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        pf_name = (payload.portfolio_name or "").strip() or f"导入 {today}"
+        pf_id = portfolios_repo.create(conn, pf_name, now)
+
+    actually_added: list[str] = []
+    for code in addable:
+        name, sector = fund_info_map.get(code, (None, None))
+        entry = extra.get(code)
+
         funds_repo.upsert_registry(conn, code, name, sector, now)
 
         amt = amounts.get(code)
@@ -169,7 +182,7 @@ async def import_funds_batch(
         actually_added.append(code)
 
     # ── Synthetic buy transaction for imported holding amounts ────────────────
-    tx_now = datetime.now(timezone.utc).isoformat()
+    tx_now = utc_now_iso()
     nav_skipped: list[str] = []
     candidates: list[tuple[str, Decimal]] = []
     for code in actually_added:
@@ -200,13 +213,17 @@ async def import_funds_batch(
         if not latest or not latest.get("nav"):
             nav_skipped.append(f"{code}（无法获取净值）")
             continue
-        if not re.match(r"^\d{4}-\d{2}-\d{2}$", str(latest.get("date") or "")):
-            nav_skipped.append(f"{code}（净值日期格式异常）")
-            continue
+        # 上游返回非法日期此前会在 tx_repo.insert 处裸 500，收敛为路由层 400
+        latest_date = str(latest.get("date") or "")
+        if not is_valid_date(latest_date):
+            raise HTTPException(
+                status_code=400,
+                detail=f"基金 {code} 的净值日期无效（{latest_date}），请稍后重试",
+            )
 
         try:
             nav_val = Decimal(str(latest["nav"]))
-            shares_val = (holding_amount / nav_val).quantize(Decimal("0.01"))
+            shares_val = q2(holding_amount / nav_val)
         except (InvalidOperation, ZeroDivisionError):
             nav_skipped.append(f"{code}（净值数据异常）")
             continue
@@ -216,7 +233,7 @@ async def import_funds_batch(
 
         # Recoverable checks are all above; nothing below should be caught and
         # silently swallowed as a "skip" once we've decided to write.
-        amount_val = (nav_val * shares_val).quantize(Decimal("0.01"))
+        amount_val = q2(nav_val * shares_val)
         tx_repo.insert(
             conn,
             code=code,

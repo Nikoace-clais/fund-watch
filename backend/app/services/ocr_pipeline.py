@@ -10,15 +10,17 @@ import json
 import logging
 import os
 import re as _re
+import time
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, AsyncGenerator
 from uuid import uuid4
 
+from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from ..core import UPLOAD_DIR, sse
+from ..core import UPLOAD_DIR, sse, utc_now_iso
 from ..db import get_conn
 from ..fund_source import search_fund_by_name
 from ..ocr_service import (
@@ -124,10 +126,70 @@ async def _resolve_fund_by_name(ocr_name: str) -> dict[str, Any] | None:
     }
 
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 单张图片上传上限 10MB
+ALLOWED_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp"})
+
+
+def validate_upload(filename: str | None, size: int) -> None:
+    """上传校验：扩展名白名单 + 大小上限，不通过抛 400。"""
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail="不支持的文件类型，仅支持 JPG/PNG/WEBP/BMP 图片",
+        )
+    if size > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="图片过大，单张上限 10MB")
+
+
 def unique_upload_path(filename: str | None, prefix: str) -> Path:
     suffix = Path(filename or "upload.png").suffix or ".png"
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
     return UPLOAD_DIR / f"{prefix}_{ts}_{uuid4().hex[:8]}{suffix}"
+
+
+class OcrFailedError(Exception):
+    """OCR 引擎识别失败（非图片内容/损坏文件）的领域异常。"""
+
+
+async def ocr_bytes_to_text(
+    filename: str | None, data: bytes, *, prefix: str = "ocr"
+) -> tuple[str, str]:
+    """上传字节 → 唯一临时文件 → OCR 文本，返回 (文本, 临时文件名)。
+
+    识别失败抛 OcrFailedError，由调用方翻译为自己的错误通道
+    （400 / SSE error 事件）；无论成败临时文件必删。
+    """
+    path = unique_upload_path(filename, prefix)
+    path.write_bytes(data)
+    log.info("OCR处理: %s", filename)
+    try:
+        text: str = await run_in_threadpool(ocr_text, path)
+    except Exception as e:
+        log.warning("OCR识别失败(%s): %s", filename, e)
+        raise OcrFailedError(str(e)) from e
+    finally:
+        path.unlink(missing_ok=True)  # 无论成败，处理完即删临时文件
+    return text, path.name
+
+
+def cleanup_stale_uploads(max_age_hours: int = 24) -> int:
+    """删除 uploads 目录里 mtime 超过 max_age_hours 的残留文件，返回删除数。
+
+    服务启动时调用，清理上次进程异常退出留下的上传临时文件。
+    """
+    if not UPLOAD_DIR.is_dir():
+        return 0
+    cutoff = time.time() - max_age_hours * 3600
+    removed = 0
+    for p in UPLOAD_DIR.iterdir():
+        try:
+            if p.is_file() and p.stat().st_mtime < cutoff:
+                p.unlink()
+                removed += 1
+        except OSError as exc:
+            log.warning("清理残留上传文件失败 %s: %s", p, exc)
+    return removed
 
 
 def build_cfg(
@@ -191,10 +253,12 @@ async def ocr_fund_generator(
     n = len(files_data)
     yield _sse("step", step="ocr", text=f"正在识别图片文字（共 {n} 张）...")
     for filename, data in files_data:
-        path = unique_upload_path(filename, "ocr")
-        path.write_bytes(data)
-        log.info("OCR处理: %s", filename)
-        raw_text: str = await run_in_threadpool(ocr_text, path)
+        try:
+            raw_text, _ = await ocr_bytes_to_text(filename, data)
+        except OcrFailedError:
+            # 非图片内容/损坏文件会让 PaddleOCR 抛异常 → SSE error 事件而非裸 500
+            yield _sse("error", text="图片文字识别失败，请上传清晰的截图")
+            return
         all_raw_texts.append(raw_text)
 
         # ── AI extract ───────────────────────────────────────────────────
@@ -438,7 +502,7 @@ async def ocr_fund_generator(
 
     # ── Persist & return ─────────────────────────────────────────────────
     image_names = ",".join(fn for fn, _ in files_data)
-    now = datetime.now(timezone.utc).isoformat()
+    now = utc_now_iso()
     log.info("最终结果: matched_codes=%s name_matches=%d", codes, len(name_matches))
     with get_conn() as conn:
         ocr_repo.insert(
