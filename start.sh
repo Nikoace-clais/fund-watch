@@ -79,7 +79,7 @@ cleanup() {
     echo -e "\n${YELLOW}🛑 正在停止服务...${NC}"
 
     safe_kill "$BACKEND_PID_FILE" 'app\.main|uvicorn' "后端"
-    safe_kill "$FRONTEND_PID_FILE" 'bun run dev|vite' "前端"
+    safe_kill "$FRONTEND_PID_FILE" 'pnpm run dev|vite' "前端"
 
     echo -e "${GREEN}👋 服务已清理${NC}"
     exit 0
@@ -100,13 +100,16 @@ check_dependencies() {
     fi
     echo -e "${GREEN}✓ uv 已安装${NC}"
 
-    # 检查 bun
-    if ! command -v bun &> /dev/null; then
-        echo -e "${RED}✗ bun 未安装${NC}"
-        echo "请安装 bun: curl -fsSL https://bun.sh/install | bash"
+    # 检查 pnpm(由 corepack 提供,Node 20+ 内置 corepack)
+    if ! command -v pnpm &> /dev/null && command -v corepack &> /dev/null; then
+        corepack enable
+    fi
+    if ! command -v pnpm &> /dev/null; then
+        echo -e "${RED}✗ pnpm 未安装${NC}"
+        echo "请启用 corepack(Node 20+ 内置): corepack enable"
         exit 1
     fi
-    echo -e "${GREEN}✓ bun 已安装${NC}"
+    echo -e "${GREEN}✓ pnpm 已安装${NC}"
 
     # 检查后端依赖
     if [ ! -d "$BACKEND_DIR/.venv" ]; then
@@ -117,7 +120,7 @@ check_dependencies() {
     # 检查前端依赖
     if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
         echo -e "${YELLOW}⚠ 前端依赖未安装，正在安装...${NC}"
-        (cd "$FRONTEND_DIR" && bun install)
+        (cd "$FRONTEND_DIR" && pnpm install)
     fi
 }
 
@@ -188,7 +191,7 @@ start_frontend() {
     cd "$FRONTEND_DIR"
 
     # 启动前端
-    bun run dev > "$FRONTEND_LOG" 2>&1 &
+    pnpm run dev > "$FRONTEND_LOG" 2>&1 &
 
     echo $! > "$FRONTEND_PID_FILE"
 
