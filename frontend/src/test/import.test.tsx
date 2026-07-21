@@ -236,7 +236,12 @@ describe('ImportPreview Component', () => {
     await userEvent.click(confirmButton)
 
     await waitFor(() => {
-      expect(mockImport).toHaveBeenCalledWith(['005827'])
+      expect(mockImport).toHaveBeenCalledWith({
+        success: true,
+        added: 1,
+        total: 1,
+        invalid: [],
+      })
     })
   })
 })

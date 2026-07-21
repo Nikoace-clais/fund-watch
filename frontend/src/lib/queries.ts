@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { useCallback } from 'react'
-import { isTradingHours } from './utils'
+import { isFundCode, isTradingHours } from './utils'
 import {
   addFund,
   addTransaction,
@@ -32,8 +32,10 @@ import {
   type BatchFundItem,
 } from './api'
 
-// ponytail: refetchInterval callback — stops polling outside trading hours to save requests
-const tradingRefetch = () => (isTradingHours() ? 60_000 : false)
+// ponytail: refetchInterval callback — polls every 60s during trading hours;
+// off-hours keeps a slow 5min probe instead of stopping entirely, so polling
+// re-evaluates isTradingHours and self-heals the moment the market reopens
+const tradingRefetch = () => (isTradingHours() ? 60_000 : 5 * 60_000)
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -186,7 +188,7 @@ export function useStockFundsHolding(stockCode: string) {
   return useQuery({
     queryKey: keys.stockFunds(stockCode),
     queryFn: () => fetchFundsHoldingStock(stockCode, 100),
-    enabled: /^\d{6}$/.test(stockCode),
+    enabled: isFundCode(stockCode),
     staleTime: 5 * 60_000,
   })
 }

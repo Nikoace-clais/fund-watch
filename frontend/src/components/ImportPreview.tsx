@@ -6,7 +6,11 @@ import {
   type FC,
 } from 'react'
 import { Upload, FileImage, AlertCircle, KeyRound, Loader2 } from 'lucide-react'
-import type { ImportPreviewResult, OcrStep } from '../services/import'
+import type {
+  ImportConfirmResult,
+  ImportPreviewResult,
+  OcrStep,
+} from '../services/import'
 import {
   previewImport,
   confirmImport,
@@ -19,9 +23,10 @@ import { ImportRow } from './import/ImportRow'
 import { OcrProgress } from './import/OcrProgress'
 import { useOcrStatus, usePortfolios } from '@/lib/queries'
 import { useProviderConfig } from '@/lib/provider-config'
+import { useAbortRef } from '@/lib/hooks'
 
 interface ImportPreviewProps {
-  onImport?: (codes: string[]) => void
+  onImport?: (result: ImportConfirmResult) => void
   initialData?: ImportPreviewResult
 }
 
@@ -57,6 +62,13 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   const [importTarget, setImportTarget] = useState<'new' | number>('new')
   const [newPfName, setNewPfName] = useState('')
 
+  // also aborts the in-flight OCR stream on unmount
+  const abortCtl = useAbortRef()
+
+  const handleCancelOcr = () => {
+    abortCtl.abort()
+  }
+
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault()
     setIsDragging(true)
@@ -82,6 +94,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   }
 
   const processFiles = async (imgs: File[]) => {
+    const signal = abortCtl.next()
     setIsLoading(true)
     setError(null)
 
@@ -90,6 +103,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         imgs,
         isConfigured ? providerConfig : undefined,
         setCurrentStep,
+        signal,
       )
       setCurrentStep(null)
       setPreview(result)
@@ -102,6 +116,8 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
       setSelectedCodes(autoSelected)
     } catch (err) {
       setCurrentStep(null)
+      // user cancel / route-away abort is silent — nothing to report
+      if (err instanceof DOMException && err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : '处理失败')
     } finally {
       setIsLoading(false)
@@ -144,7 +160,9 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
           : { portfolioId: importTarget }
       const result = await confirmImport(items, opts)
       if (result.success) {
-        onImport?.(items.map((i) => i.code))
+        // report the backend's actual added/invalid counts, not the
+        // checked-box count — invalid codes are silently skipped server-side
+        onImport?.(result)
         setPreview(null)
         setSelectedCodes(new Set())
         setNewPfName('')
@@ -184,7 +202,7 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
   }, [preview])
 
   if (isLoading) {
-    return <OcrProgress currentStep={currentStep} />
+    return <OcrProgress currentStep={currentStep} onCancel={handleCancelOcr} />
   }
 
   if (preview) {
@@ -400,11 +418,9 @@ export const ImportPreview: FC<ImportPreviewProps> = ({
         <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center">
           <KeyRound className="w-4 h-4 text-amber-600 mr-2 shrink-0" />
           <span className="text-sm text-amber-800">
-            未配置 AI 密钥，识别将使用服务器默认配置（如无则失败）。可在{' '}
-            <a href="/ai-select" className="underline font-medium">
-              AI 选基
-            </a>{' '}
-            页面右上角配置。
+            未配置 AI
+            密钥，识别将使用服务器默认配置（如无则失败）。可在左侧导航底部的「AI
+            配置」中设置。
           </span>
         </div>
       )}

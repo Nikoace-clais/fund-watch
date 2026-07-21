@@ -20,6 +20,7 @@ import { TransactionsCard } from '@/components/fund-detail/TransactionsCard'
 import { SignalGauge } from '@/components/fund-detail/SignalGauge'
 import { RiskMetrics } from '@/components/fund-detail/RiskMetrics'
 import { cn, formatPercent } from '@/lib/utils'
+import { useFlash } from '@/lib/hooks'
 import { useColor } from '@/lib/color-context'
 
 export function FundDetail() {
@@ -35,15 +36,16 @@ export function FundDetail() {
   const { data: transactions = [] } = useTransactions(code, selectedId)
   const addFund = useAddFund(selectedId)
 
-  const [addMsg, setAddMsg] = useState<{ text: string; ok: boolean } | null>(
-    null,
-  )
+  const [addMsg, flashAddMsg, clearAddMsg] = useFlash<{
+    text: string
+    ok: boolean
+  }>(3000)
   const [showAddTx, setShowAddTx] = useState(false)
 
   // 切换基金时重置「加入自选」状态，避免残留上只基金的结果
   useEffect(() => {
     addFund.reset()
-    setAddMsg(null)
+    clearAddMsg()
     // 仅随 code 变化执行
   }, [code])
 
@@ -58,8 +60,7 @@ export function FundDetail() {
   function handleAddFund() {
     if (!code) return
     addFund.mutate(code, {
-      onError: () => setAddMsg({ text: '加入失败', ok: false }),
-      onSettled: () => setTimeout(() => setAddMsg(null), 3000),
+      onError: () => flashAddMsg({ text: '加入失败', ok: false }),
     })
   }
 
@@ -198,7 +199,8 @@ export function FundDetail() {
           {/* right: NAV display */}
           <div className="text-right md:min-w-[180px]">
             <p className="text-xs text-slate-400 mb-1 flex items-center justify-end gap-1">
-              单位净值(估)
+              {/* falls back to the latest historical NAV when no live estimate */}
+              {quote?.gsz != null ? '单位净值(估)' : '单位净值'}
               {quote?.gztime && <EstimateBadge time={quote.gztime} />}
             </p>
             <p className="text-4xl font-bold text-slate-900">

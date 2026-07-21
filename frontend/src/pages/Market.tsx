@@ -1,7 +1,7 @@
 import { BarChart3, Globe, RefreshCw } from 'lucide-react'
 import { ErrorBanner } from '@/components/PageState'
 import { useMarketIndices } from '@/lib/queries'
-import { cn, formatNum2 } from '@/lib/utils'
+import { cn, formatNum2, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 import type { MarketIndex } from '@/lib/api'
 
@@ -29,10 +29,7 @@ function IndexCard({ data }: { data: MarketIndex }) {
           {sign}
           {data.change.toFixed(2)}
         </span>
-        <span>
-          {sign}
-          {data.change_percent.toFixed(2)}%
-        </span>
+        <span>{formatPercent(data.change_percent)}</span>
       </div>
     </div>
   )

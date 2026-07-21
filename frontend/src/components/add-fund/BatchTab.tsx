@@ -3,6 +3,7 @@ import { Check, AlertCircle, ChevronDown, ChevronUp, Copy } from 'lucide-react'
 import { ErrorBanner } from '@/components/PageState'
 import { useBatchAddFunds } from '@/lib/queries'
 import { parseBatchInput } from '@/lib/parse-batch-input'
+import { useFlash } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 const AI_PROMPT = `请识别这张截图中的所有基金持仓信息，按以下 JSON 格式输出：
@@ -66,20 +67,14 @@ export function BatchTab({ portfolioId }: { portfolioId?: number }) {
   }
 
   const [showPrompt, setShowPrompt] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [copyFailed, setCopyFailed] = useState(false)
+  const [copied, flashCopied] = useFlash(2000)
+  const [copyFailed, flashCopyFailed] = useFlash(2000)
 
   const handleCopyPrompt = () => {
     navigator.clipboard
       .writeText(AI_PROMPT)
-      .then(() => {
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      })
-      .catch(() => {
-        setCopyFailed(true)
-        setTimeout(() => setCopyFailed(false), 2000)
-      })
+      .then(() => flashCopied(true))
+      .catch(() => flashCopyFailed(true))
   }
 
   return (

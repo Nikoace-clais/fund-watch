@@ -1,25 +1,26 @@
 import React, { useState } from 'react'
 import { ImportPreview } from '../components/ImportPreview'
+import type { ImportConfirmResult } from '../services/import'
 import { CheckCircle2, Camera, Lightbulb } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { cn } from '@/lib/utils'
 
 export const ImportPage: React.FC = () => {
   const navigate = useNavigate()
-  const [importSuccess, setImportSuccess] = useState(false)
-  const [importedCount, setImportedCount] = useState(0)
+  const [importResult, setImportResult] = useState<ImportConfirmResult | null>(
+    null,
+  )
 
-  const handleImport = (codes: string[]) => {
-    setImportedCount(codes.length)
-    setImportSuccess(true)
+  const handleImport = (result: ImportConfirmResult) => {
+    setImportResult(result)
   }
 
   const handleReset = () => {
-    setImportSuccess(false)
-    setImportedCount(0)
+    setImportResult(null)
   }
 
-  if (importSuccess) {
+  if (importResult) {
+    const { added, invalid } = importResult
     return (
       <div className="max-w-4xl mx-auto">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
@@ -27,12 +28,17 @@ export const ImportPage: React.FC = () => {
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">导入成功！</h2>
-          <p className="text-slate-600 mb-8">
-            已成功导入{' '}
-            <strong className="text-slate-900">{importedCount}</strong>{' '}
+          <p className="text-slate-600 mb-2">
+            已成功导入 <strong className="text-slate-900">{added}</strong>{' '}
             个基金到您的基金池
           </p>
-          <div className="flex justify-center space-x-4">
+          {invalid.length > 0 && (
+            <p className="text-sm text-amber-600">
+              有 {invalid.length} 个基金未导入（代码无效）：
+              {invalid.join('、')}
+            </p>
+          )}
+          <div className="mt-8 flex justify-center space-x-4">
             <button
               onClick={handleReset}
               className="px-6 py-2.5 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium transition-colors"

@@ -7,7 +7,8 @@ import type { AiFundRec } from '@/lib/api'
 import { useBatchAddFunds } from '@/lib/queries'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 import { useProviderConfig } from '@/lib/provider-config'
-import { cn } from '@/lib/utils'
+import { useAbortRef, useFlash } from '@/lib/hooks'
+import { cn, formatPercent } from '@/lib/utils'
 import { useColor } from '@/lib/color-context'
 
 const EMPHASIS_OPTIONS = [
@@ -58,25 +59,24 @@ function RecCard({
   const { colorFor } = useColor()
   const [adding, setAdding] = useState(false)
   const [added, setAdded] = useState(false)
-  const [addError, setAddError] = useState(false)
+  const [addError, flashAddError, clearAddError] = useFlash(3000)
 
   async function handleAdd() {
     setAdding(true)
-    setAddError(false) // 重试时先清除上次的错误提示
+    clearAddError() // 重试时先清除上次的错误提示
     try {
       await onAdd(rec.code)
       setAdded(true)
     } catch {
       // 失败提示 3 秒后自动消失
-      setAddError(true)
-      setTimeout(() => setAddError(false), 3000)
+      flashAddError(true)
     } finally {
       setAdding(false)
     }
   }
 
-  const fmt = (v: number | null, suffix = '%') =>
-    v != null ? `${v.toFixed(2)}${suffix}` : '--'
+  const fmt = (v: number | null) =>
+    v != null ? formatPercent(v, { signed: false }) : '--'
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
@@ -207,32 +207,43 @@ export function AiSelect() {
     recommendations: AiFundRec[]
   } | null>(null)
 
+  const abortCtl = useAbortRef()
+
   async function handleSelect() {
     if (!theme) return
+    const signal = abortCtl.next()
     setLoading(true)
     setSteps([])
     setError(null)
     setResult(null)
-    await streamAiSelect(
-      theme,
-      emphasis,
-      {
-        provider: providerConfig.provider,
-        api_key: providerConfig.api_key || undefined,
-        base_url: providerConfig.base_url || undefined,
-        model: providerConfig.model || undefined,
-        analysis_model: providerConfig.analysis_model || undefined,
-      },
-      {
-        onStep: (text) => setSteps((prev) => [...prev, text]),
-        onResult: (data) => {
-          setResult(data)
-          setSteps([])
+    try {
+      await streamAiSelect(
+        theme,
+        emphasis,
+        {
+          provider: providerConfig.provider,
+          api_key: providerConfig.api_key || undefined,
+          base_url: providerConfig.base_url || undefined,
+          model: providerConfig.model || undefined,
+          analysis_model: providerConfig.analysis_model || undefined,
         },
-        onError: (text) => setError(text),
-      },
-    )
-    setLoading(false)
+        {
+          onStep: (text) => setSteps((prev) => [...prev, text]),
+          onResult: (data) => {
+            setResult(data)
+            setSteps([])
+          },
+          onError: (text) => setError(text),
+        },
+        signal,
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleCancel() {
+    abortCtl.abort()
   }
 
   async function handleAdd(code: string) {
@@ -282,9 +293,17 @@ export function AiSelect() {
             <span className="font-medium text-slate-800">{emphasis}</span>
           </div>
           {loading ? (
-            <div className="flex items-center gap-1.5 shrink-0 text-sm text-blue-600">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              分析中…
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="flex items-center gap-1.5 text-sm text-blue-600">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                分析中…
+              </div>
+              <button
+                onClick={handleCancel}
+                className="text-sm text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                取消
+              </button>
             </div>
           ) : (
             <button

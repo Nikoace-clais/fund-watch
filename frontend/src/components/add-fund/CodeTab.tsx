@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Check, AlertCircle } from 'lucide-react'
 import { useAddFund } from '@/lib/queries'
-import { cn } from '@/lib/utils'
+import { cn, isFundCode } from '@/lib/utils'
 
 export function CodeTab({ portfolioId }: { portfolioId?: number }) {
   const [code, setCode] = useState('')
@@ -11,7 +11,7 @@ export function CodeTab({ portfolioId }: { portfolioId?: number }) {
   } | null>(null)
   const addFund = useAddFund(portfolioId)
 
-  const isValid = /^\d{6}$/.test(code)
+  const isValid = isFundCode(code)
   const loading = addFund.isPending
 
   const handleSubmit = () => {

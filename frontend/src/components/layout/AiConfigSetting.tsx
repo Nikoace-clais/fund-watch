@@ -157,6 +157,11 @@ function AiConfigPanel({
       >
         保存
       </button>
+
+      <p className="text-[11px] leading-relaxed text-amber-600">
+        注意：API Key 以明文保存在浏览器
+        localStorage，并随请求发送至后端，请勿在共用设备上保存。
+      </p>
     </>
   )
 }

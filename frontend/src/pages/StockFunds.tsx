@@ -3,7 +3,7 @@ import { Link } from 'react-router'
 import { Search, Building2 } from 'lucide-react'
 import type { FundHolderItem } from '@/lib/api'
 import { useStockFundsHolding } from '@/lib/queries'
-import { formatCNY } from '@/lib/utils'
+import { formatCNY, isFundCode } from '@/lib/utils'
 import { ErrorBanner, PageState } from '@/components/PageState'
 
 /* ── 万元 → 亿 display ─────────────────────────────────────────────────────── */
@@ -63,7 +63,7 @@ export function StockFunds() {
 
   function handleSearch() {
     const trimmed = input.trim()
-    if (/^\d{6}$/.test(trimmed)) setCode(trimmed)
+    if (isFundCode(trimmed)) setCode(trimmed)
   }
 
   const { data, isLoading, error } = useStockFundsHolding(code)
@@ -99,7 +99,7 @@ export function StockFunds() {
         />
         <button
           onClick={handleSearch}
-          disabled={!/^\d{6}$/.test(input.trim())}
+          disabled={!isFundCode(input.trim())}
           className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white font-medium
                      hover:bg-blue-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >

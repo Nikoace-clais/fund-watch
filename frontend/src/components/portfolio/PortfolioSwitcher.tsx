@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ChevronDown, Trash2, Pencil, Plus } from 'lucide-react'
 import {
   useCreatePortfolio,
   useDeletePortfolio,
   useRenamePortfolio,
 } from '@/lib/queries'
+import { useClickOutside } from '@/lib/hooks'
 import { useSelectedPortfolio } from '@/lib/portfolio-context'
 
 export function PortfolioSwitcher() {
@@ -14,6 +15,8 @@ export function PortfolioSwitcher() {
   const deletePortfolio = useDeletePortfolio()
 
   const [pfMenuOpen, setPfMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useClickOutside(menuRef, pfMenuOpen, () => setPfMenuOpen(false))
   const [renamingId, setRenamingId] = useState<number | null>(null)
   const [renameName, setRenameName] = useState('')
   const [newPfName, setNewPfName] = useState('')
@@ -58,7 +61,7 @@ export function PortfolioSwitcher() {
   if (portfolios.length === 0) return null
 
   return (
-    <div className="relative">
+    <div className="relative" ref={menuRef}>
       <button
         onClick={() => setPfMenuOpen((v) => !v)}
         className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"

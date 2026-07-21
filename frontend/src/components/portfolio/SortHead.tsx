@@ -13,13 +13,13 @@ function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
   )
 }
 
-export function SortHead({
+export function SortHead<TData, TValue>({
   column,
   children,
   right = false,
   tooltip,
 }: {
-  column: Column<any, any>
+  column: Column<TData, TValue>
   children: React.ReactNode
   right?: boolean
   tooltip?: string

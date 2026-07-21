@@ -3,6 +3,7 @@ import { Search, Plus, Check } from 'lucide-react'
 import { ErrorBanner } from '@/components/PageState'
 import { searchFunds } from '@/lib/api'
 import { useAddFund } from '@/lib/queries'
+import { useRequestSeq } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 export function SearchTab({
@@ -33,23 +34,32 @@ export function SearchTab({
     }
   }, [])
 
-  const doSearch = useCallback(async (q: string) => {
-    if (q.trim().length < 1) {
-      setResults([])
-      return
-    }
-    setLoading(true)
-    setError('')
-    try {
-      const data = await searchFunds(q.trim())
-      setResults(data.results)
-    } catch (err: any) {
-      setError(err.message || '搜索失败')
-      setResults([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  // guards against an older in-flight response overwriting newer results
+  const searchSeq = useRequestSeq()
+
+  const doSearch = useCallback(
+    async (q: string) => {
+      if (q.trim().length < 1) {
+        setResults([])
+        return
+      }
+      const seq = searchSeq.next()
+      setLoading(true)
+      setError('')
+      try {
+        const data = await searchFunds(q.trim())
+        if (!searchSeq.isCurrent(seq)) return
+        setResults(data.results)
+      } catch (err: unknown) {
+        if (!searchSeq.isCurrent(seq)) return
+        setError(err instanceof Error ? err.message : '搜索失败')
+        setResults([])
+      } finally {
+        if (searchSeq.isCurrent(seq)) setLoading(false)
+      }
+    },
+    [searchSeq],
+  )
 
   const handleInput = (value: string) => {
     setQuery(value)

@@ -10,9 +10,10 @@ const STEPS: { key: OcrStep['step']; label: string }[] = [
   { key: 'pro_review', label: 'Pro 核查匹配结果' },
 ]
 
-export const OcrProgress: FC<{ currentStep: OcrStep | null }> = ({
-  currentStep,
-}) => {
+export const OcrProgress: FC<{
+  currentStep: OcrStep | null
+  onCancel?: () => void
+}> = ({ currentStep, onCancel }) => {
   const activeIdx = currentStep
     ? STEPS.findIndex((s) => s.key === currentStep.step)
     : 0
@@ -51,6 +52,14 @@ export const OcrProgress: FC<{ currentStep: OcrStep | null }> = ({
           )
         })}
       </ol>
+      {onCancel && (
+        <button
+          onClick={onCancel}
+          className="text-sm text-slate-400 hover:text-slate-700 transition-colors"
+        >
+          取消
+        </button>
+      )}
     </div>
   )
 }

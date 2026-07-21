@@ -267,7 +267,6 @@ export function HoldingsXray({ data }: { data: PortfolioHoldings }) {
     getSortedRowModel: getSortedRowModel(),
     getRowId: (row) => row.stock_code,
     sortDescFirst: true,
-    ...({ sortUndefined: 'last' } as object),
   })
 
   const overlapCount = data.stocks.filter((s) => s.fund_count >= 2).length

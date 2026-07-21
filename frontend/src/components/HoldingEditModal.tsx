@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import { Modal } from './Modal'
 import { fetchFundDetail, fetchFundPnl, fetchNavOnDate } from '@/lib/api'
 import { useAddTransaction } from '@/lib/queries'
+import { useRequestSeq } from '@/lib/hooks'
 import { cn, todayLocal } from '@/lib/utils'
 
 type Props = {
@@ -37,12 +38,20 @@ export function HoldingEditModal({
   const [navLoading, setNavLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // defaultNav comes from a 60s-polling quote on FundDetail — freeze it via
+  // ref so a mid-edit refetch never resets the form; the reset effect below
+  // reads it once at open time and intentionally does not depend on it.
+  const defaultNavRef = useRef(defaultNav)
+  defaultNavRef.current = defaultNav
+
   // reset + fetch fee rate when opened
   useEffect(() => {
     if (!open) return
     setDirection('buy')
     setTradeDate(today)
-    setNav(defaultNav ? defaultNav.toFixed(4) : '')
+    setNav(
+      defaultNavRef.current != null ? defaultNavRef.current.toFixed(4) : '',
+    )
     setShares('')
     setAmount('')
     setHoldingShares(null)
@@ -69,24 +78,35 @@ export function HoldingEditModal({
       .catch(() => {
         /* silently ignore */
       })
-  }, [open, code, defaultNav, portfolioId])
+  }, [open, code, portfolioId])
 
-  // fetch NAV when date changes
+  // fetch NAV when date changes — a request sequence guards against an older
+  // response landing after a newer one when the date changes quickly
+  const navReqSeq = useRequestSeq()
   useEffect(() => {
     if (!open || !tradeDate || !code) return
+    const seq = navReqSeq.next()
     setNavLoading(true)
     fetchNavOnDate(code, tradeDate)
       .then((d) => {
-        if (d.nav == null) return
-        setNav(d.nav.toFixed(4))
-        const s = parseFloat(shares)
-        if (!isNaN(s)) setAmount((d.nav * s).toFixed(2))
+        if (!navReqSeq.isCurrent(seq)) return
+        const fetched = d.nav
+        if (fetched == null) return
+        setNav(fetched.toFixed(4))
+        // recompute amount from the latest shares via a functional update
+        setShares((s) => {
+          const v = parseFloat(s)
+          if (!isNaN(v)) setAmount((fetched * v).toFixed(2))
+          return s
+        })
       })
       .catch(() => {
         /* keep current value */
       })
-      .finally(() => setNavLoading(false))
-  }, [tradeDate, code, open])
+      .finally(() => {
+        if (navReqSeq.isCurrent(seq)) setNavLoading(false)
+      })
+  }, [tradeDate, code, open, navReqSeq])
 
   // amount <-> shares two-way sync
   const onNavChange = (v: string) => {
@@ -135,13 +155,9 @@ export function HoldingEditModal({
     setFee(((amt * feeRate) / 100).toFixed(2))
   }, [amount, feeRate, direction, feeManual])
 
-  // when switching to sell, reset fee to 0 (user fills manually)
-  useEffect(() => {
-    if (direction === 'sell') {
-      setFee('0')
-      setFeeManual(false)
-    }
-  }, [direction])
+  // fee stays as-is when switching direction: auto-compute only runs for buy,
+  // and a manually entered value is never force-cleared (redemption fees are
+  // easy to forget, and silently zeroing them inflates realized P&L).
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

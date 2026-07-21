@@ -108,7 +108,6 @@ export function FundTableCard<T extends FundRow>({
     enableRowSelection: true,
     getRowId: (row) => row.code,
     sortDescFirst: true,
-    ...({ sortUndefined: 'last' } as object),
   })
 
   const selectedCodes = table

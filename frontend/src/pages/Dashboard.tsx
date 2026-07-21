@@ -60,25 +60,19 @@ export function Dashboard() {
 
         {/* market indices:窄屏单行横向滚动,避免每个徽章独占一行 */}
         <div className="flex gap-2 sm:gap-3 flex-nowrap sm:flex-wrap overflow-x-auto -mx-1 px-1 py-1">
-          {indices.map((idx) => {
-            const up = idx.change_percent > 0
-            return (
-              <span
-                key={idx.code}
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border whitespace-nowrap',
-                  badgeClassFor(idx.change_percent),
-                )}
-              >
-                {idx.name}
-                <span className="font-semibold">{formatNum2(idx.value)}</span>
-                <span>
-                  {up ? '+' : ''}
-                  {idx.change_percent.toFixed(2)}%
-                </span>
-              </span>
-            )
-          })}
+          {indices.map((idx) => (
+            <span
+              key={idx.code}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border whitespace-nowrap',
+                badgeClassFor(idx.change_percent),
+              )}
+            >
+              {idx.name}
+              <span className="font-semibold">{formatNum2(idx.value)}</span>
+              <span>{formatPercent(idx.change_percent)}</span>
+            </span>
+          ))}
           {indices.length === 0 && !indicesLoading && (
             <span className="text-xs text-slate-400">指数数据暂不可用</span>
           )}

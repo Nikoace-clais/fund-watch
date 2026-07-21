@@ -29,8 +29,10 @@ export function formatCNYSigned(value: number) {
   return `${value > 0 ? '+' : ''}${formatCNY(value)}`
 }
 
-export function formatPercent(value: number) {
-  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+/** 2-decimal percent; signed (default) adds '+' for positive values, 0 stays unsigned. */
+export function formatPercent(value: number, opts?: { signed?: boolean }) {
+  const signed = opts?.signed ?? true
+  return `${signed && value > 0 ? '+' : ''}${value.toFixed(2)}%`
 }
 
 /** Fixed 2-decimal grouped number (zh-CN locale), no currency symbol. */
@@ -65,4 +67,9 @@ export function isTradingHours(): boolean {
     m = cst.getMinutes()
   const t = h * 60 + m
   return (t >= 9 * 60 + 30 && t < 11 * 60 + 30) || (t >= 13 * 60 && t < 15 * 60)
+}
+
+/** True when `s` is exactly a 6-digit fund code. */
+export function isFundCode(s: string): boolean {
+  return /^\d{6}$/.test(s)
 }

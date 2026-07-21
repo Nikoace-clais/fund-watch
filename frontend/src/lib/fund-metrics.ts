@@ -19,12 +19,13 @@ export function computeRiskMetrics(history: NavPoint[]) {
 
   if (returns.length < 30) return null
 
-  const navSlice = slice.filter((p) => p.nav != null)
-  const startNav = navSlice[0]?.nav
-  const endNav = navSlice[navSlice.length - 1]?.nav
+  const startNav = slice[0]?.nav
+  const endNav = slice[slice.length - 1]?.nav
   const n = returns.length
   const annualReturn =
-    startNav && endNav ? (Math.pow(endNav / startNav, 252 / n) - 1) * 100 : null
+    startNav != null && endNav != null
+      ? (Math.pow(endNav / startNav, 252 / n) - 1) * 100
+      : null
 
   const mean = returns.reduce((a, b) => a + b, 0) / n
   const variance = returns.reduce((a, b) => a + (b - mean) ** 2, 0) / n
@@ -32,9 +33,9 @@ export function computeRiskMetrics(history: NavPoint[]) {
 
   let peak = -Infinity
   let maxDD = 0
-  for (const p of navSlice) {
-    if (p.nav! > peak) peak = p.nav!
-    const dd = (peak - p.nav!) / peak
+  for (const p of slice) {
+    if (p.nav > peak) peak = p.nav
+    const dd = (peak - p.nav) / peak
     if (dd > maxDD) maxDD = dd
   }
   const maxDrawdown = maxDD * 100

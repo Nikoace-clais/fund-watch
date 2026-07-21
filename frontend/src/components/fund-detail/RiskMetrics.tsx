@@ -1,5 +1,6 @@
 import type { NavPoint, FundDetailData } from '@/lib/api'
 import { computeRiskMetrics } from '@/lib/fund-metrics'
+import { formatPercent } from '@/lib/utils'
 
 // ── Emoji grading ─────────────────────────────────────────────────────────────
 
@@ -85,8 +86,7 @@ function PowerBar({ label, score }: { label: string; score: number }) {
 export function RiskMetrics({ history, detail }: Props) {
   const metrics = computeRiskMetrics(history)
 
-  const fmt = (v: number | null, suffix = '%') =>
-    v != null ? `${v >= 0 ? '+' : ''}${v.toFixed(2)}${suffix}` : '--'
+  const fmt = (v: number | null) => (v != null ? formatPercent(v) : '--')
 
   const fmtSharpe = (v: number | null) => (v != null ? v.toFixed(2) : '--')
 

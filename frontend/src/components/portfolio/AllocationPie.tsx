@@ -11,9 +11,12 @@ export function AllocationPie({
   totalCurrent: number
   fundCount: number
 }) {
-  const pieData = items.map((it) => ({
+  // skip rows whose valuation is unavailable (estimate_error) — they have no
+  // meaningful share of the pie
+  const valued = items.filter((it) => it.current_value != null)
+  const pieData = valued.map((it) => ({
     name: it.name || it.code,
-    value: parseFloat(it.current_value),
+    value: parseFloat(it.current_value!),
   }))
 
   return (
@@ -47,8 +50,8 @@ export function AllocationPie({
         </div>
       </div>
       <div className="mt-4 space-y-2 max-h-48 overflow-y-auto">
-        {items.map((it, idx) => {
-          const cv = parseFloat(it.current_value)
+        {valued.map((it, idx) => {
+          const cv = parseFloat(it.current_value!)
           const pct = totalCurrent > 0 ? (cv / totalCurrent) * 100 : 0
           return (
             <div

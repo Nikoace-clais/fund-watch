@@ -58,12 +58,17 @@ export type PortfolioItem = {
   name?: string
   shares: string | null
   nav: string | null
-  daily_change: number
-  current_value: string
-  daily_return: string
+  // estimate fields come back null (with estimate_error: true) when the quote
+  // source fails — the row is kept, only its valuation is unavailable
+  daily_change: number | null
+  current_value: string | null
+  daily_return: string | null
   total_cost: string | null
-  total_return: string
+  total_return: string | null
   return_rate: string | null
+  estimate_error?: boolean
+  realized_pnl?: string
+  is_closed?: boolean
   is_imported?: boolean
   imported_cumulative_return?: string
 }

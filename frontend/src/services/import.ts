@@ -50,6 +50,7 @@ export async function previewImport(
   files: File[],
   cfg?: ProviderConfig,
   onStep?: (s: OcrStep) => void,
+  signal?: AbortSignal,
 ): Promise<ImportPreviewResult> {
   const ocrCfg = cfg
     ? {
@@ -62,11 +63,25 @@ export async function previewImport(
     : undefined
 
   const ocr = await new Promise<OcrResult>((resolve, reject) => {
-    streamOcrFundCode(files, ocrCfg, {
-      onStep: onStep ?? (() => {}),
-      onResult: resolve,
-      onError: (msg) => reject(new Error(msg)),
-    })
+    // settle on caller abort too — streamSSE itself settles silently on abort
+    signal?.addEventListener(
+      'abort',
+      () => reject(new DOMException('Aborted', 'AbortError')),
+      { once: true },
+    )
+    streamOcrFundCode(
+      files,
+      ocrCfg,
+      {
+        onStep: onStep ?? (() => {}),
+        onResult: resolve,
+        onError: (msg) => reject(new Error(msg)),
+      },
+      signal,
+      // a thrown network-level failure must reject, not hang the promise
+    ).catch((e: unknown) =>
+      reject(e instanceof Error ? e : new Error(String(e))),
+    )
   })
   // Build amount lookup from matched_funds (covers both code & name_match sources)
   const amountByCode = new Map(

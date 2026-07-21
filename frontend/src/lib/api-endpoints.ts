@@ -23,6 +23,11 @@ import type {
   Transaction,
 } from './api-types'
 
+/** `?portfolio_id=N` fragment; pass '&' as sep when the URL already has a query. */
+function pfQs(portfolioId: number | undefined, sep: '?' | '&' = '?') {
+  return portfolioId != null ? `${sep}portfolio_id=${portfolioId}` : ''
+}
+
 // Fund list + latest snapshot
 export function fetchFundsOverview() {
   return request<{ items: FundOverviewItem[] }>('/api/funds/overview')
@@ -79,13 +84,13 @@ export function deletePortfolio(id: number) {
 
 // Portfolio summary
 export function fetchPortfolioSummary(portfolioId?: number) {
-  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  const qs = pfQs(portfolioId)
   return request<PortfolioSummary>(`/api/portfolio/summary${qs}`)
 }
 
 // Portfolio holdings X-ray
 export function fetchPortfolioHoldings(portfolioId?: number) {
-  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  const qs = pfQs(portfolioId)
   return request<PortfolioHoldings>(`/api/portfolio/holdings${qs}`)
 }
 
@@ -101,7 +106,7 @@ export function addFund(code: string) {
 
 // Delete fund
 export function deleteFund(code: string, portfolioId?: number) {
-  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  const qs = pfQs(portfolioId)
   return request<{ ok: boolean }>(`/api/funds/${code}${qs}`, {
     method: 'DELETE',
   })
@@ -140,7 +145,7 @@ export function batchAddFunds(
 
 // Fund P&L (holding shares, etc.)
 export function fetchFundPnl(code: string, portfolioId?: number) {
-  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  const qs = pfQs(portfolioId)
   return request<FundPnl>(`/api/funds/${code}/pnl${qs}`)
 }
 
@@ -176,7 +181,7 @@ export function addTransaction(
 
 // Portfolio value history (current holdings × historical NAV)
 export function fetchPortfolioHistory(limit = 90, portfolioId?: number) {
-  const qs = portfolioId != null ? `&portfolio_id=${portfolioId}` : ''
+  const qs = pfQs(portfolioId, '&')
   return request<{
     portfolio_id: number
     count: number
@@ -195,7 +200,7 @@ export function fetchCronStatus() {
 }
 
 export function fetchTransactions(code: string, portfolioId?: number) {
-  const qs = portfolioId != null ? `?portfolio_id=${portfolioId}` : ''
+  const qs = pfQs(portfolioId)
   return request<{ code: string; items: Transaction[] }>(
     `/api/funds/${code}/transactions${qs}`,
   )
@@ -216,6 +221,7 @@ export async function streamOcrFundCode(
   files: File[],
   cfg: OcrCfg | undefined,
   handlers: OcrStreamHandlers,
+  signal?: AbortSignal,
 ): Promise<void> {
   const form = new FormData()
   files.forEach((f) => form.append('files', f))
@@ -227,7 +233,7 @@ export async function streamOcrFundCode(
 
   await streamSSE(
     `${API}/api/ocr/fund-code`,
-    { method: 'POST', body: form },
+    { method: 'POST', body: form, signal },
     (event) => {
       if (event.type === 'step')
         handlers.onStep({
@@ -247,6 +253,7 @@ export async function streamAiSelect(
   emphasis: string,
   providerParams: AiProviderParams,
   handlers: AiStreamHandlers,
+  signal?: AbortSignal,
 ): Promise<void> {
   await streamSSE(
     `${API}/api/ai/select/stream`,
@@ -254,6 +261,7 @@ export async function streamAiSelect(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ theme, emphasis, ...providerParams }),
+      signal,
     },
     (event) => {
       if (event.type === 'step') handlers.onStep(event.text!)
