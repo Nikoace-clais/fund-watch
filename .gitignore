@@ -18,9 +18,19 @@ yarn-error.log*
 
 # Frontend build output
 frontend/dist/
+# vitest 覆盖率产物
+frontend/coverage/
+# playwright 运行产物
+frontend/test-results/
+.playwright-mcp/
 
 # Backend data
 backend/data/
+# compose 挂载的根数据目录（./data:/app/backend/data）
+/data/
+
+# 本地运行进程 PID（start.sh）
+.run/
 
 # IDE
 .vscode/

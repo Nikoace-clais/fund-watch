@@ -15,6 +15,8 @@ backend/.venv
 backend/data
 backend/tests
 **/__pycache__
-.mypy_cache
-.ruff_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.pytest_cache
+data
 .env

@@ -18,9 +18,11 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$PROJECT_DIR/backend"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
 
-# PID 文件
-BACKEND_PID_FILE="/tmp/fund-watch-backend.pid"
-FRONTEND_PID_FILE="/tmp/fund-watch-frontend.pid"
+# PID 文件（放项目内,避免 /tmp 多用户冲突与漂移）
+RUN_DIR="$PROJECT_DIR/.run"
+mkdir -p "$RUN_DIR"
+BACKEND_PID_FILE="$RUN_DIR/backend.pid"
+FRONTEND_PID_FILE="$RUN_DIR/frontend.pid"
 
 # 日志文件
 LOG_DIR="$PROJECT_DIR/logs"
@@ -28,33 +30,56 @@ mkdir -p "$LOG_DIR"
 BACKEND_LOG="$LOG_DIR/backend.log"
 FRONTEND_LOG="$LOG_DIR/frontend.log"
 
+# 端口占用检查:优先 ss,退化为 /dev/tcp 探测
+port_in_use() {
+    local port=$1
+    if command -v ss &> /dev/null; then
+        ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "(^|:|\])${port}$"
+    else
+        (echo > "/dev/tcp/127.0.0.1/$port") 2>/dev/null
+    fi
+}
+
+check_ports_free() {
+    local conflict=0
+    if port_in_use 8010; then
+        echo -e "${RED}✗ 端口 8010 已被占用（后端）${NC}"
+        conflict=1
+    fi
+    if port_in_use 5173; then
+        echo -e "${RED}✗ 端口 5173 已被占用（前端）${NC}"
+        conflict=1
+    fi
+    if [ "$conflict" -eq 1 ]; then
+        echo "可能有旧实例仍在运行，请先停止（如 lsof -i :8010 / :5173 确认后 kill），再重新启动。"
+        exit 1
+    fi
+}
+
+# 按 PID 文件停止进程;kill 前校验 /proc/<pid>/cmdline 匹配,防 stale PID 误杀
+safe_kill() {
+    local pid_file=$1 pattern=$2 name=$3
+    [ -f "$pid_file" ] || return 0
+    local pid
+    pid=$(cat "$pid_file")
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -qE "$pattern"; then
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+            echo -e "${GREEN}✓ $name 已停止${NC}"
+        else
+            echo -e "${YELLOW}⚠ PID $pid 的进程不是 $name（stale PID 文件），跳过 kill${NC}"
+        fi
+    fi
+    rm -f "$pid_file"
+}
+
 # 清理函数
 cleanup() {
     echo -e "\n${YELLOW}🛑 正在停止服务...${NC}"
 
-    # 停止后端
-    if [ -f "$BACKEND_PID_FILE" ]; then
-        local backend_pid
-        backend_pid=$(cat "$BACKEND_PID_FILE")
-        if kill -0 "$backend_pid" 2>/dev/null; then
-            kill "$backend_pid" 2>/dev/null || true
-            wait "$backend_pid" 2>/dev/null || true
-            echo -e "${GREEN}✓ 后端已停止${NC}"
-        fi
-        rm -f "$BACKEND_PID_FILE"
-    fi
-
-    # 停止前端
-    if [ -f "$FRONTEND_PID_FILE" ]; then
-        local frontend_pid
-        frontend_pid=$(cat "$FRONTEND_PID_FILE")
-        if kill -0 "$frontend_pid" 2>/dev/null; then
-            kill "$frontend_pid" 2>/dev/null || true
-            wait "$frontend_pid" 2>/dev/null || true
-            echo -e "${GREEN}✓ 前端已停止${NC}"
-        fi
-        rm -f "$FRONTEND_PID_FILE"
-    fi
+    safe_kill "$BACKEND_PID_FILE" 'app\.main|uvicorn' "后端"
+    safe_kill "$FRONTEND_PID_FILE" 'bun run dev|vite' "前端"
 
     echo -e "${GREEN}👋 服务已清理${NC}"
     exit 0
@@ -226,7 +251,11 @@ main() {
     check_dependencies
     echo ""
 
-    # 清理旧日志
+    # 端口被占用直接退出,避免健康探测命中旧进程误判启动成功
+    check_ports_free
+
+    # 清理可能残留的 stale PID 文件与旧日志
+    rm -f "$BACKEND_PID_FILE" "$FRONTEND_PID_FILE"
     : > "$BACKEND_LOG"
     : > "$FRONTEND_LOG"
 
