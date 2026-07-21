@@ -38,7 +38,7 @@ Write-Host "[Info] 准备启动前端..." -ForegroundColor Cyan
 Set-Location "$ROOT\frontend"
 
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
-    Write-Host "[Error] 未找到 pnpm,请先执行 corepack enable(Node 20+ 内置)" -ForegroundColor Red
+    Write-Host "[Error] 未找到 pnpm,请先执行 corepack enable(Node 20-24 内置;25+ 需 npm i -g corepack)" -ForegroundColor Red
     exit 1
 }
 

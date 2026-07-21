@@ -19,13 +19,14 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**安装 pnpm（经 corepack，Node 20+ 内置）：**
+**安装 pnpm（经 corepack）：**
 
 ```bash
 # macOS / Linux / Windows（PowerShell 相同）
 corepack enable
 ```
 
+> corepack 随 Node.js 20–24 内置；Node.js 25 起官方发行版不再附带，需先 `npm install -g corepack`（或直接 `npm install -g pnpm`）。
 > corepack 会按 `frontend/package.json` 的 `packageManager` 字段自动提供钉住的 pnpm 版本。
 
 ---

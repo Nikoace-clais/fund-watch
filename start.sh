@@ -106,7 +106,7 @@ check_dependencies() {
     fi
     if ! command -v pnpm &> /dev/null; then
         echo -e "${RED}✗ pnpm 未安装${NC}"
-        echo "请启用 corepack(Node 20+ 内置): corepack enable"
+        echo "请启用 corepack(Node 20-24 内置;25+ 需 npm i -g corepack): corepack enable"
         exit 1
     fi
     echo -e "${GREEN}✓ pnpm 已安装${NC}"
