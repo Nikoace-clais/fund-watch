@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 describe('Environment', () => {
-  it('should have bun available', () => {
+  it('should have test env available', () => {
     // This test verifies the test environment is set up correctly
     expect(import.meta.env).toBeDefined()
   })

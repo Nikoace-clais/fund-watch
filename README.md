@@ -28,7 +28,7 @@ A 股公募基金盘中估值监控 + 自选组合管理工具。
 
 - **后端**：FastAPI + SQLite + httpx
 - **前端**：React 18 + TypeScript + Vite + Tailwind CSS v4 + React Router v7 + Recharts
-- **运行环境**：Python >=3.12 / Node.js 20.19+（Vite 7 要求）/ bun
+- **运行环境**：Python >=3.12 / Node.js 20.19+（Vite 7 要求）/ pnpm（经 corepack）
 
 ## 工程结构
 
@@ -56,7 +56,7 @@ fund-watch/
 │   └── data/              # SQLite + 上传截图(运行后生成)
 └── frontend/
     ├── package.json
-    ├── bun.lock           # bun 依赖锁定
+    ├── pnpm-lock.yaml     # pnpm 依赖锁定
     ├── vite.config.ts
     └── src/
         ├── main.tsx

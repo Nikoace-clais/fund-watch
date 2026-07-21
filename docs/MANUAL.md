@@ -11,7 +11,7 @@
 ### 前置依赖
 
 - Python 3.12+（后端，用 [uv](https://docs.astral.sh/uv/) 管理）
-- Bun（前端；没有 Bun 时 npm 也可）
+- Node.js + pnpm（前端；pnpm 经 corepack 提供）
 
 详细安装步骤（含 Windows）见 [docs/install.md](install.md)。
 
@@ -31,7 +31,7 @@ cd fund-watch
 cd backend && uv sync && uv run python run.py
 
 # 前端（新终端）
-cd frontend && bun install && bun run dev
+cd frontend && pnpm install && pnpm run dev
 ```
 
 ### Docker 启动

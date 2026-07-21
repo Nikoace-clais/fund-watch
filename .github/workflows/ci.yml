@@ -39,18 +39,20 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      # setup-bun 不带依赖缓存,单独缓存 bun 全局安装缓存
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # pnpm 版本由 frontend/package.json 的 packageManager 字段决定(action 默认只读根目录 package.json,需显式指定)
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('frontend/bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-      - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run format:check
-      - run: bun run test:run
-      - run: bun run build
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run format:check
+      - run: pnpm run test:run
+      - run: pnpm run build
 
   # 依赖漏洞扫描:新引入,先 continue-on-error 观察一阵,不阻塞 CI
   security:
@@ -64,18 +66,20 @@ jobs:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
       # 审计锁定依赖本身(uv export),而不是 uv run --with pip-audit 的混合环境(会把审计器自身依赖算进来)
-      # 步骤级 continue-on-error:job 已是观察模式,此处保证 pip-audit 有发现时 bun audit 仍会执行
+      # 步骤级 continue-on-error:job 已是观察模式,此处保证 pip-audit 有发现时 pnpm audit 仍会执行
       - name: pip-audit (backend)
         working-directory: backend
         continue-on-error: true
         run: |
           uv export --locked --no-hashes --format requirements-txt -o /tmp/fund-watch-req.txt
           uvx pip-audit -r /tmp/fund-watch-req.txt
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      # bun audit 只读 bun.lock,无需先 install(若 bun 版本行为变化导致失败,由 continue-on-error 兜住)
-      - name: bun audit (frontend)
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          package_json_file: frontend/package.json
+      # pnpm audit 只读 package.json/pnpm-lock.yaml,无需先 install(runner 自带 node;失败由 continue-on-error 兜住)
+      - name: pnpm audit (frontend)
         working-directory: frontend
-        run: bun audit
+        run: pnpm audit
 
   docker:
     runs-on: ubuntu-latest

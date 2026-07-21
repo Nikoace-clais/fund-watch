@@ -28,8 +28,8 @@ fund-watch/
 │   └── tests/                   # pytest（unit / integration，含 app 集成测试）
 │
 └── frontend/                     # React/Vite 前端
-    ├── package.json             # bun 配置
-    ├── bun.lock                 # 依赖锁定
+    ├── package.json             # pnpm 配置
+    ├── pnpm-lock.yaml           # 依赖锁定
     ├── vite.config.ts
     ├── vitest.config.ts         # 单元测试
     ├── playwright.config.ts     # E2E 测试
@@ -70,7 +70,7 @@ fund-watch/
 
 ### 前端
 
-- **bun**: 包管理器
+- **pnpm**: 包管理器（经 corepack，版本由 packageManager 字段钉住）
 - **Vite**: 构建工具
 - **vitest**: 单元测试
 - **Playwright**: E2E 测试
@@ -103,16 +103,16 @@ uv run ruff format .
 cd frontend
 
 # 安装依赖
-bun install
+pnpm install
 
 # 运行测试
-bun test
+pnpm run test:run
 
 # 启动开发服务器
-bun run dev
+pnpm run dev
 
 # E2E 测试
-bun run test:e2e
+pnpm run test:e2e
 ```
 
 ### 测试策略
@@ -168,7 +168,7 @@ bun run test:e2e
 
 ### 测试状态
 
-具体数量随迭代变化,不在此维护快照——以 CI（backend `uv run pytest` / frontend `bun run test:run`）为准。
+具体数量随迭代变化,不在此维护快照——以 CI（backend `uv run pytest` / frontend `pnpm run test:run`）为准。
 
 ### 开发服务器
 
@@ -187,7 +187,7 @@ bun run test:e2e
 cd backend && uv run python run.py
 
 # 前端（新终端）
-cd frontend && bun run dev
+cd frontend && pnpm run dev
 ```
 
 访问 http://localhost:5173/import 使用截图导入功能

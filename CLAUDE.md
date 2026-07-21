@@ -17,7 +17,7 @@ Current scope is **free data sources first**, then harden for multi-user usage.
 ## Tech Stack
 
 - Backend: FastAPI (Python >=3.12, `uv` 管理)
-- Frontend: React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7 + TanStack Query (bun 管理)
+- Frontend: React 18 + Vite + TypeScript + Tailwind CSS v4 + React Router v7 + TanStack Query (pnpm 管理)
 - Storage: SQLite（`FUND_WATCH_DB` 可覆盖路径，默认 `backend/data/fund_watch.db`）
 - Charts: Recharts
 - Realtime source: `fundgz.1234567.com.cn`
@@ -89,8 +89,8 @@ uv run python run.py          # 或: uv run uvicorn app.main:app --reload --port
 
 ```bash
 cd frontend
-bun install
-bun run dev
+pnpm install
+pnpm run dev
 ```
 
 Frontend: `http://127.0.0.1:5173` | Backend: `http://127.0.0.1:8010` | Swagger: `http://127.0.0.1:8010/docs`
@@ -105,8 +105,8 @@ uv run ruff format .          # 格式化(CI 用 --check 门禁)
 uv run ty check               # 类型检查(Astral ty,覆盖 app/ 与 tests/)
 
 # 前端（frontend/ 目录下）
-bun run lint                  # tsc --noEmit
-bun run format                # prettier(CI 用 format:check 门禁)
+pnpm run lint                  # tsc --noEmit
+pnpm run format                # prettier(CI 用 format:check 门禁)
 ```
 
 ---
@@ -138,7 +138,7 @@ bun run format                # prettier(CI 用 format:check 门禁)
 3. 遵守 Architecture 节的分层规则（routers 薄 / 业务在 services / SQL 在 repositories / 前端类型唯一来源）。
 4. Clearly label estimated NAV data as estimate (not final NAV).
 5. Avoid noisy alert logic; default to conservative thresholds.
-6. **GitNexus 使用约定**（覆盖本文件末尾及 AGENTS.md 中自动注入块的 MUST 规则）：GitNexus 是辅助工具，不是硬性流程。跨模块重构、重命名、删除符号时建议用 `gitnexus_impact` / `gitnexus_rename`；日常小改以 `uv run pytest` + `bun run lint` 验证为准，不强制每次编辑前跑 impact、每次提交前跑 detect_changes。
+6. **GitNexus 使用约定**（覆盖本文件末尾及 AGENTS.md 中自动注入块的 MUST 规则）：GitNexus 是辅助工具，不是硬性流程。跨模块重构、重命名、删除符号时建议用 `gitnexus_impact` / `gitnexus_rename`；日常小改以 `uv run pytest` + `pnpm run lint` 验证为准，不强制每次编辑前跑 impact、每次提交前跑 detect_changes。
 
 ---
 

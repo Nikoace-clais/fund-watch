@@ -1,13 +1,15 @@
 # ---- 前端构建 ----
-# 钉 minor(bun 1.3.x),patch 随官方滚动
-FROM oven/bun:1.3 AS frontend
+# 钉 minor(node 22 LTS + bookworm),patch 随官方滚动
+FROM node:22-bookworm-slim AS frontend
 WORKDIR /build
-COPY frontend/package.json frontend/bun.lock ./
-RUN bun install --frozen-lockfile
+# corepack 按 package.json 的 packageManager 字段激活对应 pnpm 版本(首次调用需外网下载)
+RUN corepack enable
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
 # 空串 = 同源相对路径(api-client.ts 以 ?? 回落,仅未设置时才用 dev 地址)
 ENV VITE_API_URL=""
-RUN bun run build
+RUN pnpm run build
 
 # ---- 后端运行时 ----
 # 钉 minor + Debian 代号(python 3.12 + bookworm),patch 随官方滚动,升级大版本需人工

@@ -6,7 +6,8 @@
 |------|------|----------|
 | Python | >=3.12 | [python.org](https://www.python.org/downloads/) |
 | uv | 最新 | 见下方 |
-| Bun | 最新 | 见下方 |
+| Node.js | >=20.19 | [nodejs.org](https://nodejs.org/) |
+| pnpm | 10.x | 经 corepack（见下方） |
 
 **安装 uv：**
 
@@ -18,15 +19,15 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-**安装 Bun：**
+**安装 pnpm（经 corepack）：**
 
 ```bash
-# macOS / Linux
-curl -fsSL https://bun.sh/install | bash
-
-# Windows（PowerShell）
-powershell -c "irm bun.sh/install.ps1 | iex"
+# macOS / Linux / Windows（PowerShell 相同）
+corepack enable
 ```
+
+> corepack 随 Node.js 20–24 内置；Node.js 25 起官方发行版不再附带，需先 `npm install -g corepack`（或直接 `npm install -g pnpm`）。
+> corepack 会按 `frontend/package.json` 的 `packageManager` 字段自动提供钉住的 pnpm 版本。
 
 ---
 
@@ -66,11 +67,11 @@ uv run uvicorn app.main:app --reload --port 8010
 
 ```bash
 cd fund-watch/frontend
-bun install
-bun run dev
+pnpm install
+pnpm run dev
 ```
 
-> 如果没有安装 Bun，可以用 `npm install && npm run dev` 代替。
+> pnpm 由 corepack 提供；若命令不存在，先执行 `corepack enable`。
 
 ---
 

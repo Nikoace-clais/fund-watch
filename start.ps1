@@ -37,24 +37,21 @@ Write-Host "----------------------------------------"
 Write-Host "[Info] 准备启动前端..." -ForegroundColor Cyan
 Set-Location "$ROOT\frontend"
 
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    Write-Host "[Error] 未找到 pnpm,请先执行 corepack enable(Node 20-24 内置;25+ 需 npm i -g corepack)" -ForegroundColor Red
+    exit 1
+}
+
 if (-not (Test-Path "node_modules")) {
     Write-Host "[Info] 正在安装前端依赖..." -ForegroundColor Cyan
-    if (Get-Command bun -ErrorAction SilentlyContinue) {
-        bun install
-    } else {
-        npm install
-    }
+    pnpm install
 }
 
 Write-Host "[Info] 启动前端服务 (http://127.0.0.1:5173)..." -ForegroundColor Cyan
 $script:FrontendJob = Start-Job -ScriptBlock {
     param($dir)
     Set-Location $dir
-    if (Get-Command bun -ErrorAction SilentlyContinue) {
-        bun run dev
-    } else {
-        npm run dev
-    }
+    pnpm run dev
 } -ArgumentList "$ROOT\frontend"
 
 Set-Location $ROOT

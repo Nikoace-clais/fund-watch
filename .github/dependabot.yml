@@ -5,7 +5,7 @@ updates:
     directory: "/backend"
     schedule:
       interval: "weekly"
-  # 前端 bun 项目:dependabot 用 npm ecosystem 处理 package.json/bun.lock
+  # 前端 pnpm 项目:dependabot 用 npm ecosystem 处理 package.json/pnpm-lock.yaml
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
