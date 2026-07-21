@@ -4,7 +4,7 @@
 
 | 工具 | 版本 | 安装方式 |
 |------|------|----------|
-| Python | 3.10+ | [python.org](https://www.python.org/downloads/) |
+| Python | >=3.12 | [python.org](https://www.python.org/downloads/) |
 | uv | 最新 | 见下方 |
 | Bun | 最新 | 见下方 |
 
@@ -58,8 +58,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ```bash
 cd fund-watch/backend
-uv venv
-uv pip install -r requirements.txt
+uv sync
 uv run uvicorn app.main:app --reload --port 8010
 ```
 
